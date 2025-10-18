@@ -1,0 +1,8 @@
+
+export enum AppState {
+  AWAITING_CODE,
+  AWAITING_GOAL,
+  GOAL_SET,
+  VERIFYING_PROOF,
+  GOAL_COMPLETED,
+}
