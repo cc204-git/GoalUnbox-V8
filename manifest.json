@@ -4,19 +4,9 @@
   "description": "A productivity app that helps users focus on a goal by sequestering a 3-digit unlock code. The code is only revealed after an AI-powered verification confirms the user has submitted image proof of their goal's completion.",
   "icons": [
     {
-      "src": "/icon.svg",
+      "src": "./icon.svg",
       "type": "image/svg+xml",
       "sizes": "any"
-    },
-    {
-      "src": "/icon-192.png",
-      "type": "image/png",
-      "sizes": "192x192"
-    },
-    {
-      "src": "/icon-512.png",
-      "type": "image/png",
-      "sizes": "512x512"
     }
   ],
   "start_url": ".",

@@ -1,24 +1,24 @@
 const CACHE_NAME = 'goal-unbox-v1';
 const URLS_TO_CACHE = [
-  '/',
-  '/index.html',
-  '/index.tsx',
-  '/App.tsx',
-  '/types.ts',
-  '/utils/fileUtils.ts',
-  '/utils/timeUtils.ts',
-  '/services/geminiService.ts',
-  '/components/Alert.tsx',
-  '/components/CameraCapture.tsx',
-  '/components/ChatBox.tsx',
-  '/components/CodeUploader.tsx',
-  '/components/GoalSetter.tsx',
-  '/components/Header.tsx',
-  '/components/ProofUploader.tsx',
-  '/components/Spinner.tsx',
-  '/components/VerificationResult.tsx',
-  '/icon.svg',
-  '/manifest.json'
+  './',
+  './index.html',
+  './index.tsx',
+  './App.tsx',
+  './types.ts',
+  './utils/fileUtils.ts',
+  './utils/timeUtils.ts',
+  './services/geminiService.ts',
+  './components/Alert.tsx',
+  './components/CameraCapture.tsx',
+  './components/ChatBox.tsx',
+  './components/CodeUploader.tsx',
+  './components/GoalSetter.tsx',
+  './components/Header.tsx',
+  './components/ProofUploader.tsx',
+  './components/Spinner.tsx',
+  './components/VerificationResult.tsx',
+  './icon.svg',
+  './manifest.json'
 ];
 
 self.addEventListener('install', (event) => {
@@ -26,7 +26,9 @@ self.addEventListener('install', (event) => {
     caches.open(CACHE_NAME)
       .then((cache) => {
         console.log('Opened cache and caching app shell');
-        return cache.addAll(URLS_TO_CACHE);
+        // Use { cache: 'reload' } to bypass browser cache for the app shell files
+        const requests = URLS_TO_CACHE.map(url => new Request(url, { cache: 'reload' }));
+        return cache.addAll(requests);
       })
   );
 });
@@ -48,6 +50,12 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
+    // We only want to handle GET requests for our app's assets.
+    // This avoids interfering with other requests, like API calls to Google.
+    if (event.request.method !== 'GET' || !event.request.url.startsWith(self.location.origin)) {
+        return;
+    }
+
   event.respondWith(
     caches.match(event.request)
       .then((response) => {
@@ -58,20 +66,20 @@ self.addEventListener('fetch', (event) => {
 
         return fetch(event.request).then(
           (response) => {
-            // Check if we received a valid response and if it's a same-origin request
-            if (!response || response.status !== 200 || !event.request.url.startsWith(self.location.origin)) {
+            // Check if we received a valid response
+            if (!response || response.status !== 200) {
               return response;
             }
 
-            // Clone the response because it's a one-time use stream
+            // IMPORTANT: Clone the response. A response is a stream
+            // and because we want the browser to consume the response
+            // as well as the cache consuming the response, we need
+            // to clone it so we have two streams.
             const responseToCache = response.clone();
 
             caches.open(CACHE_NAME)
               .then((cache) => {
-                // We only cache GET requests that are from our origin
-                if (event.request.method === 'GET') {
-                    cache.put(event.request, responseToCache);
-                }
+                cache.put(event.request, responseToCache);
               });
 
             return response;
