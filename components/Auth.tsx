@@ -4,13 +4,14 @@ import Spinner from './Spinner';
 import Alert from './Alert';
 
 interface AuthProps {
-    onLogin: (email: string) => void;
+    onLogin: (email: string, rememberMe: boolean) => void;
     onContinueAsGuest: () => void;
 }
 
 const Auth: React.FC<AuthProps> = ({ onLogin, onContinueAsGuest }) => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [rememberMe, setRememberMe] = useState(true);
     const [isLoginView, setIsLoginView] = useState(true);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -26,7 +27,7 @@ const Auth: React.FC<AuthProps> = ({ onLogin, onContinueAsGuest }) => {
             } else {
                 await createUser(email, password);
             }
-            onLogin(email);
+            onLogin(email, rememberMe);
         } catch (err) {
             setError((err as Error).message);
             setIsLoading(false);
@@ -66,6 +67,21 @@ const Auth: React.FC<AuthProps> = ({ onLogin, onContinueAsGuest }) => {
                     disabled={isLoading}
                     autoComplete={isLoginView ? "current-password" : "new-password"}
                 />
+
+                <div className="flex items-center justify-between text-sm">
+                  <label htmlFor="remember-me" className="flex items-center gap-2 text-slate-400 cursor-pointer">
+                    <input
+                      id="remember-me"
+                      name="remember-me"
+                      type="checkbox"
+                      checked={rememberMe}
+                      onChange={(e) => setRememberMe(e.target.checked)}
+                      className="h-4 w-4 rounded bg-slate-700 border-slate-500 text-cyan-500 focus:ring-cyan-500"
+                    />
+                    Remember me
+                  </label>
+                </div>
+                
                 <button
                     type="submit"
                     disabled={isLoading || !email || password.length < 6}

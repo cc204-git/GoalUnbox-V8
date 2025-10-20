@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useEffect } from 'react';
 import { AppState, CompletedGoal, ActiveGoalState } from './types';
 import { 
@@ -50,6 +49,21 @@ const App: React.FC = () => {
   const [chat, setChat] = useState<Chat | null>(null);
   const [chatMessages, setChatMessages] = useState<Array<{ text: string, role: 'user' | 'model' }>>([]);
   const [isChatLoading, setIsChatLoading] = useState<boolean>(false);
+  
+  // Effect to handle auto-login
+  useEffect(() => {
+      if (apiKey) {
+          const rememberedUser = localStorage.getItem('goalUnboxRememberedUser');
+          if (rememberedUser) {
+              setCurrentUser(rememberedUser);
+              restoreSession(rememberedUser);
+          } else {
+              setAppState(AppState.AUTH);
+          }
+      }
+      // If no apiKey, the ApiKeyPrompt will show, and this will re-run when it's set.
+  }, [apiKey]);
+
 
   const clearApiKey = useCallback(() => {
     localStorage.removeItem('GEMINI_API_KEY');
@@ -112,17 +126,24 @@ const App: React.FC = () => {
     setError(null);
   };
 
-  const handleLogin = (email: string) => {
+  const handleLogin = (email: string, rememberMe: boolean) => {
+      if (rememberMe) {
+          localStorage.setItem('goalUnboxRememberedUser', email);
+      } else {
+          localStorage.removeItem('goalUnboxRememberedUser');
+      }
       setCurrentUser(email);
       restoreSession(email);
   };
 
   const handleContinueAsGuest = () => {
+      localStorage.removeItem('goalUnboxRememberedUser');
       setCurrentUser(null);
       restoreSession(null);
   };
   
   const handleLogout = () => {
+      localStorage.removeItem('goalUnboxRememberedUser');
       resetToStart(true);
   };
   

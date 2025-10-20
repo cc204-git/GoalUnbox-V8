@@ -1,10 +1,12 @@
 import React, { useState, useCallback, useRef } from 'react';
 import Spinner from './Spinner.js';
 import CameraCapture from './CameraCapture.js';
+import DataSyncModal from './DataSyncModal.js';
 
 const CodeUploader = ({ onCodeImageSubmit, isLoading, onShowHistory, onLogout, currentUser }) => {
   const [file, setFile] = useState(null);
   const [showCamera, setShowCamera] = useState(false);
+  const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
   const fileInputRef = useRef(null);
 
   const handleFileChange = (e) => {
@@ -40,6 +42,17 @@ const CodeUploader = ({ onCodeImageSubmit, isLoading, onShowHistory, onLogout, c
           React.createElement('path', { strokeLinecap: "round", strokeLinejoin: "round", d: "M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" }))
       ),
       React.createElement('button', {
+          onClick: () => setIsSyncModalOpen(true),
+          className: "text-slate-500 hover:text-cyan-400 transition-colors p-2",
+          'aria-label': "Sync data between devices",
+          title: "Account & Data Sync"
+      },
+        React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", className: "h-6 w-6", fill: "none", viewBox: "0 0 24 24", stroke: "currentColor", strokeWidth: 2 },
+            React.createElement('path', { strokeLinecap: "round", strokeLinejoin: "round", d: "M4 4v5h5M20 20v-5h-5M4 4l5 5M20 20l-5-5" }),
+            React.createElement('path', { strokeLinecap: "round", strokeLinejoin: "round", d: "M4 9V4h5m11 11v5h-5M4 9l16-5M20 15L4 20" })
+        )
+      ),
+      React.createElement('button', {
           onClick: onShowHistory,
           className: "text-slate-500 hover:text-cyan-400 transition-colors p-2",
           'aria-label': "View goal history",
@@ -55,6 +68,7 @@ const CodeUploader = ({ onCodeImageSubmit, isLoading, onShowHistory, onLogout, c
   return React.createElement(
     'div', { className: "relative w-full max-w-md" },
     showCamera && React.createElement(CameraCapture, { onCapture: handleCapture, onCancel: () => setShowCamera(false) }),
+    isSyncModalOpen && React.createElement(DataSyncModal, { onClose: () => setIsSyncModalOpen(false) }),
     React.createElement(
       'div', { className: 'bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full text-center animate-fade-in' },
       controls,

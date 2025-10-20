@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useEffect } from 'react';
 import { AppState } from './types.js';
 import { extractCodeFromImage, verifyGoalCompletion, createVerificationChat, summarizeGoal } from './services/geminiService.js';
@@ -40,6 +39,18 @@ const App = () => {
   const [chat, setChat] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
   const [isChatLoading, setIsChatLoading] = useState(false);
+  
+  useEffect(() => {
+      if (apiKey) {
+          const rememberedUser = localStorage.getItem('goalUnboxRememberedUser');
+          if (rememberedUser) {
+              setCurrentUser(rememberedUser);
+              restoreSession(rememberedUser);
+          } else {
+              setAppState(AppState.AUTH);
+          }
+      }
+  }, [apiKey]);
 
   const clearApiKey = useCallback(() => {
     localStorage.removeItem('GEMINI_API_KEY');
@@ -102,17 +113,24 @@ const App = () => {
     setError(null);
   };
 
-  const handleLogin = (email) => {
+  const handleLogin = (email, rememberMe) => {
+    if (rememberMe) {
+        localStorage.setItem('goalUnboxRememberedUser', email);
+    } else {
+        localStorage.removeItem('goalUnboxRememberedUser');
+    }
     setCurrentUser(email);
     restoreSession(email);
   };
 
   const handleContinueAsGuest = () => {
+    localStorage.removeItem('goalUnboxRememberedUser');
     setCurrentUser(null);
     restoreSession(null);
   };
   
   const handleLogout = () => {
+    localStorage.removeItem('goalUnboxRememberedUser');
     resetToStart(true);
   };
 
