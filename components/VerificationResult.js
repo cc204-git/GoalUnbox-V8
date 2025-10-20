@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import ChatBox from './ChatBox.js';
 
@@ -23,10 +24,16 @@ const VerificationResult = ({ isSuccess, secretCodeImage, feedback, onRetry, onR
   const [isImageModalOpen, setIsImageModalOpen] = useState(false);
 
   if (isSuccess) {
-    const title = completionReason === 'must-leave' ? "Time's Up!" : "Goal Completed!";
-    const titleColor = completionReason === 'must-leave' ? 'text-amber-400' : 'text-green-400';
-    const successMessage = completionReason === 'must-leave' 
-        ? "Your 'Must Leave' deadline was reached." 
+    const title = completionReason === 'must-leave' ? "Time's Up!"
+        : completionReason === 'emergency' ? "Emergency Access"
+        : "Goal Completed!";
+    const titleColor = completionReason === 'must-leave' ? 'text-amber-400'
+        : completionReason === 'emergency' ? 'text-red-400'
+        : 'text-green-400';
+    const successMessage = completionReason === 'must-leave'
+        ? "Your 'Must Leave' deadline was reached."
+        : completionReason === 'emergency'
+        ? "You passed the test. Your code is now available."
         : "Congratulations on achieving your goal!";
 
     return React.createElement(
@@ -58,7 +65,15 @@ const VerificationResult = ({ isSuccess, secretCodeImage, feedback, onRetry, onR
             React.createElement('img', { src: secretCodeImage, alt: 'Sequestered code', className: 'rounded-lg max-w-xs mx-auto border-2 border-green-500 group-hover:border-cyan-400 transition-colors' })
           )
         ),
-        React.createElement('button', { onClick: onReset, className: 'mt-8 w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400 transition-all duration-300' }, 'Start a New Goal')
+        React.createElement('button', { onClick: onReset, className: 'mt-8 w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400 transition-all duration-300' }, 'Start a New Goal'),
+        React.createElement(
+          'p', { className: 'text-xs text-slate-500 mt-4 flex items-center justify-center gap-2' },
+          React.createElement(
+            'svg', { xmlns: 'http://www.w3.org/2000/svg', className: 'h-4 w-4 text-green-500', viewBox: '0 0 20 20', fill: 'currentColor' },
+            React.createElement('path', { fillRule: 'evenodd', d: 'M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z', clipRule: 'evenodd' })
+          ),
+          'Your achievement has been saved to your goal history.'
+        )
       ),
       isImageModalOpen && secretCodeImage && React.createElement(
         'div',

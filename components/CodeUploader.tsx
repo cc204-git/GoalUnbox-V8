@@ -5,9 +5,12 @@ import CameraCapture from './CameraCapture';
 interface CodeUploaderProps {
   onCodeImageSubmit: (file: File) => void;
   isLoading: boolean;
+  onShowHistory: () => void;
+  onLogout: () => void;
+  currentUser: string | null;
 }
 
-const CodeUploader: React.FC<CodeUploaderProps> = ({ onCodeImageSubmit, isLoading }) => {
+const CodeUploader: React.FC<CodeUploaderProps> = ({ onCodeImageSubmit, isLoading, onShowHistory, onLogout, currentUser }) => {
   const [file, setFile] = useState<File | null>(null);
   const [showCamera, setShowCamera] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -35,9 +38,37 @@ const CodeUploader: React.FC<CodeUploaderProps> = ({ onCodeImageSubmit, isLoadin
   };
 
   return (
-    <>
+    <div className="relative w-full max-w-md">
       {showCamera && <CameraCapture onCapture={handleCapture} onCancel={() => setShowCamera(false)} />}
-      <div className="bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full max-w-md text-center animate-fade-in">
+      <div className="bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full text-center animate-fade-in">
+        
+        <div className="absolute top-4 right-4 flex items-center gap-2">
+            {currentUser && (
+                 <button
+                    onClick={onLogout}
+                    className="text-slate-500 hover:text-red-400 transition-colors p-2"
+                    aria-label="Logout"
+                    title="Logout"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                    </svg>
+                </button>
+            )}
+            <button
+                onClick={onShowHistory}
+                className="text-slate-500 hover:text-cyan-400 transition-colors p-2"
+                aria-label="View goal history"
+                title="View Goal History"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+            </button>
+        </div>
+
+        {currentUser && <p className="text-sm text-slate-500 mb-6 -mt-2 text-left">Logged in as: <strong>{currentUser}</strong></p>}
+
         <h2 className="text-2xl font-semibold mb-2 text-cyan-300">Step 1: Sequester Your Code</h2>
         <p className="text-slate-400 mb-6">Take a picture of the 3-digit code on your lock box. The code will be hidden until your goal is complete.</p>
         
@@ -98,7 +129,7 @@ const CodeUploader: React.FC<CodeUploaderProps> = ({ onCodeImageSubmit, isLoadin
           {isLoading ? <Spinner /> : 'Analyze & Save Code'}
         </button>
       </div>
-    </>
+    </div>
   );
 };
 

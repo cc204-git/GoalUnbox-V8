@@ -1,6 +1,9 @@
-import React, { useState, useCallback } from 'react';
+
+import React, { useState, useCallback, useEffect } from 'react';
 import { AppState } from './types.js';
-import { extractCodeFromImage, verifyGoalCompletion, createVerificationChat } from './services/geminiService.js';
+import { extractCodeFromImage, verifyGoalCompletion, createVerificationChat, summarizeGoal } from './services/geminiService.js';
+import { getUserHistory, saveUserHistory } from './services/authService.js';
+import { saveActiveGoal, loadActiveGoal, clearActiveGoal } from './services/goalStateService.js';
 import { fileToBase64 } from './utils/fileUtils.js';
 import { formatDuration } from './utils/timeUtils.js';
 import Header from './components/Header.js';
@@ -9,9 +12,13 @@ import GoalSetter from './components/GoalSetter.js';
 import ProofUploader from './components/ProofUploader.js';
 import VerificationResult from './components/VerificationResult.js';
 import Alert from './components/Alert.js';
+import EmergencyTest from './components/EmergencyTest.js';
+import GoalHistory from './components/GoalHistory.js';
+import Auth from './components/Auth.js';
 
 const App = () => {
-  const [appState, setAppState] = useState(AppState.AWAITING_CODE);
+  const [appState, setAppState] = useState(AppState.AUTH);
+  const [currentUser, setCurrentUser] = useState(null);
   const [secretCode, setSecretCode] = useState(null);
   const [secretCodeImage, setSecretCodeImage] = useState(null);
   const [goal, setGoal] = useState('');
@@ -19,21 +26,25 @@ const App = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   
-  // State for timer
   const [goalSetTime, setGoalSetTime] = useState(null);
   const [completionDuration, setCompletionDuration] = useState(null);
   const [timeLimitInMs, setTimeLimitInMs] = useState(null);
   const [consequence, setConsequence] = useState(null);
   const [mustLeaveTime, setMustLeaveTime] = useState(null);
+  
   const [completionReason, setCompletionReason] = useState(null);
+  const [completionTrigger, setCompletionTrigger] = useState({ reason: null });
 
-  // State for the new chat feature
   const [chat, setChat] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
   const [isChatLoading, setIsChatLoading] = useState(false);
 
-  const resetToStart = () => {
-    setAppState(AppState.AWAITING_CODE);
+  const resetToStart = (isLogout = false) => {
+    clearActiveGoal(currentUser);
+    setAppState(isLogout ? AppState.AUTH : AppState.AWAITING_CODE);
+    if (isLogout) {
+      setCurrentUser(null);
+    }
     setSecretCode(null);
     setSecretCodeImage(null);
     setGoal('');
@@ -49,8 +60,39 @@ const App = () => {
     setConsequence(null);
     setMustLeaveTime(null);
     setCompletionReason(null);
+    setCompletionTrigger({ reason: null });
   };
   
+  const restoreSession = (email) => {
+      const savedState = loadActiveGoal(email);
+      if (savedState) {
+          setSecretCode(savedState.secretCode);
+          setSecretCodeImage(savedState.secretCodeImage);
+          setGoal(savedState.goal);
+          setGoalSetTime(savedState.goalSetTime);
+          setTimeLimitInMs(savedState.timeLimitInMs);
+          setConsequence(savedState.consequence);
+          setMustLeaveTime(savedState.mustLeaveTime);
+          setAppState(AppState.GOAL_SET);
+      } else {
+          setAppState(AppState.AWAITING_CODE);
+      }
+  };
+
+  const handleLogin = (email) => {
+    setCurrentUser(email);
+    restoreSession(email);
+  };
+
+  const handleContinueAsGuest = () => {
+    setCurrentUser(null);
+    restoreSession(null);
+  };
+  
+  const handleLogout = () => {
+    resetToStart(true);
+  };
+
   const handleCodeImageSubmit = useCallback(async (file) => {
     setIsLoading(true);
     setError(null);
@@ -85,25 +127,42 @@ const App = () => {
   }, []);
 
   const handleGoalSubmit = useCallback((payload) => {
+    const goalStartTime = Date.now();
+    
+    let totalMs = 0;
+    if (payload.timeLimit) {
+        totalMs = (payload.timeLimit.hours * 3600 + payload.timeLimit.minutes * 60) * 1000;
+    }
+    const newTimeLimitInMs = totalMs > 0 ? totalMs : null;
+
+    let newMustLeaveTime = null;
+    if (payload.mustLeaveTime) {
+        const mustLeaveMs = (payload.mustLeaveTime.hours * 3600 + payload.mustLeaveTime.minutes * 60) * 1000;
+        if (mustLeaveMs > 0) {
+            newMustLeaveTime = goalStartTime + mustLeaveMs;
+        }
+    }
+    
     setGoal(payload.goal);
     setConsequence(payload.consequence);
-    if (payload.timeLimit) {
-        const totalMs = (payload.timeLimit.hours * 3600 + payload.timeLimit.minutes * 60) * 1000;
-        setTimeLimitInMs(totalMs > 0 ? totalMs : null);
-    } else {
-        setTimeLimitInMs(null);
-    }
-    if (payload.mustLeaveTime) {
-        const totalMs = (payload.mustLeaveTime.hours * 3600 + payload.mustLeaveTime.minutes * 60) * 1000;
-        if (totalMs > 0) {
-            setMustLeaveTime(Date.now() + totalMs);
-        }
-    } else {
-        setMustLeaveTime(null);
-    }
-    setGoalSetTime(Date.now());
+    setTimeLimitInMs(newTimeLimitInMs);
+    setMustLeaveTime(newMustLeaveTime);
+    setGoalSetTime(goalStartTime);
     setAppState(AppState.GOAL_SET);
-  }, []);
+
+    if (secretCode && secretCodeImage) {
+        const activeState = {
+            secretCode,
+            secretCodeImage,
+            goal: payload.goal,
+            goalSetTime: goalStartTime,
+            timeLimitInMs: newTimeLimitInMs,
+            consequence: payload.consequence,
+            mustLeaveTime: newMustLeaveTime,
+        };
+        saveActiveGoal(currentUser, activeState);
+    }
+  }, [secretCode, secretCodeImage, currentUser]);
   
   const getEffectiveGoal = useCallback(() => {
     if (timeLimitInMs && goalSetTime && consequence) {
@@ -116,31 +175,24 @@ const App = () => {
   }, [goal, timeLimitInMs, goalSetTime, consequence]);
 
   const handleMustLeaveTimeUp = useCallback(() => {
-    setAppState(currentState => {
-        if (currentState !== AppState.GOAL_SET) {
-            return currentState;
-        }
-        
-        setVerificationFeedback({
-            summary: "Your 'Must Leave' time has been reached. Here is your code as requested.",
-            approved_aspects: [],
-            missing_aspects: ["Goal was not verified before the deadline."]
-        });
-        if (goalSetTime) {
-            const duration = Date.now() - goalSetTime;
-            setCompletionDuration(formatDuration(duration));
-        }
-        setCompletionReason('must-leave');
-        return AppState.GOAL_COMPLETED;
-    });
-}, [goalSetTime]);
+    if (appState === AppState.GOAL_SET) {
+        setCompletionTrigger({ reason: 'must-leave' });
+    }
+  }, [appState]);
 
   const handleProofImageSubmit = useCallback(async (files) => {
+    const pauseStartTime = Date.now();
     setIsLoading(true);
     setError(null);
     setVerificationFeedback(null);
     setChat(null);
     setChatMessages([]);
+
+    const resumeTimers = () => {
+        const pausedMs = Date.now() - pauseStartTime;
+        setGoalSetTime(prev => (prev ? prev + pausedMs : null));
+        setMustLeaveTime(prev => (prev ? prev + pausedMs : null));
+    };
 
     try {
         const imagePayloads = await Promise.all(
@@ -151,28 +203,24 @@ const App = () => {
         );
         
         const finalGoal = getEffectiveGoal();
-
         const result = await verifyGoalCompletion(finalGoal, imagePayloads);
         setVerificationFeedback(result.feedback);
 
         if (result.completed) {
-            if (goalSetTime) {
-                const duration = Date.now() - goalSetTime;
-                setCompletionDuration(formatDuration(duration));
-            }
-            setCompletionReason('verified');
-            setAppState(AppState.GOAL_COMPLETED);
+            setCompletionTrigger({ reason: 'verified' });
         } else {
+            resumeTimers();
             const chatSession = createVerificationChat(finalGoal, imagePayloads, result);
             setChat(chatSession);
             setChatMessages([{ role: 'model', text: result.feedback.summary }]);
+            setIsLoading(false);
         }
     } catch (err) {
+        resumeTimers();
         setError(err.message);
-    } finally {
         setIsLoading(false);
     }
-  }, [goal, goalSetTime, getEffectiveGoal]);
+  }, [goalSetTime, getEffectiveGoal]);
   
   const handleSendChatMessage = useCallback(async (message) => {
     if (!chat) return;
@@ -190,13 +238,8 @@ const App = () => {
         setChatMessages(prev => [...prev, { role: 'model', text: newResult.feedback.summary }]);
         
         if (newResult.completed) {
-            if (goalSetTime) {
-                const duration = Date.now() - goalSetTime;
-                setCompletionDuration(formatDuration(duration));
-            }
-            setCompletionReason('verified');
             setTimeout(() => {
-                setAppState(AppState.GOAL_COMPLETED);
+                setCompletionTrigger({ reason: 'verified' });
             }, 1500);
         }
 
@@ -207,7 +250,54 @@ const App = () => {
     } finally {
         setIsChatLoading(false);
     }
-  }, [chat, goalSetTime]);
+  }, [chat]);
+
+  useEffect(() => {
+      const saveAndCompleteGoal = async () => {
+          if (!completionTrigger.reason || !goalSetTime) return;
+          
+          setIsLoading(true);
+
+          const reason = completionTrigger.reason;
+          const endTime = Date.now();
+          const duration = endTime - goalSetTime;
+          const finalGoal = getEffectiveGoal();
+
+          if (reason === 'must-leave') {
+            setVerificationFeedback({ summary: "Your 'Must Leave' time has been reached. Here is your code as requested.", approved_aspects: [], missing_aspects: ["Goal was not verified before the deadline."] });
+          } else if (reason === 'emergency') {
+            setVerificationFeedback(null);
+          }
+          
+          try {
+              const goalSummary = await summarizeGoal(finalGoal);
+              const newEntry = { id: endTime, goalSummary, fullGoal: finalGoal, startTime: goalSetTime, endTime, duration, completionReason: reason };
+              
+              if (currentUser) {
+                  const history = getUserHistory(currentUser);
+                  history.push(newEntry);
+                  saveUserHistory(currentUser, history);
+              } else {
+                  const historyJSON = localStorage.getItem('goalUnboxHistory');
+                  const history = historyJSON ? JSON.parse(historyJSON) : [];
+                  history.push(newEntry);
+                  localStorage.setItem('goalUnboxHistory', JSON.stringify(history));
+              }
+
+          } catch (e) {
+              console.error("Failed to save goal to history:", e);
+          }
+          
+          clearActiveGoal(currentUser);
+          setCompletionDuration(formatDuration(duration > 0 ? duration : 0));
+          setCompletionReason(reason);
+          setAppState(AppState.GOAL_COMPLETED);
+          setIsLoading(false);
+          setCompletionTrigger({ reason: null });
+      };
+
+      saveAndCompleteGoal();
+  }, [completionTrigger, goalSetTime, getEffectiveGoal, currentUser]);
 
   const handleRetry = () => {
     setError(null);
@@ -217,33 +307,47 @@ const App = () => {
     setAppState(AppState.GOAL_SET);
   };
 
+  const handleStartEmergency = () => {
+    setError(null);
+    setAppState(AppState.EMERGENCY_TEST);
+  };
+
+  const handleEmergencySuccess = useCallback(() => {
+    setCompletionTrigger({ reason: 'emergency' });
+  }, []);
+
+  const handleEmergencyCancel = () => {
+      setAppState(AppState.GOAL_SET);
+  };
+
+  const handleShowHistory = () => {
+      setAppState(AppState.HISTORY_VIEW);
+  };
+
   const renderContent = () => {
     switch (appState) {
+      case AppState.AUTH:
+        return React.createElement(Auth, { onLogin: handleLogin, onContinueAsGuest: handleContinueAsGuest });
       case AppState.AWAITING_CODE:
-        return React.createElement(CodeUploader, { onCodeImageSubmit: handleCodeImageSubmit, isLoading: isLoading });
+        return React.createElement(CodeUploader, { onCodeImageSubmit: handleCodeImageSubmit, isLoading: isLoading, onShowHistory: handleShowHistory, onLogout: handleLogout, currentUser: currentUser });
       case AppState.AWAITING_GOAL:
         return React.createElement(GoalSetter, { onGoalSubmit: handleGoalSubmit, isLoading: isLoading });
       case AppState.GOAL_SET:
-        return React.createElement(ProofUploader, { 
-                    goal: goal, 
-                    onProofImageSubmit: handleProofImageSubmit, 
-                    isLoading: isLoading, 
-                    goalSetTime: goalSetTime,
-                    timeLimitInMs: timeLimitInMs,
-                    consequence: consequence,
-                    mustLeaveTime: mustLeaveTime,
-                    onMustLeaveTimeUp: handleMustLeaveTimeUp
-                });
+        return React.createElement(ProofUploader, { goal: goal, onProofImageSubmit: handleProofImageSubmit, isLoading: isLoading, goalSetTime: goalSetTime, timeLimitInMs: timeLimitInMs, consequence: consequence, mustLeaveTime: mustLeaveTime, onMustLeaveTimeUp: handleMustLeaveTimeUp, onStartEmergency: handleStartEmergency });
+      case AppState.EMERGENCY_TEST:
+        return React.createElement(EmergencyTest, { onSuccess: handleEmergencySuccess, onCancel: handleEmergencyCancel });
+      case AppState.HISTORY_VIEW:
+        const history = currentUser ? getUserHistory(currentUser) : JSON.parse(localStorage.getItem('goalUnboxHistory') || '[]');
+        return React.createElement(GoalHistory, { onBack: () => setAppState(AppState.AWAITING_CODE), history: history });
       case AppState.GOAL_COMPLETED:
-        return React.createElement(VerificationResult, { isSuccess: true, secretCodeImage: secretCodeImage, feedback: verificationFeedback, onRetry: handleRetry, onReset: resetToStart, completionDuration: completionDuration, completionReason: completionReason });
+        return React.createElement(VerificationResult, { isSuccess: true, secretCodeImage: secretCodeImage, feedback: verificationFeedback, onRetry: handleRetry, onReset: () => resetToStart(false), completionDuration: completionDuration, completionReason: completionReason });
       default:
-        return React.createElement(CodeUploader, { onCodeImageSubmit: handleCodeImageSubmit, isLoading: isLoading });
+        return React.createElement(Auth, { onLogin: handleLogin, onContinueAsGuest: handleContinueAsGuest });
     }
   };
 
   return React.createElement(
-    'div',
-    { className: 'min-h-screen flex flex-col items-center justify-center p-4 bg-slate-900' },
+    'div', { className: 'min-h-screen flex flex-col items-center justify-center p-4 bg-slate-900' },
     React.createElement('style', {}, `
           @keyframes fade-in {
             from { opacity: 0; transform: translateY(10px); }
@@ -253,22 +357,11 @@ const App = () => {
         `),
     React.createElement(Header, null),
     React.createElement(
-      'main',
-      { className: 'w-full flex flex-col items-center justify-center' },
-      error && React.createElement(Alert, { message: error, type: 'error' }),
+      'main', { className: 'w-full flex flex-col items-center justify-center' },
+      error && appState !== AppState.AUTH && React.createElement(Alert, { message: error, type: 'error' }),
       appState === AppState.GOAL_SET && verificationFeedback && React.createElement(
-        'div',
-        { className: 'w-full max-w-lg mb-4' },
-        React.createElement(VerificationResult, { 
-          isSuccess: false, 
-          secretCodeImage: null,
-          feedback: verificationFeedback, 
-          onRetry: handleRetry, 
-          onReset: resetToStart,
-          chatMessages: chatMessages,
-          onSendChatMessage: handleSendChatMessage,
-          isChatLoading: isChatLoading
-        })
+        'div', { className: 'w-full max-w-lg mb-4' },
+        React.createElement(VerificationResult, { isSuccess: false, secretCodeImage: null, feedback: verificationFeedback, onRetry: handleRetry, onReset: () => resetToStart(false), chatMessages: chatMessages, onSendChatMessage: handleSendChatMessage, isChatLoading: isChatLoading })
       ),
       !(appState === AppState.GOAL_SET && verificationFeedback) && renderContent()
     )

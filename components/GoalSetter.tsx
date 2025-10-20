@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import Spinner from './Spinner';
 
 interface TimeLimit {
@@ -28,6 +28,28 @@ const GoalSetter: React.FC<GoalSetterProps> = ({ onGoalSubmit, isLoading }) => {
   const [mustLeaveHours, setMustLeaveHours] = useState('');
   const [mustLeaveMinutes, setMustLeaveMinutes] = useState('');
 
+  const isMustLeaveDisabledByTime = useMemo(() => {
+    // Tunisia is UTC+1.
+    const tunisiaHour = (new Date().getUTCHours() + 1) % 24;
+    // Disable if 8 PM or later
+    return tunisiaHour >= 20;
+  }, []);
+
+  const handleTimeLimitChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const isChecked = e.target.checked;
+    setIsTimeLimitEnabled(isChecked);
+    if (isChecked) {
+      setIsMustLeaveModeEnabled(false);
+    }
+  };
+
+  const handleMustLeaveChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const isChecked = e.target.checked;
+    setIsMustLeaveModeEnabled(isChecked);
+    if (isChecked) {
+      setIsTimeLimitEnabled(false);
+    }
+  };
 
   const handleSubmit = useCallback(() => {
     if (goal.trim()) {
@@ -55,14 +77,15 @@ const GoalSetter: React.FC<GoalSetterProps> = ({ onGoalSubmit, isLoading }) => {
       />
 
       <div className="border-t border-slate-700 pt-6 mb-6">
-        <label className="flex items-center gap-3 cursor-pointer">
+        <label className={`flex items-center gap-3 ${isMustLeaveModeEnabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
             <input 
                 type="checkbox"
                 checked={isTimeLimitEnabled}
-                onChange={(e) => setIsTimeLimitEnabled(e.target.checked)}
-                className="h-5 w-5 rounded bg-slate-700 border-slate-500 text-cyan-500 focus:ring-cyan-500"
+                onChange={handleTimeLimitChange}
+                disabled={isMustLeaveModeEnabled}
+                className="h-5 w-5 rounded bg-slate-700 border-slate-500 text-cyan-500 focus:ring-cyan-500 disabled:opacity-50"
             />
-            <span className="text-slate-300 font-semibold">Add a Time Limit & Consequence (Optional)</span>
+            <span className={`text-slate-300 font-semibold ${isMustLeaveModeEnabled ? 'text-slate-500' : ''}`}>Add a Time Limit & Consequence (Optional)</span>
         </label>
 
         {isTimeLimitEnabled && (
@@ -105,16 +128,20 @@ const GoalSetter: React.FC<GoalSetterProps> = ({ onGoalSubmit, isLoading }) => {
       </div>
 
        <div className="border-t border-slate-700 pt-6 mb-6">
-        <label className="flex items-center gap-3 cursor-pointer">
+        <label className={`flex items-center gap-3 ${(isTimeLimitEnabled || isMustLeaveDisabledByTime) ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
             <input 
                 type="checkbox"
                 checked={isMustLeaveModeEnabled}
-                onChange={(e) => setIsMustLeaveModeEnabled(e.target.checked)}
-                className="h-5 w-5 rounded bg-slate-700 border-slate-500 text-cyan-500 focus:ring-cyan-500"
+                onChange={handleMustLeaveChange}
+                disabled={isTimeLimitEnabled || isMustLeaveDisabledByTime}
+                className="h-5 w-5 rounded bg-slate-700 border-slate-500 text-cyan-500 focus:ring-cyan-500 disabled:opacity-50"
             />
-            <span className="text-slate-300 font-semibold">Add Must Leave Time (Optional)</span>
+            <span className={`text-slate-300 font-semibold ${(isTimeLimitEnabled || isMustLeaveDisabledByTime) ? 'text-slate-500' : ''}`}>Add Must Leave Time (Optional)</span>
         </label>
         <p className="text-xs text-slate-500 text-left mt-1 ml-8">Set a hard deadline to get your code back, even if the goal isn't complete.</p>
+        {isMustLeaveDisabledByTime && (
+            <p className="text-xs text-amber-400/80 text-left mt-1 ml-8">This option is only available before 8:00 PM (20:00) Tunisia time.</p>
+        )}
 
         {isMustLeaveModeEnabled && (
             <div className="mt-4 space-y-4 text-left animate-fade-in">

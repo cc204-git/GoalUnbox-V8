@@ -1,5 +1,5 @@
 {
-  "name": "Goal Unbox",
+  "name": "Goal Unbox With Table",
   "description": "A productivity app that helps users focus on a goal by sequestering a 3-digit unlock code. The code is only revealed after an AI-powered verification confirms the user has submitted image proof of their goal's completion.",
   "requestFramePermissions": [
     "camera"

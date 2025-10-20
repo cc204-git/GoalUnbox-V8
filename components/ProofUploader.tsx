@@ -13,6 +13,7 @@ interface ProofUploaderProps {
   consequence: string | null;
   mustLeaveTime: number | null;
   onMustLeaveTimeUp: () => void;
+  onStartEmergency: () => void;
 }
 
 interface ProofFile {
@@ -29,7 +30,7 @@ const PDFIcon = () => (
 );
 
 
-const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeLimitInMs, consequence, mustLeaveTime, onMustLeaveTimeUp }) => {
+const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeLimitInMs, consequence, mustLeaveTime, onMustLeaveTimeUp, onStartEmergency }) => {
   const [proofFiles, setProofFiles] = useState<ProofFile[]>([]);
   const [showCamera, setShowCamera] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -37,8 +38,30 @@ const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit,
   const [timeLeft, setTimeLeft] = useState<string | null>(null);
   const [isTimeUp, setIsTimeUp] = useState(false);
   const [mustLeaveTimeLeft, setMustLeaveTimeLeft] = useState<string | null>(null);
+  const [elapsedTime, setElapsedTime] = useState<string | null>(null);
 
+  // Effect for the elapsed time count-up timer
   useEffect(() => {
+    if (!goalSetTime || isLoading) return;
+
+    const interval = setInterval(() => {
+      const now = Date.now();
+      const elapsed = now - goalSetTime;
+      setElapsedTime(formatCountdown(elapsed > 0 ? elapsed : 0));
+    }, 1000);
+
+    // Set initial value immediately to avoid 1s delay
+    const now = Date.now();
+    const elapsed = now - goalSetTime;
+    setElapsedTime(formatCountdown(elapsed > 0 ? elapsed : 0));
+
+    return () => clearInterval(interval);
+  }, [goalSetTime, isLoading]);
+
+  // Effect for countdowns and consequences
+  useEffect(() => {
+    if (isLoading) return; // Pause timers during verification
+
     let consequenceInterval: number | undefined;
     let mustLeaveInterval: number | undefined;
 
@@ -104,7 +127,7 @@ const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit,
       if (consequenceInterval) clearInterval(consequenceInterval);
       if (mustLeaveInterval) clearInterval(mustLeaveInterval);
     };
-  }, [goal, goalSetTime, timeLimitInMs, consequence, isTimeUp, mustLeaveTime, onMustLeaveTimeUp]);
+  }, [goal, goalSetTime, timeLimitInMs, consequence, isTimeUp, mustLeaveTime, onMustLeaveTimeUp, isLoading]);
 
 
   const addFiles = (newFiles: File[]) => {
@@ -165,22 +188,30 @@ const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit,
   return (
     <>
       {showCamera && <CameraCapture onCapture={handleCapture} onCancel={() => setShowCamera(false)} />}
-      <div className="bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full max-w-lg text-center animate-fade-in">
+      <div className="bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full max-w-2xl text-center animate-fade-in">
         <h2 className="text-2xl font-semibold mb-2 text-cyan-300">Your Goal Is Set!</h2>
         
-        {mustLeaveTimeLeft && (
-            <div className="my-4 p-3 rounded-lg border bg-amber-900/50 border-amber-500/50">
-                <p className="text-sm text-amber-300 uppercase tracking-wider">Code Reveals In</p>
-                <p className="text-3xl font-mono text-amber-200">{mustLeaveTimeLeft}</p>
+        <div className="my-4 flex flex-wrap justify-center gap-4">
+            <div className="flex-1 min-w-[150px] p-3 rounded-lg border bg-slate-900/50 border-slate-700 text-center">
+                <p className="text-sm text-slate-400 uppercase tracking-wider">Time Elapsed</p>
+                <p className="text-3xl font-mono text-cyan-300">{elapsedTime || '00:00:00'}</p>
             </div>
-        )}
 
-        {timeLeft && (
-            <div className={`my-4 p-3 rounded-lg border ${isTimeUp ? 'bg-red-900/50 border-red-500/50' : 'bg-slate-900/50 border-slate-700'}`}>
-                <p className="text-sm text-slate-400 uppercase tracking-wider">{isTimeUp ? "Time's Up!" : 'Time Remaining'}</p>
-                <p className={`text-3xl font-mono ${isTimeUp ? 'text-red-300' : 'text-cyan-300'}`}>{timeLeft}</p>
-            </div>
-        )}
+            {timeLeft && (
+                <div className={`flex-1 min-w-[150px] p-3 rounded-lg border ${isTimeUp ? 'bg-red-900/50 border-red-500/50' : 'bg-slate-900/50 border-slate-700'} text-center`}>
+                    <p className="text-sm text-slate-400 uppercase tracking-wider">{isTimeUp ? "Time's Up!" : 'Time Remaining'}</p>
+                    <p className={`text-3xl font-mono ${isTimeUp ? 'text-red-300' : 'text-cyan-300'}`}>{timeLeft}</p>
+                </div>
+            )}
+            
+            {mustLeaveTimeLeft && (
+                <div className="flex-1 min-w-[150px] p-3 rounded-lg border bg-amber-900/50 border-amber-500/50 text-center">
+                    <p className="text-sm text-amber-300 uppercase tracking-wider">Code Reveals In</p>
+                    <p className="text-3xl font-mono text-amber-200">{mustLeaveTimeLeft}</p>
+                </div>
+            )}
+        </div>
+        
         <div className={`bg-slate-900/50 p-4 rounded-lg my-6 border ${isTimeUp ? 'border-red-500/50' : 'border-slate-700'}`}>
           <p className="text-slate-300 text-lg whitespace-pre-wrap text-left">"{displayGoal}"</p>
         </div>
@@ -252,6 +283,19 @@ const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit,
         >
           {isLoading ? <><Spinner /><span className="ml-2">Verifying...</span></> : 'Submit Proof for Verification'}
         </button>
+
+        <div className="mt-8 text-center">
+            <button
+                onClick={onStartEmergency}
+                disabled={isLoading}
+                className="text-sm text-slate-500 hover:text-red-400 transition-colors duration-300 flex items-center justify-center gap-2 mx-auto"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.21 3.03-1.742 3.03H4.42c-1.532 0-2.492-1.696-1.742-3.03l5.58-9.92zM10 13a1 1 0 110-2 1 1 0 010 2zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+                Need your code back now? Try the Emergency Exit.
+            </button>
+        </div>
       </div>
     </>
   );

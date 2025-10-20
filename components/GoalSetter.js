@@ -1,4 +1,5 @@
-import React, { useState, useCallback } from 'react';
+
+import React, { useState, useCallback, useMemo } from 'react';
 import Spinner from './Spinner.js';
 
 const GoalSetter = ({ onGoalSubmit, isLoading }) => {
@@ -11,6 +12,30 @@ const GoalSetter = ({ onGoalSubmit, isLoading }) => {
   const [mustLeaveHours, setMustLeaveHours] = useState('');
   const [mustLeaveMinutes, setMustLeaveMinutes] = useState('');
 
+  const isMustLeaveDisabledByTime = useMemo(() => {
+    // Tunisia is UTC+1.
+    const tunisiaHour = (new Date().getUTCHours() + 1) % 24;
+    // Disable if 8 PM or later
+    return tunisiaHour >= 20;
+  }, []);
+
+  const handleTimeLimitChange = (e) => {
+    const isChecked = e.target.checked;
+    setIsTimeLimitEnabled(isChecked);
+    if (isChecked) {
+      setIsMustLeaveModeEnabled(false);
+    }
+  };
+
+  const handleMustLeaveChange = (e) => {
+    const isChecked = e.target.checked;
+    setIsMustLeaveModeEnabled(isChecked);
+    if (isChecked) {
+      setIsTimeLimitEnabled(false);
+    }
+  };
+
+
   const handleSubmit = useCallback(() => {
     if (goal.trim()) {
       const payload = {
@@ -22,6 +47,34 @@ const GoalSetter = ({ onGoalSubmit, isLoading }) => {
       onGoalSubmit(payload);
     }
   }, [goal, onGoalSubmit, isTimeLimitEnabled, hours, minutes, consequence, isMustLeaveModeEnabled, mustLeaveHours, mustLeaveMinutes]);
+
+  const timeLimitContent = isTimeLimitEnabled ? React.createElement(
+      'div', { className: 'mt-4 space-y-4 text-left animate-fade-in' },
+      React.createElement('div', null,
+          React.createElement('label', { className: 'block text-sm font-medium text-slate-400 mb-1' }, 'Time Limit'),
+          React.createElement('div', { className: 'flex items-center gap-2' },
+              React.createElement('input', { type: 'number', value: hours, onChange: (e) => setHours(e.target.value), placeholder: 'Hours', min: '0', className: 'w-full bg-slate-900 border border-slate-600 rounded-lg p-2 text-white placeholder-slate-500 focus:ring-1 focus:ring-cyan-500' }),
+              React.createElement('input', { type: 'number', value: minutes, onChange: (e) => setMinutes(e.target.value), placeholder: 'Minutes', min: '0', max: '59', className: 'w-full bg-slate-900 border border-slate-600 rounded-lg p-2 text-white placeholder-slate-500 focus:ring-1 focus:ring-cyan-500' })
+          )
+      ),
+      React.createElement('div', null,
+          React.createElement('label', { htmlFor: 'consequence', className: 'block text-sm font-medium text-slate-400 mb-1' }, 'Consequence'),
+          React.createElement('textarea', { id: 'consequence', value: consequence, onChange: (e) => setConsequence(e.target.value), placeholder: "e.g., 'I must also clean the garage.'", className: 'w-full h-24 bg-slate-900 border border-slate-600 rounded-lg p-3 text-white placeholder-slate-500 focus:ring-1 focus:ring-cyan-500', disabled: isLoading })
+      )
+  ) : null;
+
+  const mustLeaveContent = isMustLeaveModeEnabled ? React.createElement(
+      'div', { className: 'mt-4 space-y-4 text-left animate-fade-in' },
+      React.createElement('div', null,
+          React.createElement('label', { className: 'block text-sm font-medium text-slate-400 mb-1' }, 'Reveal Code After'),
+          React.createElement('div', { className: 'flex items-center gap-2' },
+              React.createElement('input', { type: 'number', value: mustLeaveHours, onChange: (e) => setMustLeaveHours(e.target.value), placeholder: 'Hours', min: '0', className: 'w-full bg-slate-900 border border-slate-600 rounded-lg p-2 text-white placeholder-slate-500 focus:ring-1 focus:ring-cyan-500' }),
+              React.createElement('input', { type: 'number', value: mustLeaveMinutes, onChange: (e) => setMustLeaveMinutes(e.target.value), placeholder: 'Minutes', min: '0', max: '59', className: 'w-full bg-slate-900 border border-slate-600 rounded-lg p-2 text-white placeholder-slate-500 focus:ring-1 focus:ring-cyan-500' })
+          )
+      )
+  ) : null;
+  
+  const mustLeaveDisabledMessage = isMustLeaveDisabledByTime ? React.createElement('p', { className: 'text-xs text-amber-400/80 text-left mt-1 ml-8' }, "This option is only available before 8:00 PM (20:00) Tunisia time.") : null;
 
   return React.createElement(
     'div',
@@ -39,43 +92,34 @@ const GoalSetter = ({ onGoalSubmit, isLoading }) => {
         'div',
         { className: 'border-t border-slate-700 pt-6 mb-6' },
         React.createElement(
-            'label', { className: 'flex items-center gap-3 cursor-pointer' },
-            React.createElement('input', { type: 'checkbox', checked: isTimeLimitEnabled, onChange: (e) => setIsTimeLimitEnabled(e.target.checked), className: 'h-5 w-5 rounded bg-slate-700 border-slate-500 text-cyan-500 focus:ring-cyan-500' }),
-            React.createElement('span', { className: 'text-slate-300 font-semibold' }, 'Add a Time Limit & Consequence (Optional)')
+            'label', { className: `flex items-center gap-3 ${isMustLeaveModeEnabled ? 'cursor-not-allowed' : 'cursor-pointer'}` },
+            React.createElement('input', { 
+                type: 'checkbox', 
+                checked: isTimeLimitEnabled, 
+                onChange: handleTimeLimitChange,
+                disabled: isMustLeaveModeEnabled,
+                className: 'h-5 w-5 rounded bg-slate-700 border-slate-500 text-cyan-500 focus:ring-cyan-500 disabled:opacity-50' 
+            }),
+            React.createElement('span', { className: `text-slate-300 font-semibold ${isMustLeaveModeEnabled ? 'text-slate-500' : ''}` }, 'Add a Time Limit & Consequence (Optional)')
         ),
-        isTimeLimitEnabled && React.createElement(
-            'div', { className: 'mt-4 space-y-4 text-left animate-fade-in' },
-            React.createElement('div', null,
-                React.createElement('label', { className: 'block text-sm font-medium text-slate-400 mb-1' }, 'Time Limit'),
-                React.createElement('div', { className: 'flex items-center gap-2' },
-                    React.createElement('input', { type: 'number', value: hours, onChange: (e) => setHours(e.target.value), placeholder: 'Hours', min: '0', className: 'w-full bg-slate-900 border border-slate-600 rounded-lg p-2 text-white placeholder-slate-500 focus:ring-1 focus:ring-cyan-500' }),
-                    React.createElement('input', { type: 'number', value: minutes, onChange: (e) => setMinutes(e.target.value), placeholder: 'Minutes', min: '0', max: '59', className: 'w-full bg-slate-900 border border-slate-600 rounded-lg p-2 text-white placeholder-slate-500 focus:ring-1 focus:ring-cyan-500' })
-                )
-            ),
-            React.createElement('div', null,
-                React.createElement('label', { htmlFor: 'consequence', className: 'block text-sm font-medium text-slate-400 mb-1' }, 'Consequence'),
-                React.createElement('textarea', { id: 'consequence', value: consequence, onChange: (e) => setConsequence(e.target.value), placeholder: "e.g., 'I must also clean the garage.'", className: 'w-full h-24 bg-slate-900 border border-slate-600 rounded-lg p-3 text-white placeholder-slate-500 focus:ring-1 focus:ring-cyan-500', disabled: isLoading })
-            )
-        )
+        timeLimitContent
     ),
     React.createElement(
         'div',
         { className: 'border-t border-slate-700 pt-6 mb-6' },
-        React.createElement('label', { className: 'flex items-center gap-3 cursor-pointer' },
-            React.createElement('input', { type: 'checkbox', checked: isMustLeaveModeEnabled, onChange: (e) => setIsMustLeaveModeEnabled(e.target.checked), className: 'h-5 w-5 rounded bg-slate-700 border-slate-500 text-cyan-500 focus:ring-cyan-500' }),
-            React.createElement('span', { className: 'text-slate-300 font-semibold' }, 'Add Must Leave Time (Optional)')
+        React.createElement('label', { className: `flex items-center gap-3 ${(isTimeLimitEnabled || isMustLeaveDisabledByTime) ? 'cursor-not-allowed' : 'cursor-pointer'}` },
+            React.createElement('input', { 
+                type: 'checkbox', 
+                checked: isMustLeaveModeEnabled, 
+                onChange: handleMustLeaveChange,
+                disabled: isTimeLimitEnabled || isMustLeaveDisabledByTime,
+                className: 'h-5 w-5 rounded bg-slate-700 border-slate-500 text-cyan-500 focus:ring-cyan-500 disabled:opacity-50' 
+            }),
+            React.createElement('span', { className: `text-slate-300 font-semibold ${(isTimeLimitEnabled || isMustLeaveDisabledByTime) ? 'text-slate-500' : ''}` }, 'Add Must Leave Time (Optional)')
         ),
         React.createElement('p', { className: 'text-xs text-slate-500 text-left mt-1 ml-8' }, "Set a hard deadline to get your code back, even if the goal isn't complete."),
-        isMustLeaveModeEnabled && React.createElement(
-            'div', { className: 'mt-4 space-y-4 text-left animate-fade-in' },
-            React.createElement('div', null,
-                React.createElement('label', { className: 'block text-sm font-medium text-slate-400 mb-1' }, 'Reveal Code After'),
-                React.createElement('div', { className: 'flex items-center gap-2' },
-                    React.createElement('input', { type: 'number', value: mustLeaveHours, onChange: (e) => setMustLeaveHours(e.target.value), placeholder: 'Hours', min: '0', className: 'w-full bg-slate-900 border border-slate-600 rounded-lg p-2 text-white placeholder-slate-500 focus:ring-1 focus:ring-cyan-500' }),
-                    React.createElement('input', { type: 'number', value: mustLeaveMinutes, onChange: (e) => setMustLeaveMinutes(e.target.value), placeholder: 'Minutes', min: '0', max: '59', className: 'w-full bg-slate-900 border border-slate-600 rounded-lg p-2 text-white placeholder-slate-500 focus:ring-1 focus:ring-cyan-500' })
-                )
-            )
-        )
+        mustLeaveDisabledMessage,
+        mustLeaveContent
     ),
     React.createElement(
       'button',
