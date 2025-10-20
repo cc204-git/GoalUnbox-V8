@@ -131,7 +131,7 @@ export const gradeFrenchTest = async (questions, userAnswers) => {
 };
 
 export const summarizeGoal = async (goal) => {
-    const prompt = `Summarize the following user goal... Goal: "${goal}"`;
+    const prompt = `Summarize the following user goal into a concise phrase of 3 to 5 words, suitable for a table entry. Goal: "${goal}"`;
     try {
         const ai = getAiClient();
         const response = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt });

@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useEffect } from 'react';
 import { AppState, CompletedGoal, ActiveGoalState } from './types';
 import { 
@@ -33,6 +34,7 @@ const App: React.FC = () => {
   const [secretCode, setSecretCode] = useState<string | null>(null);
   const [secretCodeImage, setSecretCodeImage] = useState<string | null>(null);
   const [goal, setGoal] = useState<string>('');
+  const [subject, setSubject] = useState<string>('');
   const [verificationFeedback, setVerificationFeedback] = useState<VerificationFeedback | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -89,6 +91,7 @@ const App: React.FC = () => {
     setSecretCode(null);
     setSecretCodeImage(null);
     setGoal('');
+    setSubject('');
     setVerificationFeedback(null);
     setIsLoading(false);
     setError(null);
@@ -110,6 +113,7 @@ const App: React.FC = () => {
           setSecretCode(savedState.secretCode);
           setSecretCodeImage(savedState.secretCodeImage);
           setGoal(savedState.goal);
+          setSubject(savedState.subject);
           setGoalSetTime(savedState.goalSetTime);
           setTimeLimitInMs(savedState.timeLimitInMs);
           setConsequence(savedState.consequence);
@@ -178,6 +182,7 @@ const App: React.FC = () => {
         if (mustLeaveMs > 0) newMustLeaveTime = goalStartTime + mustLeaveMs;
     }
     setGoal(payload.goal);
+    setSubject(payload.subject);
     setConsequence(payload.consequence);
     setTimeLimitInMs(newTimeLimitInMs);
     setMustLeaveTime(newMustLeaveTime);
@@ -185,7 +190,7 @@ const App: React.FC = () => {
     setAppState(AppState.GOAL_SET);
 
     if (secretCode && secretCodeImage) {
-        const activeState: ActiveGoalState = { secretCode, secretCodeImage, goal: payload.goal, goalSetTime: goalStartTime, timeLimitInMs: newTimeLimitInMs, consequence: payload.consequence, mustLeaveTime: newMustLeaveTime };
+        const activeState: ActiveGoalState = { secretCode, secretCodeImage, goal: payload.goal, subject: payload.subject, goalSetTime: goalStartTime, timeLimitInMs: newTimeLimitInMs, consequence: payload.consequence, mustLeaveTime: newMustLeaveTime };
         saveActiveGoal(currentUser, activeState);
     }
   }, [secretCode, secretCodeImage, currentUser]);
@@ -274,7 +279,7 @@ const App: React.FC = () => {
           
           try {
               const goalSummary = await summarizeGoal(finalGoal);
-              const newEntry: CompletedGoal = { id: endTime, goalSummary, fullGoal: finalGoal, startTime: goalSetTime, endTime, duration, completionReason: reason };
+              const newEntry: CompletedGoal = { id: endTime, goalSummary, fullGoal: finalGoal, subject: subject, startTime: goalSetTime, endTime, duration, completionReason: reason };
               const historyKey = currentUser ? null : 'goalUnboxHistory';
               const history = currentUser ? getUserHistory(currentUser) : JSON.parse(localStorage.getItem(historyKey!) || '[]');
               history.push(newEntry);
@@ -290,7 +295,7 @@ const App: React.FC = () => {
           setCompletionTrigger({ reason: null });
       };
       saveAndCompleteGoal();
-  }, [completionTrigger, goalSetTime, getEffectiveGoal, currentUser]);
+  }, [completionTrigger, goalSetTime, getEffectiveGoal, currentUser, subject]);
 
   const handleRetry = () => {
     setError(null);

@@ -14,6 +14,7 @@ export interface CompletedGoal {
   id: number;
   goalSummary: string;
   fullGoal: string;
+  subject: string;
   startTime: number;
   endTime: number;
   duration: number;
@@ -24,6 +25,7 @@ export interface ActiveGoalState {
     secretCode: string;
     secretCodeImage: string;
     goal: string;
+    subject: string;
     goalSetTime: number;
     timeLimitInMs: number | null;
     consequence: string | null;

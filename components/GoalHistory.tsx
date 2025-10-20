@@ -1,3 +1,4 @@
+
 import React, { useMemo } from 'react';
 import { CompletedGoal } from '../types';
 import { formatDuration } from '../utils/timeUtils';
@@ -12,10 +13,24 @@ const GoalHistory: React.FC<GoalHistoryProps> = ({ onBack, history }) => {
         [...history].sort((a: CompletedGoal, b: CompletedGoal) => b.endTime - a.endTime), 
     [history]);
 
-    const totalDuration = useMemo(() => {
-        const totalMs = history.reduce((sum, item) => sum + item.duration, 0);
-        return formatDuration(totalMs);
+    const { totalDuration, timeBySubject } = useMemo(() => {
+        const subjectTimes: { [key: string]: number } = {};
+        let totalMs = 0;
+
+        history.forEach(item => {
+            totalMs += item.duration;
+            const subject = item.subject || 'Uncategorized';
+            subjectTimes[subject] = (subjectTimes[subject] || 0) + item.duration;
+        });
+        
+        const sortedSubjects = Object.entries(subjectTimes).sort(([, a], [, b]) => b - a);
+
+        return {
+            totalDuration: formatDuration(totalMs),
+            timeBySubject: sortedSubjects,
+        };
     }, [history]);
+
 
     const formatDateTime = (timestamp: number) => {
         return new Date(timestamp).toLocaleString(undefined, {
@@ -35,16 +50,31 @@ const GoalHistory: React.FC<GoalHistoryProps> = ({ onBack, history }) => {
                     <path strokeLinecap="round" strokeLinejoin="round" d="M11 17l-5-5m0 0l5-5m-5 5h12" />
                 </svg>
             </button>
-            <h2 className="text-3xl font-semibold mb-6 text-cyan-300">Goal History</h2>
+            <h2 className="text-3xl font-semibold mb-2 text-cyan-300">Goal History</h2>
+
+            {sortedHistory.length > 0 && (
+                 <div className="my-6 border-b border-t border-slate-700 py-4">
+                    <h3 className="text-xl font-semibold text-slate-300 mb-3">Time by Subject</h3>
+                    <div className="flex flex-wrap justify-center gap-x-6 gap-y-2">
+                         {timeBySubject.map(([subject, duration]) => (
+                            <div key={subject} className="text-center">
+                                <p className="text-slate-400 text-sm">{subject}</p>
+                                <p className="text-cyan-300 font-mono text-lg">{formatDuration(duration)}</p>
+                            </div>
+                        ))}
+                    </div>
+                 </div>
+            )}
 
             {sortedHistory.length === 0 ? (
-                <p className="text-slate-400">You haven't completed any goals yet. Let's get started!</p>
+                <p className="text-slate-400 mt-6">You haven't completed any goals yet. Let's get started!</p>
             ) : (
                 <div className="overflow-x-auto">
                     <table className="w-full text-left table-auto">
                         <thead className="border-b border-slate-600 text-sm text-slate-400 uppercase">
                             <tr>
                                 <th className="p-3">Goal</th>
+                                <th className="p-3">Subject</th>
                                 <th className="p-3">Started</th>
                                 <th className="p-3">Completed</th>
                                 <th className="p-3 text-right">Duration</th>
@@ -54,6 +84,7 @@ const GoalHistory: React.FC<GoalHistoryProps> = ({ onBack, history }) => {
                             {sortedHistory.map(item => (
                                 <tr key={item.id} className="hover:bg-slate-800/40">
                                     <td className="p-3 font-medium">{item.goalSummary}</td>
+                                    <td className="p-3 text-slate-300">{item.subject}</td>
                                     <td className="p-3 text-slate-400">{formatDateTime(item.startTime)}</td>
                                     <td className="p-3 text-slate-400">{formatDateTime(item.endTime)}</td>
                                     <td className="p-3 text-right text-cyan-300 font-mono">{formatDuration(item.duration)}</td>
@@ -62,7 +93,7 @@ const GoalHistory: React.FC<GoalHistoryProps> = ({ onBack, history }) => {
                         </tbody>
                         <tfoot className="border-t-2 border-slate-500 font-bold">
                             <tr>
-                                <td colSpan={3} className="p-3 text-right text-slate-300">Total Focused Time</td>
+                                <td colSpan={4} className="p-3 text-right text-slate-300">Total Focused Time</td>
                                 <td className="p-3 text-right text-cyan-300 font-mono text-lg">{totalDuration}</td>
                             </tr>
                         </tfoot>

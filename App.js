@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useEffect } from 'react';
 import { AppState } from './types.js';
 import { extractCodeFromImage, verifyGoalCompletion, createVerificationChat, summarizeGoal } from './services/geminiService.js';
@@ -23,6 +24,7 @@ const App = () => {
   const [secretCode, setSecretCode] = useState(null);
   const [secretCodeImage, setSecretCodeImage] = useState(null);
   const [goal, setGoal] = useState('');
+  const [subject, setSubject] = useState('');
   const [verificationFeedback, setVerificationFeedback] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -76,6 +78,7 @@ const App = () => {
     setSecretCode(null);
     setSecretCodeImage(null);
     setGoal('');
+    setSubject('');
     setVerificationFeedback(null);
     setIsLoading(false);
     setError(null);
@@ -97,6 +100,7 @@ const App = () => {
           setSecretCode(savedState.secretCode);
           setSecretCodeImage(savedState.secretCodeImage);
           setGoal(savedState.goal);
+          setSubject(savedState.subject);
           setGoalSetTime(savedState.goalSetTime);
           setTimeLimitInMs(savedState.timeLimitInMs);
           setConsequence(savedState.consequence);
@@ -165,6 +169,7 @@ const App = () => {
         if (mustLeaveMs > 0) newMustLeaveTime = goalStartTime + mustLeaveMs;
     }
     setGoal(payload.goal);
+    setSubject(payload.subject);
     setConsequence(payload.consequence);
     setTimeLimitInMs(newTimeLimitInMs);
     setMustLeaveTime(newMustLeaveTime);
@@ -172,7 +177,7 @@ const App = () => {
     setAppState(AppState.GOAL_SET);
 
     if (secretCode && secretCodeImage) {
-        const activeState = { secretCode, secretCodeImage, goal: payload.goal, goalSetTime: goalStartTime, timeLimitInMs: newTimeLimitInMs, consequence: payload.consequence, mustLeaveTime: newMustLeaveTime };
+        const activeState = { secretCode, secretCodeImage, goal: payload.goal, subject: payload.subject, goalSetTime: goalStartTime, timeLimitInMs: newTimeLimitInMs, consequence: payload.consequence, mustLeaveTime: newMustLeaveTime };
         saveActiveGoal(currentUser, activeState);
     }
   }, [secretCode, secretCodeImage, currentUser]);
@@ -261,7 +266,7 @@ const App = () => {
           
           try {
               const goalSummary = await summarizeGoal(finalGoal);
-              const newEntry = { id: endTime, goalSummary, fullGoal: finalGoal, startTime: goalSetTime, endTime, duration, completionReason: reason };
+              const newEntry = { id: endTime, goalSummary, fullGoal: finalGoal, subject: subject, startTime: goalSetTime, endTime, duration, completionReason: reason };
               const historyKey = currentUser ? null : 'goalUnboxHistory';
               const history = currentUser ? getUserHistory(currentUser) : JSON.parse(localStorage.getItem(historyKey) || '[]');
               history.push(newEntry);
@@ -277,7 +282,7 @@ const App = () => {
           setCompletionTrigger({ reason: null });
       };
       saveAndCompleteGoal();
-  }, [completionTrigger, goalSetTime, getEffectiveGoal, currentUser]);
+  }, [completionTrigger, goalSetTime, getEffectiveGoal, currentUser, subject]);
 
   const handleRetry = () => {
     setError(null);

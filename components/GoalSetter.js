@@ -4,6 +4,7 @@ import Spinner from './Spinner.js';
 
 const GoalSetter = ({ onGoalSubmit, isLoading }) => {
   const [goal, setGoal] = useState('');
+  const [subject, setSubject] = useState('');
   const [isTimeLimitEnabled, setIsTimeLimitEnabled] = useState(false);
   const [hours, setHours] = useState('');
   const [minutes, setMinutes] = useState('');
@@ -37,16 +38,17 @@ const GoalSetter = ({ onGoalSubmit, isLoading }) => {
 
 
   const handleSubmit = useCallback(() => {
-    if (goal.trim()) {
+    if (goal.trim() && subject.trim()) {
       const payload = {
             goal: goal.trim(),
+            subject: subject.trim(),
             timeLimit: isTimeLimitEnabled ? { hours: Number(hours) || 0, minutes: Number(minutes) || 0 } : null,
             consequence: isTimeLimitEnabled ? consequence.trim() : null,
             mustLeaveTime: isMustLeaveModeEnabled ? { hours: Number(mustLeaveHours) || 0, minutes: Number(mustLeaveMinutes) || 0 } : null,
         };
       onGoalSubmit(payload);
     }
-  }, [goal, onGoalSubmit, isTimeLimitEnabled, hours, minutes, consequence, isMustLeaveModeEnabled, mustLeaveHours, mustLeaveMinutes]);
+  }, [goal, subject, onGoalSubmit, isTimeLimitEnabled, hours, minutes, consequence, isMustLeaveModeEnabled, mustLeaveHours, mustLeaveMinutes]);
 
   const timeLimitContent = isTimeLimitEnabled ? React.createElement(
       'div', { className: 'mt-4 space-y-4 text-left animate-fade-in' },
@@ -81,6 +83,13 @@ const GoalSetter = ({ onGoalSubmit, isLoading }) => {
     { className: 'bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full max-w-lg text-center animate-fade-in' },
     React.createElement('h2', { className: 'text-2xl font-semibold mb-2 text-cyan-300' }, 'Step 2: Define Your Goal'),
     React.createElement('p', { className: 'text-slate-400 mb-6' }, 'Be specific! The AI will use this description to verify your proof of completion.'),
+    React.createElement('input', {
+      value: subject,
+      onChange: (e) => setSubject(e.target.value),
+      placeholder: "Goal Subject (e.g., 'Work', 'Fitness', 'Learning')",
+      className: 'w-full bg-slate-900 border border-slate-600 rounded-lg p-3 text-white placeholder-slate-500 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 transition mb-4',
+      disabled: isLoading,
+    }),
     React.createElement('textarea', {
       value: goal,
       onChange: (e) => setGoal(e.target.value),
@@ -125,7 +134,7 @@ const GoalSetter = ({ onGoalSubmit, isLoading }) => {
       'button',
       {
         onClick: handleSubmit,
-        disabled: !goal.trim() || isLoading,
+        disabled: !goal.trim() || !subject.trim() || isLoading,
         className: 'w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed transition-all duration-300 flex items-center justify-center',
       },
       isLoading ? React.createElement(Spinner, null) : 'Set My Goal'
