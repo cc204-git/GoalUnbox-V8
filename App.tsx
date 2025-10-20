@@ -22,11 +22,13 @@ import Alert from './components/Alert';
 import EmergencyTest from './components/EmergencyTest';
 import GoalHistory from './components/GoalHistory';
 import Auth from './components/Auth';
+import ApiKeyPrompt from './components/ApiKeyPrompt';
 import { Chat } from '@google/genai';
 
 type CompletionReason = 'verified' | 'must-leave' | 'emergency';
 
 const App: React.FC = () => {
+  const [apiKey, setApiKey] = useState<string | null>(() => localStorage.getItem('GEMINI_API_KEY'));
   const [appState, setAppState] = useState<AppState>(AppState.AUTH);
   const [currentUser, setCurrentUser] = useState<string | null>(null);
   const [secretCode, setSecretCode] = useState<string | null>(null);
@@ -49,6 +51,20 @@ const App: React.FC = () => {
   const [chatMessages, setChatMessages] = useState<Array<{ text: string, role: 'user' | 'model' }>>([]);
   const [isChatLoading, setIsChatLoading] = useState<boolean>(false);
 
+  const clearApiKey = useCallback(() => {
+    localStorage.removeItem('GEMINI_API_KEY');
+    setApiKey(null);
+  }, []);
+  
+  const handleApiError = useCallback((err: unknown) => {
+      const error = err as Error;
+      if (error.message.includes("API Key is not valid")) {
+          clearApiKey();
+          setError("Your API Key is invalid. Please enter a valid one to continue.");
+      } else {
+          setError(error.message);
+      }
+  }, [clearApiKey]);
 
   const resetToStart = (isLogout: boolean = false) => {
     clearActiveGoal(currentUser);
@@ -90,6 +106,12 @@ const App: React.FC = () => {
       }
   };
 
+  const handleApiKeySubmit = (key: string) => {
+    localStorage.setItem('GEMINI_API_KEY', key);
+    setApiKey(key);
+    setError(null);
+  };
+
   const handleLogin = (email: string) => {
       setCurrentUser(email);
       restoreSession(email);
@@ -108,52 +130,32 @@ const App: React.FC = () => {
     setIsLoading(true);
     setError(null);
     
-    const fileReaderPromise = new Promise<{dataUrl: string, base64: string}>((resolve, reject) => {
+    try {
+        const base64 = await fileToBase64(file);
         const reader = new FileReader();
         reader.readAsDataURL(file);
-        reader.onload = () => {
-            if (typeof reader.result === 'string') {
-                const dataUrl = reader.result;
-                const base64 = dataUrl.split(',')[1];
-                resolve({dataUrl, base64});
-            } else {
-                reject(new Error("Failed to read file as a data URL."));
-            }
-        };
-        reader.onerror = (error) => reject(error);
-    });
+        reader.onload = () => setSecretCodeImage(reader.result as string);
 
-    try {
-        const { dataUrl, base64 } = await fileReaderPromise;
-        setSecretCodeImage(dataUrl);
         const code = await extractCodeFromImage(base64, file.type);
         setSecretCode(code);
         setAppState(AppState.AWAITING_GOAL);
     } catch (err) {
-        setError((err as Error).message);
+        handleApiError(err);
         setSecretCodeImage(null);
     } finally {
         setIsLoading(false);
     }
-  }, []);
+  }, [handleApiError]);
 
   const handleGoalSubmit = useCallback((payload: GoalPayload) => {
     const goalStartTime = Date.now();
-    
-    let totalMs = 0;
-    if (payload.timeLimit) {
-        totalMs = (payload.timeLimit.hours * 3600 + payload.timeLimit.minutes * 60) * 1000;
-    }
+    let totalMs = payload.timeLimit ? (payload.timeLimit.hours * 3600 + payload.timeLimit.minutes * 60) * 1000 : 0;
     const newTimeLimitInMs = totalMs > 0 ? totalMs : null;
-
     let newMustLeaveTime: number | null = null;
     if (payload.mustLeaveTime) {
         const mustLeaveMs = (payload.mustLeaveTime.hours * 3600 + payload.mustLeaveTime.minutes * 60) * 1000;
-        if (mustLeaveMs > 0) {
-            newMustLeaveTime = goalStartTime + mustLeaveMs;
-        }
+        if (mustLeaveMs > 0) newMustLeaveTime = goalStartTime + mustLeaveMs;
     }
-
     setGoal(payload.goal);
     setConsequence(payload.consequence);
     setTimeLimitInMs(newTimeLimitInMs);
@@ -162,35 +164,21 @@ const App: React.FC = () => {
     setAppState(AppState.GOAL_SET);
 
     if (secretCode && secretCodeImage) {
-        const activeState: ActiveGoalState = {
-            secretCode,
-            secretCodeImage,
-            goal: payload.goal,
-            goalSetTime: goalStartTime,
-            timeLimitInMs: newTimeLimitInMs,
-            consequence: payload.consequence,
-            mustLeaveTime: newMustLeaveTime,
-        };
+        const activeState: ActiveGoalState = { secretCode, secretCodeImage, goal: payload.goal, goalSetTime: goalStartTime, timeLimitInMs: newTimeLimitInMs, consequence: payload.consequence, mustLeaveTime: newMustLeaveTime };
         saveActiveGoal(currentUser, activeState);
     }
   }, [secretCode, secretCodeImage, currentUser]);
   
   const getEffectiveGoal = useCallback(() => {
-    if (timeLimitInMs && goalSetTime && consequence) {
-      const deadline = goalSetTime + timeLimitInMs;
-      if (Date.now() > deadline) {
-        return `The user's original goal was: "${goal}". They failed to meet the time limit. The consequence is: "${consequence}". The new combined goal is to complete BOTH the original goal AND the consequence.`;
-      }
+    if (timeLimitInMs && goalSetTime && consequence && Date.now() > goalSetTime + timeLimitInMs) {
+      return `The user's original goal was: "${goal}". They failed to meet the time limit. The consequence is: "${consequence}". The new combined goal is to complete BOTH the original goal AND the consequence.`;
     }
     return goal;
   }, [goal, timeLimitInMs, goalSetTime, consequence]);
 
   const handleMustLeaveTimeUp = useCallback(() => {
-    if (appState === AppState.GOAL_SET) {
-        setCompletionTrigger({ reason: 'must-leave' });
-    }
+    if (appState === AppState.GOAL_SET) setCompletionTrigger({ reason: 'must-leave' });
   }, [appState]);
-
 
   const handleProofImageSubmit = useCallback(async (files: File[]) => {
     const pauseStartTime = Date.now();
@@ -207,15 +195,8 @@ const App: React.FC = () => {
     };
 
     try {
-        const imagePayloads = await Promise.all(
-          files.map(async (file) => {
-            const base64 = await fileToBase64(file);
-            return { base64, mimeType: file.type };
-          })
-        );
-        
+        const imagePayloads = await Promise.all(files.map(async (file) => ({ base64: await fileToBase64(file), mimeType: file.type })));
         const finalGoal = getEffectiveGoal();
-
         const result: VerificationResultType = await verifyGoalCompletion(finalGoal, imagePayloads);
         setVerificationFeedback(result.feedback);
 
@@ -226,18 +207,17 @@ const App: React.FC = () => {
             const chatSession = createVerificationChat(finalGoal, imagePayloads, result);
             setChat(chatSession);
             setChatMessages([{ role: 'model', text: result.feedback.summary }]);
-            setIsLoading(false);
         }
     } catch (err) {
         resumeTimers();
-        setError((err as Error).message);
+        handleApiError(err);
+    } finally {
         setIsLoading(false);
     }
-  }, [goalSetTime, getEffectiveGoal]);
+  }, [getEffectiveGoal, handleApiError]);
   
   const handleSendChatMessage = useCallback(async (message: string) => {
     if (!chat) return;
-
     setIsChatLoading(true);
     setError(null);
     setChatMessages(prev => [...prev, { role: 'user', text: message }]);
@@ -246,18 +226,13 @@ const App: React.FC = () => {
         const response = await chat.sendMessage(message);
         const jsonResponse = JSON.parse(response.text);
         const newResult = jsonResponse as VerificationResultType;
-        
         setVerificationFeedback(newResult.feedback);
         setChatMessages(prev => [...prev, { role: 'model', text: newResult.feedback.summary }]);
-        
         if (newResult.completed) {
-            setTimeout(() => {
-                 setCompletionTrigger({ reason: 'verified' });
-            }, 1500);
+            setTimeout(() => setCompletionTrigger({ reason: 'verified' }), 1500);
         }
-
     } catch (err) {
-        const errorMessage = "The verifier couldn't process your message. It might have responded in a non-standard format. Please try rephrasing.";
+        const errorMessage = "The verifier couldn't process your message. Please try rephrasing.";
         setError(errorMessage);
         setChatMessages(prev => [...prev, { role: 'model', text: errorMessage }]);
     } finally {
@@ -268,42 +243,23 @@ const App: React.FC = () => {
   useEffect(() => {
       const saveAndCompleteGoal = async () => {
           if (!completionTrigger.reason || !goalSetTime) return;
-          
           setIsLoading(true);
-
-          const reason = completionTrigger.reason;
+          const { reason } = completionTrigger;
           const endTime = Date.now();
           const duration = endTime - goalSetTime;
           const finalGoal = getEffectiveGoal();
-
-          if (reason === 'must-leave') {
-            setVerificationFeedback({
-                summary: "Your 'Must Leave' time has been reached. Here is your code as requested.",
-                approved_aspects: [],
-                missing_aspects: ["Goal was not verified before the deadline."]
-            });
-          } else if (reason === 'emergency') {
-            setVerificationFeedback(null);
-          }
+          if (reason === 'must-leave') setVerificationFeedback({ summary: "Your 'Must Leave' time has been reached.", approved_aspects: [], missing_aspects: ["Goal not verified before deadline."] });
+          else if (reason === 'emergency') setVerificationFeedback(null);
           
           try {
               const goalSummary = await summarizeGoal(finalGoal);
               const newEntry: CompletedGoal = { id: endTime, goalSummary, fullGoal: finalGoal, startTime: goalSetTime, endTime, duration, completionReason: reason };
-              
-              if (currentUser) {
-                  const history = getUserHistory(currentUser);
-                  history.push(newEntry);
-                  saveUserHistory(currentUser, history);
-              } else {
-                  const historyJSON = localStorage.getItem('goalUnboxHistory');
-                  const history = historyJSON ? JSON.parse(historyJSON) : [];
-                  history.push(newEntry);
-                  localStorage.setItem('goalUnboxHistory', JSON.stringify(history));
-              }
-
-          } catch (e) {
-              console.error("Failed to save goal to history:", e);
-          }
+              const historyKey = currentUser ? null : 'goalUnboxHistory';
+              const history = currentUser ? getUserHistory(currentUser) : JSON.parse(localStorage.getItem(historyKey!) || '[]');
+              history.push(newEntry);
+              if (currentUser) saveUserHistory(currentUser, history);
+              else localStorage.setItem(historyKey!, JSON.stringify(history));
+          } catch (e) { console.error("Failed to save goal:", e); }
 
           clearActiveGoal(currentUser);
           setCompletionDuration(formatDuration(duration > 0 ? duration : 0));
@@ -312,10 +268,8 @@ const App: React.FC = () => {
           setIsLoading(false);
           setCompletionTrigger({ reason: null });
       };
-
       saveAndCompleteGoal();
   }, [completionTrigger, goalSetTime, getEffectiveGoal, currentUser]);
-
 
   const handleRetry = () => {
     setError(null);
@@ -325,80 +279,38 @@ const App: React.FC = () => {
     setAppState(AppState.GOAL_SET);
   };
 
-  const handleStartEmergency = () => {
-    setError(null);
-    setAppState(AppState.EMERGENCY_TEST);
-  };
-
-  const handleEmergencySuccess = useCallback(() => {
-    setCompletionTrigger({ reason: 'emergency' });
-  }, []);
-
-  const handleEmergencyCancel = () => {
-      setAppState(AppState.GOAL_SET);
-  };
-
-  const handleShowHistory = () => {
-      setAppState(AppState.HISTORY_VIEW);
-  };
-
+  const handleStartEmergency = () => { setError(null); setAppState(AppState.EMERGENCY_TEST); };
+  const handleEmergencySuccess = useCallback(() => { setCompletionTrigger({ reason: 'emergency' }); }, []);
+  const handleEmergencyCancel = () => { setAppState(AppState.GOAL_SET); };
+  const handleShowHistory = () => { setAppState(AppState.HISTORY_VIEW); };
 
   const renderContent = () => {
+    if (!apiKey) return <ApiKeyPrompt onSubmit={handleApiKeySubmit} error={error} />;
+
     switch (appState) {
-      case AppState.AUTH:
-        return <Auth onLogin={handleLogin} onContinueAsGuest={handleContinueAsGuest} />;
-      case AppState.AWAITING_CODE:
-        return <CodeUploader onCodeImageSubmit={handleCodeImageSubmit} isLoading={isLoading} onShowHistory={handleShowHistory} onLogout={handleLogout} currentUser={currentUser} />;
-      case AppState.AWAITING_GOAL:
-        return <GoalSetter onGoalSubmit={handleGoalSubmit} isLoading={isLoading} />;
-      case AppState.GOAL_SET:
-        return <ProofUploader 
-                    goal={goal} 
-                    onProofImageSubmit={handleProofImageSubmit} 
-                    isLoading={isLoading} 
-                    goalSetTime={goalSetTime}
-                    timeLimitInMs={timeLimitInMs}
-                    consequence={consequence}
-                    mustLeaveTime={mustLeaveTime}
-                    onMustLeaveTimeUp={handleMustLeaveTimeUp}
-                    onStartEmergency={handleStartEmergency}
-                />;
-      case AppState.EMERGENCY_TEST:
-        return <EmergencyTest onSuccess={handleEmergencySuccess} onCancel={handleEmergencyCancel} />;
+      case AppState.AUTH: return <Auth onLogin={handleLogin} onContinueAsGuest={handleContinueAsGuest} />;
+      case AppState.AWAITING_CODE: return <CodeUploader onCodeImageSubmit={handleCodeImageSubmit} isLoading={isLoading} onShowHistory={handleShowHistory} onLogout={handleLogout} currentUser={currentUser} />;
+      case AppState.AWAITING_GOAL: return <GoalSetter onGoalSubmit={handleGoalSubmit} isLoading={isLoading} />;
+      case AppState.GOAL_SET: return <ProofUploader goal={goal} onProofImageSubmit={handleProofImageSubmit} isLoading={isLoading} goalSetTime={goalSetTime} timeLimitInMs={timeLimitInMs} consequence={consequence} mustLeaveTime={mustLeaveTime} onMustLeaveTimeUp={handleMustLeaveTimeUp} onStartEmergency={handleStartEmergency} />;
+      case AppState.EMERGENCY_TEST: return <EmergencyTest onSuccess={handleEmergencySuccess} onCancel={handleEmergencyCancel} />;
       case AppState.HISTORY_VIEW:
         const history = currentUser ? getUserHistory(currentUser) : JSON.parse(localStorage.getItem('goalUnboxHistory') || '[]');
         return <GoalHistory onBack={() => setAppState(AppState.AWAITING_CODE)} history={history} />;
-      case AppState.GOAL_COMPLETED:
-        return <VerificationResult isSuccess={true} secretCodeImage={secretCodeImage} feedback={verificationFeedback} onRetry={handleRetry} onReset={() => resetToStart(false)} completionDuration={completionDuration} completionReason={completionReason} />;
-      default:
-        return <Auth onLogin={handleLogin} onContinueAsGuest={handleContinueAsGuest} />;
+      case AppState.GOAL_COMPLETED: return <VerificationResult isSuccess={true} secretCodeImage={secretCodeImage} feedback={verificationFeedback} onRetry={handleRetry} onReset={() => resetToStart(false)} completionDuration={completionDuration} completionReason={completionReason} />;
+      default: return <Auth onLogin={handleLogin} onContinueAsGuest={handleContinueAsGuest} />;
     }
   };
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-slate-900">
-        <style>{`
-          @keyframes fade-in {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-          }
-          .animate-fade-in { animation: fade-in 0.5s ease-out forwards; }
-        `}</style>
+        <style>{`@keyframes fade-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } } .animate-fade-in { animation: fade-in 0.5s ease-out forwards; }`}</style>
       <Header />
       <main className="w-full flex flex-col items-center justify-center">
-        {error && appState !== AppState.AUTH && <Alert message={error} type="error" />}
+        {error && appState !== AppState.AUTH && !apiKey && <div />}
+        {error && (appState !== AppState.AUTH && apiKey) && <Alert message={error} type="error" />}
         {appState === AppState.GOAL_SET && verificationFeedback && (
             <div className="w-full max-w-lg mb-4">
-                 <VerificationResult 
-                    isSuccess={false} 
-                    secretCodeImage={null}
-                    feedback={verificationFeedback} 
-                    onRetry={handleRetry} 
-                    onReset={() => resetToStart(false)}
-                    chatMessages={chatMessages}
-                    onSendChatMessage={handleSendChatMessage}
-                    isChatLoading={isChatLoading}
-                 />
+                 <VerificationResult isSuccess={false} secretCodeImage={null} feedback={verificationFeedback} onRetry={handleRetry} onReset={() => resetToStart(false)} chatMessages={chatMessages} onSendChatMessage={handleSendChatMessage} isChatLoading={isChatLoading} />
             </div>
         )}
         {!(appState === AppState.GOAL_SET && verificationFeedback) && renderContent()}
