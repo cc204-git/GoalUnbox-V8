@@ -224,20 +224,22 @@ const App: React.FC = () => {
         const imagePayloads = await Promise.all(files.map(async (file) => ({ base64: await fileToBase64(file), mimeType: file.type })));
         const finalGoal = getEffectiveGoal();
         const result: VerificationResultType = await verifyGoalCompletion(finalGoal, imagePayloads);
-        setVerificationFeedback(result.feedback);
 
         if (result.completed) {
+            setVerificationFeedback(result.feedback);
             setCompletionTrigger({ reason: 'verified' });
+            // isLoading remains true, handled by completion useEffect
         } else {
             resumeTimers();
+            setVerificationFeedback(result.feedback);
             const chatSession = createVerificationChat(finalGoal, imagePayloads, result);
             setChat(chatSession);
             setChatMessages([{ role: 'model', text: result.feedback.summary }]);
+            setIsLoading(false);
         }
     } catch (err) {
         resumeTimers();
         handleApiError(err);
-    } finally {
         setIsLoading(false);
     }
   }, [getEffectiveGoal, handleApiError]);
@@ -334,12 +336,12 @@ const App: React.FC = () => {
       <main className="w-full flex flex-col items-center justify-center">
         {error && appState !== AppState.AUTH && !apiKey && <div />}
         {error && (appState !== AppState.AUTH && apiKey) && <Alert message={error} type="error" />}
-        {appState === AppState.GOAL_SET && verificationFeedback && (
+        {appState === AppState.GOAL_SET && verificationFeedback && !completionTrigger.reason && (
             <div className="w-full max-w-lg mb-4">
                  <VerificationResult isSuccess={false} secretCodeImage={null} feedback={verificationFeedback} onRetry={handleRetry} onReset={() => resetToStart(false)} chatMessages={chatMessages} onSendChatMessage={handleSendChatMessage} isChatLoading={isChatLoading} />
             </div>
         )}
-        {!(appState === AppState.GOAL_SET && verificationFeedback) && renderContent()}
+        {!(appState === AppState.GOAL_SET && verificationFeedback && !completionTrigger.reason) && renderContent()}
       </main>
     </div>
   );

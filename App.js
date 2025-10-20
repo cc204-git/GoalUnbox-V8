@@ -211,20 +211,22 @@ const App = () => {
         const imagePayloads = await Promise.all(files.map(async (file) => ({ base64: await fileToBase64(file), mimeType: file.type })));
         const finalGoal = getEffectiveGoal();
         const result = await verifyGoalCompletion(finalGoal, imagePayloads);
-        setVerificationFeedback(result.feedback);
 
         if (result.completed) {
+            setVerificationFeedback(result.feedback);
             setCompletionTrigger({ reason: 'verified' });
+            // isLoading remains true, handled by completion useEffect
         } else {
             resumeTimers();
+            setVerificationFeedback(result.feedback);
             const chatSession = createVerificationChat(finalGoal, imagePayloads, result);
             setChat(chatSession);
             setChatMessages([{ role: 'model', text: result.feedback.summary }]);
+            setIsLoading(false);
         }
     } catch (err) {
         resumeTimers();
         handleApiError(err);
-    } finally {
         setIsLoading(false);
     }
   }, [getEffectiveGoal, handleApiError]);
@@ -322,11 +324,11 @@ const App = () => {
       'main', { className: 'w-full flex flex-col items-center justify-center' },
       error && appState !== AppState.AUTH && !apiKey && React.createElement('div', null),
       error && (appState !== AppState.AUTH && apiKey) && React.createElement(Alert, { message: error, type: 'error' }),
-      appState === AppState.GOAL_SET && verificationFeedback && React.createElement(
+      appState === AppState.GOAL_SET && verificationFeedback && !completionTrigger.reason && React.createElement(
         'div', { className: 'w-full max-w-lg mb-4' },
         React.createElement(VerificationResult, { isSuccess: false, secretCodeImage: null, feedback: verificationFeedback, onRetry: handleRetry, onReset: () => resetToStart(false), chatMessages: chatMessages, onSendChatMessage: handleSendChatMessage, isChatLoading: isChatLoading })
       ),
-      !(appState === AppState.GOAL_SET && verificationFeedback) && renderContent()
+      !(appState === AppState.GOAL_SET && verificationFeedback && !completionTrigger.reason) && renderContent()
     )
   );
 };
