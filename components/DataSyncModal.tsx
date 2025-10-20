@@ -21,6 +21,8 @@ const DataSyncModal: React.FC<DataSyncModalProps> = ({ onClose }) => {
     const [pastedCode, setPastedCode] = useState('');
     const [copyButtonText, setCopyButtonText] = useState('Copy Code');
     const qrCodeRef = useRef<HTMLDivElement>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
 
     // Generate QR code and text code when the component enters the 'show-code' stage
     useEffect(() => {
@@ -83,19 +85,79 @@ const DataSyncModal: React.FC<DataSyncModalProps> = ({ onClose }) => {
         }
     }, []);
 
+    const handleDownloadFile = useCallback(() => {
+        const dataString = exportDataToString();
+        if (dataString) {
+            const blob = new Blob([dataString], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `goal-unbox-sync-${new Date().toISOString().split('T')[0]}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } else {
+            setError("No data found to export.");
+        }
+    }, []);
+
+    const handleUploadClick = () => {
+        fileInputRef.current?.click();
+    };
+
+    const handleFileSelected = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const text = e.target?.result;
+                if (typeof text === 'string') {
+                    handleImportData(text);
+                } else {
+                    setError('Failed to read the sync file.');
+                }
+            };
+            reader.onerror = () => {
+                setError('Error reading the selected file.');
+            };
+            reader.readAsText(file);
+        }
+        if (event.target) {
+            event.target.value = '';
+        }
+    };
+
+
     const renderMainView = () => (
         <>
             <h2 className="text-2xl font-semibold mb-2 text-cyan-300">Account & Data Sync</h2>
             <p className="text-slate-400 mb-6">Move your data between devices.</p>
             {error && <Alert message={error} type="error" />}
             
+            <input
+                type="file"
+                ref={fileInputRef}
+                className="hidden"
+                accept=".txt,text/plain"
+                onChange={handleFileSelected}
+            />
+
             <p className="font-semibold text-left mb-2 text-slate-300">On your OLD device:</p>
-            <button
-                onClick={() => setStage('show-code')}
-                className="w-full bg-slate-700 text-white font-bold py-3 px-4 rounded-lg hover:bg-slate-600 transition-all duration-300 flex items-center justify-center gap-2 mb-6"
-            >
-                1. Show Sync Code
-            </button>
+            <div className="grid grid-cols-2 gap-4 mb-6">
+                <button
+                    onClick={() => setStage('show-code')}
+                    className="w-full bg-slate-700 text-white font-bold py-3 px-4 rounded-lg hover:bg-slate-600 transition-all duration-300 flex items-center justify-center gap-2 text-center"
+                >
+                    1a. Show QR/Text Code
+                </button>
+                 <button
+                    onClick={handleDownloadFile}
+                    className="w-full bg-slate-700 text-white font-bold py-3 px-4 rounded-lg hover:bg-slate-600 transition-all duration-300 flex items-center justify-center gap-2 text-center"
+                >
+                    1b. Download File
+                </button>
+            </div>
 
             <p className="font-semibold text-left mb-2 text-slate-300">On your NEW device:</p>
             <div className="space-y-4">
@@ -110,6 +172,12 @@ const DataSyncModal: React.FC<DataSyncModalProps> = ({ onClose }) => {
                     className="w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400 transition-all duration-300"
                 >
                     2b. Enter Sync Code
+                </button>
+                <button
+                    onClick={handleUploadClick}
+                    className="w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400 transition-all duration-300"
+                >
+                    2c. Upload Sync File
                 </button>
             </div>
              <p className="text-xs text-amber-400/80 mt-6">
