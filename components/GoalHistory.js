@@ -1,8 +1,9 @@
 
+
 import React, { useMemo } from 'react';
 import { formatDuration } from '../utils/timeUtils.js';
 
-const GoalHistory = ({ onBack, history }) => {
+const GoalHistory = ({ onBack, history, onDeleteHistoryItem }) => {
 
     const sortedHistory = useMemo(() => 
         [...history].sort((a, b) => b.endTime - a.endTime), 
@@ -25,6 +26,12 @@ const GoalHistory = ({ onBack, history }) => {
             timeBySubject: sortedSubjects,
         };
     }, [history]);
+
+    const handleDelete = (item) => {
+        if (window.confirm(`Are you sure you want to delete the goal: "${item.goalSummary}"? This action cannot be undone.`)) {
+            onDeleteHistoryItem(item.id);
+        }
+    };
 
     const formatDateTime = (timestamp) => {
         return new Date(timestamp).toLocaleString(undefined, {
@@ -65,7 +72,8 @@ const GoalHistory = ({ onBack, history }) => {
                         React.createElement('th', { className: 'p-3' }, 'Subject'),
                         React.createElement('th', { className: 'p-3' }, 'Started'),
                         React.createElement('th', { className: 'p-3' }, 'Completed'),
-                        React.createElement('th', { className: 'p-3 text-right' }, 'Duration')
+                        React.createElement('th', { className: 'p-3 text-right' }, 'Duration'),
+                        React.createElement('th', { className: 'p-3 text-right' }, 'Actions')
                     )
                 ),
                 React.createElement(
@@ -76,13 +84,22 @@ const GoalHistory = ({ onBack, history }) => {
                         React.createElement('td', { className: 'p-3 text-slate-300' }, item.subject),
                         React.createElement('td', { className: 'p-3 text-slate-400' }, formatDateTime(item.startTime)),
                         React.createElement('td', { className: 'p-3 text-slate-400' }, formatDateTime(item.endTime)),
-                        React.createElement('td', { className: 'p-3 text-right text-cyan-300 font-mono' }, formatDuration(item.duration))
+                        React.createElement('td', { className: 'p-3 text-right text-cyan-300 font-mono' }, formatDuration(item.duration)),
+                        React.createElement('td', { className: 'p-3 text-right' }, 
+                            React.createElement('button', {
+                                onClick: () => handleDelete(item),
+                                className: 'text-slate-500 hover:text-red-400 p-1 rounded-full transition-colors',
+                                'aria-label': `Delete goal "${item.goalSummary}"`,
+                                title: 'Delete'
+                            }, React.createElement('svg', { xmlns: 'http://www.w3.org/2000/svg', className: 'h-5 w-5', viewBox: '0 0 20 20', fill: 'currentColor' },
+                                React.createElement('path', { fillRule: 'evenodd', d: 'M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z', clipRule: 'evenodd' }))
+                            ))
                     ))
                 ),
                 React.createElement(
                     'tfoot', { className: 'border-t-2 border-slate-500 font-bold' },
                     React.createElement('tr', null,
-                        React.createElement('td', { colSpan: 4, className: 'p-3 text-right text-slate-300' }, 'Total Focused Time'),
+                        React.createElement('td', { colSpan: 5, className: 'p-3 text-right text-slate-300' }, 'Total Focused Time'),
                         React.createElement('td', { className: 'p-3 text-right text-cyan-300 font-mono text-lg' }, totalDuration)
                     )
                 )

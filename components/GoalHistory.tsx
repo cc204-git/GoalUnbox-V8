@@ -6,9 +6,10 @@ import { formatDuration } from '../utils/timeUtils';
 interface GoalHistoryProps {
   onBack: () => void;
   history: CompletedGoal[];
+  onDeleteHistoryItem: (id: number) => void;
 }
 
-const GoalHistory: React.FC<GoalHistoryProps> = ({ onBack, history }) => {
+const GoalHistory: React.FC<GoalHistoryProps> = ({ onBack, history, onDeleteHistoryItem }) => {
     const sortedHistory = useMemo(() => 
         [...history].sort((a: CompletedGoal, b: CompletedGoal) => b.endTime - a.endTime), 
     [history]);
@@ -31,6 +32,11 @@ const GoalHistory: React.FC<GoalHistoryProps> = ({ onBack, history }) => {
         };
     }, [history]);
 
+    const handleDelete = (item: CompletedGoal) => {
+        if (window.confirm(`Are you sure you want to delete the goal: "${item.goalSummary}"? This action cannot be undone.`)) {
+            onDeleteHistoryItem(item.id);
+        }
+    };
 
     const formatDateTime = (timestamp: number) => {
         return new Date(timestamp).toLocaleString(undefined, {
@@ -78,22 +84,35 @@ const GoalHistory: React.FC<GoalHistoryProps> = ({ onBack, history }) => {
                                 <th className="p-3">Started</th>
                                 <th className="p-3">Completed</th>
                                 <th className="p-3 text-right">Duration</th>
+                                <th className="p-3 text-right">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-700">
-                            {sortedHistory.map(item => (
+                            {sortedHistory.map((item: CompletedGoal) => (
                                 <tr key={item.id} className="hover:bg-slate-800/40">
                                     <td className="p-3 font-medium">{item.goalSummary}</td>
                                     <td className="p-3 text-slate-300">{item.subject}</td>
                                     <td className="p-3 text-slate-400">{formatDateTime(item.startTime)}</td>
                                     <td className="p-3 text-slate-400">{formatDateTime(item.endTime)}</td>
                                     <td className="p-3 text-right text-cyan-300 font-mono">{formatDuration(item.duration)}</td>
+                                    <td className="p-3 text-right">
+                                        <button
+                                            onClick={() => handleDelete(item)}
+                                            className="text-slate-500 hover:text-red-400 p-1 rounded-full transition-colors"
+                                            aria-label={`Delete goal "${item.goalSummary}"`}
+                                            title="Delete"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                                <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                                            </svg>
+                                        </button>
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>
                         <tfoot className="border-t-2 border-slate-500 font-bold">
                             <tr>
-                                <td colSpan={4} className="p-3 text-right text-slate-300">Total Focused Time</td>
+                                <td colSpan={5} className="p-3 text-right text-slate-300">Total Focused Time</td>
                                 <td className="p-3 text-right text-cyan-300 font-mono text-lg">{totalDuration}</td>
                             </tr>
                         </tfoot>

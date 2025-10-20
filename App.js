@@ -1,4 +1,5 @@
 
+
 import React, { useState, useCallback, useEffect } from 'react';
 import { AppState } from './types.js';
 import { extractCodeFromImage, verifyGoalCompletion, createVerificationChat, summarizeGoal } from './services/geminiService.js';
@@ -41,6 +42,7 @@ const App = () => {
   const [chat, setChat] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
   const [isChatLoading, setIsChatLoading] = useState(false);
+  const [history, setHistory] = useState([]);
   
   useEffect(() => {
       if (apiKey) {
@@ -297,7 +299,22 @@ const App = () => {
   const handleStartEmergency = () => { setError(null); setAppState(AppState.EMERGENCY_TEST); };
   const handleEmergencySuccess = useCallback(() => { setCompletionTrigger({ reason: 'emergency' }); }, []);
   const handleEmergencyCancel = () => { setAppState(AppState.GOAL_SET); };
-  const handleShowHistory = () => { setAppState(AppState.HISTORY_VIEW); };
+  
+  const handleShowHistory = () => {
+    const historyData = currentUser ? getUserHistory(currentUser) : JSON.parse(localStorage.getItem('goalUnboxHistory') || '[]');
+    setHistory(historyData);
+    setAppState(AppState.HISTORY_VIEW);
+  };
+
+  const handleDeleteHistoryItem = (idToDelete) => {
+    const updatedHistory = history.filter(item => item.id !== idToDelete);
+    setHistory(updatedHistory);
+    if (currentUser) {
+        saveUserHistory(currentUser, updatedHistory);
+    } else {
+        localStorage.setItem('goalUnboxHistory', JSON.stringify(updatedHistory));
+    }
+  };
 
   const renderContent = () => {
     if (!apiKey) return React.createElement(ApiKeyPrompt, { onSubmit: handleApiKeySubmit, error: error });
@@ -309,8 +326,11 @@ const App = () => {
       case AppState.GOAL_SET: return React.createElement(ProofUploader, { goal: goal, onProofImageSubmit: handleProofImageSubmit, isLoading: isLoading, goalSetTime: goalSetTime, timeLimitInMs: timeLimitInMs, consequence: consequence, mustLeaveTime: mustLeaveTime, onMustLeaveTimeUp: handleMustLeaveTimeUp, onStartEmergency: handleStartEmergency });
       case AppState.EMERGENCY_TEST: return React.createElement(EmergencyTest, { onSuccess: handleEmergencySuccess, onCancel: handleEmergencyCancel });
       case AppState.HISTORY_VIEW:
-        const history = currentUser ? getUserHistory(currentUser) : JSON.parse(localStorage.getItem('goalUnboxHistory') || '[]');
-        return React.createElement(GoalHistory, { onBack: () => setAppState(AppState.AWAITING_CODE), history: history });
+        return React.createElement(GoalHistory, { 
+            onBack: () => { setHistory([]); setAppState(AppState.AWAITING_CODE); }, 
+            history: history, 
+            onDeleteHistoryItem: handleDeleteHistoryItem 
+        });
       case AppState.GOAL_COMPLETED: return React.createElement(VerificationResult, { isSuccess: true, secretCodeImage: secretCodeImage, feedback: verificationFeedback, onRetry: handleRetry, onReset: () => resetToStart(false), completionDuration: completionDuration, completionReason: completionReason });
       default: return React.createElement(Auth, { onLogin: handleLogin, onContinueAsGuest: handleContinueAsGuest });
     }

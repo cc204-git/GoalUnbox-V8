@@ -51,6 +51,7 @@ const App: React.FC = () => {
   const [chat, setChat] = useState<Chat | null>(null);
   const [chatMessages, setChatMessages] = useState<Array<{ text: string, role: 'user' | 'model' }>>([]);
   const [isChatLoading, setIsChatLoading] = useState<boolean>(false);
+  const [history, setHistory] = useState<CompletedGoal[]>([]);
   
   // Effect to handle auto-login
   useEffect(() => {
@@ -310,7 +311,22 @@ const App: React.FC = () => {
   const handleStartEmergency = () => { setError(null); setAppState(AppState.EMERGENCY_TEST); };
   const handleEmergencySuccess = useCallback(() => { setCompletionTrigger({ reason: 'emergency' }); }, []);
   const handleEmergencyCancel = () => { setAppState(AppState.GOAL_SET); };
-  const handleShowHistory = () => { setAppState(AppState.HISTORY_VIEW); };
+  
+  const handleShowHistory = () => {
+    const historyData = currentUser ? getUserHistory(currentUser) : JSON.parse(localStorage.getItem('goalUnboxHistory') || '[]');
+    setHistory(historyData);
+    setAppState(AppState.HISTORY_VIEW);
+  };
+
+  const handleDeleteHistoryItem = (idToDelete: number) => {
+    const updatedHistory = history.filter(item => item.id !== idToDelete);
+    setHistory(updatedHistory);
+    if (currentUser) {
+        saveUserHistory(currentUser, updatedHistory);
+    } else {
+        localStorage.setItem('goalUnboxHistory', JSON.stringify(updatedHistory));
+    }
+  };
 
   const renderContent = () => {
     if (!apiKey) return <ApiKeyPrompt onSubmit={handleApiKeySubmit} error={error} />;
@@ -322,8 +338,11 @@ const App: React.FC = () => {
       case AppState.GOAL_SET: return <ProofUploader goal={goal} onProofImageSubmit={handleProofImageSubmit} isLoading={isLoading} goalSetTime={goalSetTime} timeLimitInMs={timeLimitInMs} consequence={consequence} mustLeaveTime={mustLeaveTime} onMustLeaveTimeUp={handleMustLeaveTimeUp} onStartEmergency={handleStartEmergency} />;
       case AppState.EMERGENCY_TEST: return <EmergencyTest onSuccess={handleEmergencySuccess} onCancel={handleEmergencyCancel} />;
       case AppState.HISTORY_VIEW:
-        const history = currentUser ? getUserHistory(currentUser) : JSON.parse(localStorage.getItem('goalUnboxHistory') || '[]');
-        return <GoalHistory onBack={() => setAppState(AppState.AWAITING_CODE)} history={history} />;
+        return <GoalHistory 
+                    onBack={() => { setHistory([]); setAppState(AppState.AWAITING_CODE); }} 
+                    history={history} 
+                    onDeleteHistoryItem={handleDeleteHistoryItem} 
+                />;
       case AppState.GOAL_COMPLETED: return <VerificationResult isSuccess={true} secretCodeImage={secretCodeImage} feedback={verificationFeedback} onRetry={handleRetry} onReset={() => resetToStart(false)} completionDuration={completionDuration} completionReason={completionReason} />;
       default: return <Auth onLogin={handleLogin} onContinueAsGuest={handleContinueAsGuest} />;
     }
