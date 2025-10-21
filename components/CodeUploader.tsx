@@ -2,6 +2,8 @@ import React, { useState, useCallback, useRef } from 'react';
 import Spinner from './Spinner';
 import CameraCapture from './CameraCapture';
 import DataSyncModal from './DataSyncModal';
+import DailyCommitment from './DailyCommitment';
+import { StreakData } from '../types';
 
 interface CodeUploaderProps {
   onCodeImageSubmit: (file: File) => void;
@@ -9,9 +11,21 @@ interface CodeUploaderProps {
   onShowHistory: () => void;
   onLogout: () => void;
   currentUser: string | null;
+  streakData: StreakData | null;
+  onSetCommitment: (text: string) => void;
+  onCompleteCommitment: () => void;
 }
 
-const CodeUploader: React.FC<CodeUploaderProps> = ({ onCodeImageSubmit, isLoading, onShowHistory, onLogout, currentUser }) => {
+const CodeUploader: React.FC<CodeUploaderProps> = ({ 
+    onCodeImageSubmit, 
+    isLoading, 
+    onShowHistory, 
+    onLogout, 
+    currentUser,
+    streakData,
+    onSetCommitment,
+    onCompleteCommitment,
+}) => {
   const [file, setFile] = useState<File | null>(null);
   const [showCamera, setShowCamera] = useState(false);
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
@@ -40,7 +54,7 @@ const CodeUploader: React.FC<CodeUploaderProps> = ({ onCodeImageSubmit, isLoadin
   };
 
   return (
-    <div className="relative w-full max-w-md">
+    <div className="relative w-full max-w-md flex flex-col items-center">
       {showCamera && <CameraCapture onCapture={handleCapture} onCancel={() => setShowCamera(false)} />}
       {isSyncModalOpen && <DataSyncModal onClose={() => setIsSyncModalOpen(false)} />}
       <div className="bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full text-center animate-fade-in">
@@ -143,6 +157,14 @@ const CodeUploader: React.FC<CodeUploaderProps> = ({ onCodeImageSubmit, isLoadin
           {isLoading ? <Spinner /> : 'Analyze & Save Code'}
         </button>
       </div>
+
+      {currentUser && streakData && (
+        <DailyCommitment
+            streakData={streakData}
+            onSetCommitment={onSetCommitment}
+            onCompleteCommitment={onCompleteCommitment}
+        />
+      )}
     </div>
   );
 };

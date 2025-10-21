@@ -1,6 +1,6 @@
 
 import React, { useState, useCallback, useEffect } from 'react';
-import { AppState, CompletedGoal, ActiveGoalState } from './types';
+import { AppState, CompletedGoal, ActiveGoalState, StreakData } from './types';
 import { 
     extractCodeFromImage, 
     verifyGoalCompletion, 
@@ -9,10 +9,10 @@ import {
     VerificationFeedback,
     summarizeGoal 
 } from './services/geminiService';
-import { getUserHistory, saveUserHistory } from './services/authService';
+import { getUserHistory, saveUserHistory, getStreakData, saveStreakData } from './services/authService';
 import { saveActiveGoal, loadActiveGoal, clearActiveGoal } from './services/goalStateService';
 import { fileToBase64 } from './utils/fileUtils';
-import { formatDuration } from './utils/timeUtils';
+import { formatDuration, getISODateString } from './utils/timeUtils';
 import Header from './components/Header';
 import CodeUploader from './components/CodeUploader';
 import GoalSetter, { GoalPayload } from './components/GoalSetter';
@@ -52,14 +52,15 @@ const App: React.FC = () => {
   const [chatMessages, setChatMessages] = useState<Array<{ text: string, role: 'user' | 'model' }>>([]);
   const [isChatLoading, setIsChatLoading] = useState<boolean>(false);
   const [history, setHistory] = useState<CompletedGoal[]>([]);
+
+  const [streakData, setStreakData] = useState<StreakData | null>(null);
   
   // Effect to handle auto-login
   useEffect(() => {
       if (apiKey) {
           const rememberedUser = localStorage.getItem('goalUnboxRememberedUser');
           if (rememberedUser) {
-              setCurrentUser(rememberedUser);
-              restoreSession(rememberedUser);
+              handleLogin(rememberedUser, true, true); // auto-login
           } else {
               setAppState(AppState.AUTH);
           }
@@ -88,6 +89,7 @@ const App: React.FC = () => {
     setAppState(isLogout ? AppState.AUTH : AppState.AWAITING_CODE);
     if (isLogout) {
       setCurrentUser(null);
+      setStreakData(null);
     }
     setSecretCode(null);
     setSecretCodeImage(null);
@@ -125,25 +127,54 @@ const App: React.FC = () => {
       }
   };
 
+  const checkAndInitializeStreak = (email: string) => {
+      let data = getStreakData(email);
+
+      if (!data) { // For users created before this feature.
+          data = { currentStreak: 0, lastCompletionDate: '', commitment: null };
+      }
+
+      const today = new Date();
+      const todayStr = getISODateString(today);
+      const yesterday = new Date();
+      yesterday.setDate(today.getDate() - 1);
+      const yesterdayStr = getISODateString(yesterday);
+
+      // If the last completion was not today or yesterday, reset streak.
+      if (data.lastCompletionDate && data.lastCompletionDate !== todayStr && data.lastCompletionDate !== yesterdayStr) {
+          data.currentStreak = 0;
+      }
+
+      // If the saved commitment is not for today, clear it.
+      if (data.commitment && data.commitment.date !== todayStr) {
+          data.commitment = null;
+      }
+
+      setStreakData(data);
+      saveStreakData(email, data); // Save potentially updated data
+  };
+
   const handleApiKeySubmit = (key: string) => {
     localStorage.setItem('GEMINI_API_KEY', key);
     setApiKey(key);
     setError(null);
   };
 
-  const handleLogin = (email: string, rememberMe: boolean) => {
-      if (rememberMe) {
+  const handleLogin = (email: string, rememberMe: boolean, isAutoLogin: boolean = false) => {
+      if (rememberMe && !isAutoLogin) {
           localStorage.setItem('goalUnboxRememberedUser', email);
-      } else {
+      } else if (!rememberMe) {
           localStorage.removeItem('goalUnboxRememberedUser');
       }
       setCurrentUser(email);
+      checkAndInitializeStreak(email);
       restoreSession(email);
   };
 
   const handleContinueAsGuest = () => {
       localStorage.removeItem('goalUnboxRememberedUser');
       setCurrentUser(null);
+      setStreakData(null);
       restoreSession(null);
   };
   
@@ -328,18 +359,45 @@ const App: React.FC = () => {
     }
   };
 
+  const handleSetDailyCommitment = (text: string) => {
+      if (!currentUser || !streakData) return;
+      const todayStr = getISODateString(new Date());
+      const newCommitment = { date: todayStr, text, completed: false };
+      const newData: StreakData = { ...streakData, commitment: newCommitment };
+      setStreakData(newData);
+      saveStreakData(currentUser, newData);
+  };
+    
+  const handleCompleteDailyCommitment = () => {
+      if (!currentUser || !streakData || !streakData.commitment || streakData.commitment.completed) return;
+      
+      const todayStr = getISODateString(new Date());
+      const newCommitment = { ...streakData.commitment, completed: true };
+      const newStreak = streakData.lastCompletionDate === todayStr ? streakData.currentStreak : streakData.currentStreak + 1;
+      
+      const newData: StreakData = {
+          ...streakData,
+          commitment: newCommitment,
+          currentStreak: newStreak,
+          lastCompletionDate: todayStr,
+      };
+      
+      setStreakData(newData);
+      saveStreakData(currentUser, newData);
+  };
+
   const renderContent = () => {
     if (!apiKey) return <ApiKeyPrompt onSubmit={handleApiKeySubmit} error={error} />;
 
     switch (appState) {
       case AppState.AUTH: return <Auth onLogin={handleLogin} onContinueAsGuest={handleContinueAsGuest} />;
-      case AppState.AWAITING_CODE: return <CodeUploader onCodeImageSubmit={handleCodeImageSubmit} isLoading={isLoading} onShowHistory={handleShowHistory} onLogout={handleLogout} currentUser={currentUser} />;
+      case AppState.AWAITING_CODE: return <CodeUploader onCodeImageSubmit={handleCodeImageSubmit} isLoading={isLoading} onShowHistory={handleShowHistory} onLogout={handleLogout} currentUser={currentUser} streakData={streakData} onSetCommitment={handleSetDailyCommitment} onCompleteCommitment={handleCompleteDailyCommitment} />;
       case AppState.AWAITING_GOAL: return <GoalSetter onGoalSubmit={handleGoalSubmit} isLoading={isLoading} />;
       case AppState.GOAL_SET: return <ProofUploader goal={goal} onProofImageSubmit={handleProofImageSubmit} isLoading={isLoading} goalSetTime={goalSetTime} timeLimitInMs={timeLimitInMs} consequence={consequence} mustLeaveTime={mustLeaveTime} onMustLeaveTimeUp={handleMustLeaveTimeUp} onStartEmergency={handleStartEmergency} />;
       case AppState.EMERGENCY_TEST: return <EmergencyTest onSuccess={handleEmergencySuccess} onCancel={handleEmergencyCancel} />;
       case AppState.HISTORY_VIEW:
         return <GoalHistory 
-                    onBack={() => { setHistory([]); setAppState(AppState.AWAITING_CODE); }} 
+                    onBack={() => { setHistory([]); restoreSession(currentUser); }} 
                     history={history} 
                     onDeleteHistoryItem={handleDeleteHistoryItem} 
                 />;

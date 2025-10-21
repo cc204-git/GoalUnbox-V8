@@ -1,13 +1,20 @@
 
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { formatDuration } from '../utils/timeUtils.js';
+import { generateHistoryInsights } from '../services/geminiService.js';
+import Spinner from './Spinner.js';
+import Alert from './Alert.js';
 
 const GoalHistory = ({ onBack, history, onDeleteHistoryItem }) => {
 
     const sortedHistory = useMemo(() => 
         [...history].sort((a, b) => b.endTime - a.endTime), 
     [history]);
+
+    const [insights, setInsights] = useState(null);
+    const [isInsightsLoading, setIsInsightsLoading] = useState(false);
+    const [insightsError, setInsightsError] = useState(null);
 
     const { totalDuration, timeBySubject } = useMemo(() => {
         const subjectTimes = {};
@@ -26,6 +33,20 @@ const GoalHistory = ({ onBack, history, onDeleteHistoryItem }) => {
             timeBySubject: sortedSubjects,
         };
     }, [history]);
+
+    const handleGetInsights = async () => {
+        setIsInsightsLoading(true);
+        setInsights(null);
+        setInsightsError(null);
+        try {
+            const result = await generateHistoryInsights(history);
+            setInsights(result);
+        } catch (err) {
+            setInsightsError(err.message);
+        } finally {
+            setIsInsightsLoading(false);
+        }
+    };
 
     const handleDelete = (item) => {
         if (window.confirm(`Are you sure you want to delete the goal: "${item.goalSummary}"? This action cannot be undone.`)) {
@@ -47,6 +68,32 @@ const GoalHistory = ({ onBack, history, onDeleteHistoryItem }) => {
             React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M11 17l-5-5m0 0l5-5m-5 5h12' })
         )
     );
+    
+    const insightsSection = React.createElement(
+        'div', { className: 'my-6' },
+        insightsError && React.createElement(Alert, { message: insightsError, type: 'error' }),
+        insights ? React.createElement(
+            'div', { className: 'p-4 bg-slate-900/50 rounded-lg border border-slate-700 text-left relative animate-fade-in' },
+            React.createElement('h3', { className: 'text-xl font-semibold text-cyan-300 mb-2' }, 'AI Productivity Insights'),
+            React.createElement(
+                'button', { onClick: () => setInsights(null), className: 'absolute top-2 right-2 text-slate-500 hover:text-white p-1', 'aria-label': 'Close insights' },
+                React.createElement(
+                    'svg', { xmlns: 'http://www.w3.org/2000/svg', className: 'h-6 w-6', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M6 18L18 6M6 6l12 12' })
+                )
+            ),
+            React.createElement('pre', { className: 'text-slate-300 whitespace-pre-wrap font-sans text-sm' }, insights)
+        ) : React.createElement(
+            'button', {
+                onClick: handleGetInsights,
+                disabled: isInsightsLoading || history.length < 3,
+                className: 'w-full sm:w-auto bg-slate-700 text-white font-bold py-2 px-4 rounded-lg hover:bg-slate-600 transition-all duration-300 flex items-center justify-center gap-2 mx-auto disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed'
+            },
+            isInsightsLoading ? React.createElement(React.Fragment, null, React.createElement(Spinner, null), ' Analyzing...') : 'Get AI Insights'
+        ),
+        history.length < 3 && !insights && React.createElement('p', { className: 'text-xs text-slate-500 mt-2' }, 'Complete at least 3 goals to unlock AI Insights.')
+    );
+
 
     const subjectSummary = sortedHistory.length > 0 ? React.createElement(
          'div', { className: 'my-6 border-b border-t border-slate-700 py-4' },
@@ -110,6 +157,7 @@ const GoalHistory = ({ onBack, history, onDeleteHistoryItem }) => {
         'div', { className: 'bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full max-w-4xl text-center animate-fade-in relative' },
         backButton,
         React.createElement('h2', { className: 'text-3xl font-semibold mb-2 text-cyan-300' }, 'Goal History'),
+        insightsSection,
         subjectSummary,
         table
     );

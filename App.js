@@ -3,10 +3,10 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { AppState } from './types.js';
 import { extractCodeFromImage, verifyGoalCompletion, createVerificationChat, summarizeGoal } from './services/geminiService.js';
-import { getUserHistory, saveUserHistory } from './services/authService.js';
+import { getUserHistory, saveUserHistory, getStreakData, saveStreakData } from './services/authService.js';
 import { saveActiveGoal, loadActiveGoal, clearActiveGoal } from './services/goalStateService.js';
 import { fileToBase64 } from './utils/fileUtils.js';
-import { formatDuration } from './utils/timeUtils.js';
+import { formatDuration, getISODateString } from './utils/timeUtils.js';
 import Header from './components/Header.js';
 import CodeUploader from './components/CodeUploader.js';
 import GoalSetter from './components/GoalSetter.js';
@@ -43,18 +43,29 @@ const App = () => {
   const [chatMessages, setChatMessages] = useState([]);
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [history, setHistory] = useState([]);
+  const [streakData, setStreakData] = useState(null);
+  
+  const handleLoginCallback = useCallback((email, rememberMe, isAutoLogin = false) => {
+      if (rememberMe && !isAutoLogin) {
+          localStorage.setItem('goalUnboxRememberedUser', email);
+      } else if (!rememberMe) {
+          localStorage.removeItem('goalUnboxRememberedUser');
+      }
+      setCurrentUser(email);
+      checkAndInitializeStreak(email);
+      restoreSession(email);
+  }, []);
   
   useEffect(() => {
       if (apiKey) {
           const rememberedUser = localStorage.getItem('goalUnboxRememberedUser');
           if (rememberedUser) {
-              setCurrentUser(rememberedUser);
-              restoreSession(rememberedUser);
+              handleLoginCallback(rememberedUser, true, true); // auto-login
           } else {
               setAppState(AppState.AUTH);
           }
       }
-  }, [apiKey]);
+  }, [apiKey, handleLoginCallback]);
 
   const clearApiKey = useCallback(() => {
     localStorage.removeItem('GEMINI_API_KEY');
@@ -76,6 +87,7 @@ const App = () => {
     setAppState(isLogout ? AppState.AUTH : AppState.AWAITING_CODE);
     if (isLogout) {
       setCurrentUser(null);
+      setStreakData(null);
     }
     setSecretCode(null);
     setSecretCodeImage(null);
@@ -113,25 +125,48 @@ const App = () => {
       }
   };
 
+  const checkAndInitializeStreak = (email) => {
+    let data = getStreakData(email);
+
+    if (!data) { // For users created before this feature.
+        data = { currentStreak: 0, lastCompletionDate: '', commitment: null };
+    }
+
+    const today = new Date();
+    const todayStr = getISODateString(today);
+    const yesterday = new Date();
+    yesterday.setDate(today.getDate() - 1);
+    const yesterdayStr = getISODateString(yesterday);
+
+    // If the last completion was not today or yesterday, reset streak.
+    if (data.lastCompletionDate && data.lastCompletionDate !== todayStr && data.lastCompletionDate !== yesterdayStr) {
+        data.currentStreak = 0;
+    }
+
+    // If the saved commitment is not for today, clear it.
+    if (data.commitment && data.commitment.date !== todayStr) {
+        data.commitment = null;
+    }
+
+    setStreakData(data);
+    saveStreakData(email, data); // Save potentially updated data
+  };
+
+
   const handleApiKeySubmit = (key) => {
     localStorage.setItem('GEMINI_API_KEY', key);
     setApiKey(key);
     setError(null);
   };
-
+  
   const handleLogin = (email, rememberMe) => {
-    if (rememberMe) {
-        localStorage.setItem('goalUnboxRememberedUser', email);
-    } else {
-        localStorage.removeItem('goalUnboxRememberedUser');
-    }
-    setCurrentUser(email);
-    restoreSession(email);
+    handleLoginCallback(email, rememberMe, false);
   };
 
   const handleContinueAsGuest = () => {
     localStorage.removeItem('goalUnboxRememberedUser');
     setCurrentUser(null);
+    setStreakData(null);
     restoreSession(null);
   };
   
@@ -316,18 +351,45 @@ const App = () => {
     }
   };
 
+  const handleSetDailyCommitment = (text) => {
+      if (!currentUser || !streakData) return;
+      const todayStr = getISODateString(new Date());
+      const newCommitment = { date: todayStr, text, completed: false };
+      const newData = { ...streakData, commitment: newCommitment };
+      setStreakData(newData);
+      saveStreakData(currentUser, newData);
+  };
+    
+  const handleCompleteDailyCommitment = () => {
+      if (!currentUser || !streakData || !streakData.commitment || streakData.commitment.completed) return;
+      
+      const todayStr = getISODateString(new Date());
+      const newCommitment = { ...streakData.commitment, completed: true };
+      const newStreak = streakData.lastCompletionDate === todayStr ? streakData.currentStreak : streakData.currentStreak + 1;
+      
+      const newData = {
+          ...streakData,
+          commitment: newCommitment,
+          currentStreak: newStreak,
+          lastCompletionDate: todayStr,
+      };
+      
+      setStreakData(newData);
+      saveStreakData(currentUser, newData);
+  };
+
   const renderContent = () => {
     if (!apiKey) return React.createElement(ApiKeyPrompt, { onSubmit: handleApiKeySubmit, error: error });
 
     switch (appState) {
       case AppState.AUTH: return React.createElement(Auth, { onLogin: handleLogin, onContinueAsGuest: handleContinueAsGuest });
-      case AppState.AWAITING_CODE: return React.createElement(CodeUploader, { onCodeImageSubmit: handleCodeImageSubmit, isLoading: isLoading, onShowHistory: handleShowHistory, onLogout: handleLogout, currentUser: currentUser });
+      case AppState.AWAITING_CODE: return React.createElement(CodeUploader, { onCodeImageSubmit: handleCodeImageSubmit, isLoading: isLoading, onShowHistory: handleShowHistory, onLogout: handleLogout, currentUser: currentUser, streakData: streakData, onSetCommitment: handleSetDailyCommitment, onCompleteCommitment: handleCompleteDailyCommitment });
       case AppState.AWAITING_GOAL: return React.createElement(GoalSetter, { onGoalSubmit: handleGoalSubmit, isLoading: isLoading });
       case AppState.GOAL_SET: return React.createElement(ProofUploader, { goal: goal, onProofImageSubmit: handleProofImageSubmit, isLoading: isLoading, goalSetTime: goalSetTime, timeLimitInMs: timeLimitInMs, consequence: consequence, mustLeaveTime: mustLeaveTime, onMustLeaveTimeUp: handleMustLeaveTimeUp, onStartEmergency: handleStartEmergency });
       case AppState.EMERGENCY_TEST: return React.createElement(EmergencyTest, { onSuccess: handleEmergencySuccess, onCancel: handleEmergencyCancel });
       case AppState.HISTORY_VIEW:
         return React.createElement(GoalHistory, { 
-            onBack: () => { setHistory([]); setAppState(AppState.AWAITING_CODE); }, 
+            onBack: () => { setHistory([]); restoreSession(currentUser); }, 
             history: history, 
             onDeleteHistoryItem: handleDeleteHistoryItem 
         });

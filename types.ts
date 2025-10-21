@@ -31,3 +31,9 @@ export interface ActiveGoalState {
     consequence: string | null;
     mustLeaveTime: number | null;
 }
+
+export interface StreakData {
+    currentStreak: number;
+    lastCompletionDate: string; // YYYY-MM-DD
+    commitment: { date: string; text: string; completed: boolean; } | null;
+}

@@ -1,7 +1,10 @@
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { CompletedGoal } from '../types';
 import { formatDuration } from '../utils/timeUtils';
+import { generateHistoryInsights } from '../services/geminiService';
+import Spinner from './Spinner';
+import Alert from './Alert';
 
 interface GoalHistoryProps {
   onBack: () => void;
@@ -13,6 +16,10 @@ const GoalHistory: React.FC<GoalHistoryProps> = ({ onBack, history, onDeleteHist
     const sortedHistory = useMemo(() => 
         [...history].sort((a: CompletedGoal, b: CompletedGoal) => b.endTime - a.endTime), 
     [history]);
+
+    const [insights, setInsights] = useState<string | null>(null);
+    const [isInsightsLoading, setIsInsightsLoading] = useState(false);
+    const [insightsError, setInsightsError] = useState<string | null>(null);
 
     const { totalDuration, timeBySubject } = useMemo(() => {
         const subjectTimes: { [key: string]: number } = {};
@@ -31,6 +38,20 @@ const GoalHistory: React.FC<GoalHistoryProps> = ({ onBack, history, onDeleteHist
             timeBySubject: sortedSubjects,
         };
     }, [history]);
+
+    const handleGetInsights = async () => {
+        setIsInsightsLoading(true);
+        setInsights(null);
+        setInsightsError(null);
+        try {
+            const result = await generateHistoryInsights(history);
+            setInsights(result);
+        } catch (err) {
+            setInsightsError((err as Error).message);
+        } finally {
+            setIsInsightsLoading(false);
+        }
+    };
 
     const handleDelete = (item: CompletedGoal) => {
         if (window.confirm(`Are you sure you want to delete the goal: "${item.goalSummary}"? This action cannot be undone.`)) {
@@ -57,6 +78,34 @@ const GoalHistory: React.FC<GoalHistoryProps> = ({ onBack, history, onDeleteHist
                 </svg>
             </button>
             <h2 className="text-3xl font-semibold mb-2 text-cyan-300">Goal History</h2>
+
+            <div className="my-6">
+                {insightsError && <Alert message={insightsError} type="error" />}
+                {insights ? (
+                    <div className="p-4 bg-slate-900/50 rounded-lg border border-slate-700 text-left relative animate-fade-in">
+                        <h3 className="text-xl font-semibold text-cyan-300 mb-2">AI Productivity Insights</h3>
+                        <button 
+                            onClick={() => setInsights(null)} 
+                            className="absolute top-2 right-2 text-slate-500 hover:text-white p-1"
+                            aria-label="Close insights"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                        <pre className="text-slate-300 whitespace-pre-wrap font-sans text-sm">{insights}</pre>
+                    </div>
+                ) : (
+                    <button 
+                        onClick={handleGetInsights}
+                        disabled={isInsightsLoading || history.length < 3}
+                        className="w-full sm:w-auto bg-slate-700 text-white font-bold py-2 px-4 rounded-lg hover:bg-slate-600 transition-all duration-300 flex items-center justify-center gap-2 mx-auto disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed"
+                    >
+                        {isInsightsLoading ? <><Spinner /> Analyzing...</> : "Get AI Insights"}
+                    </button>
+                )}
+                {history.length < 3 && !insights && <p className="text-xs text-slate-500 mt-2">Complete at least 3 goals to unlock AI Insights.</p>}
+            </div>
 
             {sortedHistory.length > 0 && (
                  <div className="my-6 border-b border-t border-slate-700 py-4">

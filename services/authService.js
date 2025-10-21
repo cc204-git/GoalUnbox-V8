@@ -31,6 +31,11 @@ export const createUser = (email, password) => {
             users[email] = {
                 passwordHash: simpleHash(password),
                 history: [],
+                streakData: {
+                    currentStreak: 0,
+                    lastCompletionDate: '',
+                    commitment: null,
+                }
             };
             saveUsers(users);
             resolve();
@@ -63,6 +68,19 @@ export const saveUserHistory = (email, history) => {
     const users = getUsers();
     if (users[email]) {
         users[email].history = history;
+        saveUsers(users);
+    }
+};
+
+export const getStreakData = (email) => {
+    const users = getUsers();
+    return users[email]?.streakData || null;
+};
+
+export const saveStreakData = (email, data) => {
+    const users = getUsers();
+    if (users[email]) {
+        users[email].streakData = data;
         saveUsers(users);
     }
 };

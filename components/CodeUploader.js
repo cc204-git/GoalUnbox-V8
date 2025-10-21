@@ -2,8 +2,10 @@ import React, { useState, useCallback, useRef } from 'react';
 import Spinner from './Spinner.js';
 import CameraCapture from './CameraCapture.js';
 import DataSyncModal from './DataSyncModal.js';
+import DailyCommitment from './DailyCommitment.js';
 
-const CodeUploader = ({ onCodeImageSubmit, isLoading, onShowHistory, onLogout, currentUser }) => {
+
+const CodeUploader = ({ onCodeImageSubmit, isLoading, onShowHistory, onLogout, currentUser, streakData, onSetCommitment, onCompleteCommitment }) => {
   const [file, setFile] = useState(null);
   const [showCamera, setShowCamera] = useState(false);
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
@@ -66,7 +68,7 @@ const CodeUploader = ({ onCodeImageSubmit, isLoading, onShowHistory, onLogout, c
   const loggedInAs = currentUser ? React.createElement('p', { className: "text-sm text-slate-500 mb-6 -mt-2 text-left" }, 'Logged in as: ', React.createElement('strong', null, currentUser)) : null;
 
   return React.createElement(
-    'div', { className: "relative w-full max-w-md" },
+    'div', { className: "relative w-full max-w-md flex flex-col items-center" },
     showCamera && React.createElement(CameraCapture, { onCapture: handleCapture, onCancel: () => setShowCamera(false) }),
     isSyncModalOpen && React.createElement(DataSyncModal, { onClose: () => setIsSyncModalOpen(false) }),
     React.createElement(
@@ -98,7 +100,12 @@ const CodeUploader = ({ onCodeImageSubmit, isLoading, onShowHistory, onLogout, c
         'button', { onClick: handleSubmit, disabled: !file || isLoading, className: 'w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed transition-all duration-300 flex items-center justify-center' },
         isLoading ? React.createElement(Spinner, null) : 'Analyze & Save Code'
       )
-    )
+    ),
+    currentUser && streakData && React.createElement(DailyCommitment, {
+        streakData,
+        onSetCommitment,
+        onCompleteCommitment
+    })
   );
 };
 

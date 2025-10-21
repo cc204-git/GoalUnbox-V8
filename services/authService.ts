@@ -1,4 +1,4 @@
-import { CompletedGoal } from '../types';
+import { CompletedGoal, StreakData } from '../types';
 
 // IMPORTANT: This is a simulated backend using localStorage.
 // The password hashing is NOT secure and for demonstration purposes only.
@@ -7,6 +7,7 @@ import { CompletedGoal } from '../types';
 interface User {
     passwordHash: string;
     history: CompletedGoal[];
+    streakData?: StreakData;
 }
 
 interface UserStore {
@@ -42,6 +43,11 @@ export const createUser = (email: string, password: string): Promise<void> => {
             users[email] = {
                 passwordHash: simpleHash(password),
                 history: [],
+                streakData: {
+                    currentStreak: 0,
+                    lastCompletionDate: '',
+                    commitment: null,
+                }
             };
             saveUsers(users);
             resolve();
@@ -74,6 +80,19 @@ export const saveUserHistory = (email: string, history: CompletedGoal[]): void =
     const users = getUsers();
     if (users[email]) {
         users[email].history = history;
+        saveUsers(users);
+    }
+};
+
+export const getStreakData = (email: string): StreakData | null => {
+    const users = getUsers();
+    return users[email]?.streakData || null;
+};
+
+export const saveStreakData = (email: string, data: StreakData): void => {
+    const users = getUsers();
+    if (users[email]) {
+        users[email].streakData = data;
         saveUsers(users);
     }
 };

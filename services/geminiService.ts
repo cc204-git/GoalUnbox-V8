@@ -1,5 +1,6 @@
 
 import { GoogleGenAI, Type, Chat, Content } from "@google/genai";
+import { CompletedGoal } from "../types";
 
 let ai: GoogleGenAI | null = null;
 
@@ -180,5 +181,25 @@ export const summarizeGoal = async (goal: string): Promise<string> => {
         // Fallback to simple truncation, no need to throw API key error here
         console.error("Error summarizing goal:", error);
         return goal.length > 50 ? goal.substring(0, 47) + '...' : goal;
+    }
+};
+
+export const generateHistoryInsights = async (history: CompletedGoal[]): Promise<string> => {
+    const prompt = `
+        You are a productivity coach analyzing a user's goal history. Based on the following JSON data of their completed goals, provide actionable insights and encouraging feedback.
+        Analyze their work patterns, subjects they focus on, goal completion times, and consistency.
+        Identify their strengths (e.g., "You're great at focusing on 'Work' goals in the morning").
+        Point out potential areas for improvement (e.g., "It seems you struggle with longer goals. Maybe try breaking them down?").
+        Keep the tone positive and motivational. Format the output as a concise, easy-to-read summary. Use markdown for formatting, like bullet points.
+
+        Here is the user's goal history:
+        ${JSON.stringify(history, null, 2)}
+    `;
+    try {
+        const ai = getAiClient();
+        const response = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt });
+        return response.text.trim();
+    } catch (error) {
+        throw handleApiError(error);
     }
 };

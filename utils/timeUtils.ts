@@ -38,3 +38,7 @@ export const formatCountdown = (ms: number): string => {
 
   return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
 };
+
+export const getISODateString = (date: Date): string => {
+    return date.toISOString().split('T')[0];
+};
