@@ -24,15 +24,9 @@ const VerificationResult = ({ isSuccess, secretCodeImage, feedback, onRetry, onR
   const [isImageModalOpen, setIsImageModalOpen] = useState(false);
 
   if (isSuccess) {
-    const title = completionReason === 'must-leave' ? "Time's Up!"
-        : completionReason === 'emergency' ? "Emergency Access"
-        : "Goal Completed!";
-    const titleColor = completionReason === 'must-leave' ? 'text-amber-400'
-        : completionReason === 'emergency' ? 'text-red-400'
-        : 'text-green-400';
-    const successMessage = completionReason === 'must-leave'
-        ? "Your 'Must Leave' deadline was reached."
-        : completionReason === 'emergency'
+    const title = completionReason === 'emergency' ? "Emergency Access" : "Goal Completed!";
+    const titleColor = completionReason === 'emergency' ? 'text-red-400' : 'text-green-400';
+    const successMessage = completionReason === 'emergency'
         ? "You passed the test. Your code is now available."
         : "Congratulations on achieving your goal!";
 

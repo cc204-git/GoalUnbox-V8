@@ -11,8 +11,6 @@ interface ProofUploaderProps {
   goalSetTime: number | null;
   timeLimitInMs: number | null;
   consequence: string | null;
-  mustLeaveTime: number | null;
-  onMustLeaveTimeUp: () => void;
   onStartEmergency: () => void;
 }
 
@@ -30,14 +28,13 @@ const PDFIcon = () => (
 );
 
 
-const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeLimitInMs, consequence, mustLeaveTime, onMustLeaveTimeUp, onStartEmergency }) => {
+const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeLimitInMs, consequence, onStartEmergency }) => {
   const [proofFiles, setProofFiles] = useState<ProofFile[]>([]);
   const [showCamera, setShowCamera] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [displayGoal, setDisplayGoal] = useState(goal);
   const [timeLeft, setTimeLeft] = useState<string | null>(null);
   const [isTimeUp, setIsTimeUp] = useState(false);
-  const [mustLeaveTimeLeft, setMustLeaveTimeLeft] = useState<string | null>(null);
   const [elapsedTime, setElapsedTime] = useState<string | null>(null);
 
   // Effect for the elapsed time count-up timer
@@ -63,7 +60,6 @@ const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit,
     if (isLoading) return; // Pause timers during verification
 
     let consequenceInterval: number | undefined;
-    let mustLeaveInterval: number | undefined;
 
     // Consequence Timer Logic
     if (timeLimitInMs && goalSetTime) {
@@ -98,36 +94,10 @@ const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit,
       setDisplayGoal(goal);
     }
     
-    // Must Leave Timer Logic
-    if (mustLeaveTime) {
-      const checkMustLeaveTime = () => {
-        const now = Date.now();
-        const remaining = mustLeaveTime - now;
-
-        if (remaining <= 0) {
-          setMustLeaveTimeLeft(formatCountdown(0));
-          onMustLeaveTimeUp();
-          return true; // Time is up
-        } else {
-          setMustLeaveTimeLeft(formatCountdown(remaining));
-          return false; // Time is not up
-        }
-      };
-
-      if (!checkMustLeaveTime()) {
-        mustLeaveInterval = window.setInterval(() => {
-          if (checkMustLeaveTime()) {
-            clearInterval(mustLeaveInterval);
-          }
-        }, 1000);
-      }
-    }
-
     return () => {
       if (consequenceInterval) clearInterval(consequenceInterval);
-      if (mustLeaveInterval) clearInterval(mustLeaveInterval);
     };
-  }, [goal, goalSetTime, timeLimitInMs, consequence, isTimeUp, mustLeaveTime, onMustLeaveTimeUp, isLoading]);
+  }, [goal, goalSetTime, timeLimitInMs, consequence, isTimeUp, isLoading]);
 
 
   const addFiles = (newFiles: File[]) => {
@@ -201,13 +171,6 @@ const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit,
                 <div className={`flex-1 min-w-[150px] p-3 rounded-lg border ${isTimeUp ? 'bg-red-900/50 border-red-500/50' : 'bg-slate-900/50 border-slate-700'} text-center`}>
                     <p className="text-sm text-slate-400 uppercase tracking-wider">{isTimeUp ? "Time's Up!" : 'Time Remaining'}</p>
                     <p className={`text-3xl font-mono ${isTimeUp ? 'text-red-300' : 'text-cyan-300'}`}>{timeLeft}</p>
-                </div>
-            )}
-            
-            {mustLeaveTimeLeft && (
-                <div className="flex-1 min-w-[150px] p-3 rounded-lg border bg-amber-900/50 border-amber-500/50 text-center">
-                    <p className="text-sm text-amber-300 uppercase tracking-wider">Code Reveals In</p>
-                    <p className="text-3xl font-mono text-amber-200">{mustLeaveTimeLeft}</p>
                 </div>
             )}
         </div>

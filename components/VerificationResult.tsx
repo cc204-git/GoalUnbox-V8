@@ -13,7 +13,7 @@ interface VerificationResultProps {
   onSendChatMessage?: (message: string) => void;
   isChatLoading?: boolean;
   completionDuration?: string | null;
-  completionReason?: 'verified' | 'must-leave' | 'emergency' | null;
+  completionReason?: 'verified' | 'emergency' | null;
 }
 
 const FeedbackSection: React.FC<{title: string; items: string[]; color: 'green' | 'red'}> = ({ title, items, color }) => {
@@ -36,15 +36,9 @@ const VerificationResult: React.FC<VerificationResultProps> = ({ isSuccess, secr
   const [isImageModalOpen, setIsImageModalOpen] = useState(false);
 
   if (isSuccess) {
-    const title = completionReason === 'must-leave' ? "Time's Up!"
-        : completionReason === 'emergency' ? "Emergency Access"
-        : "Goal Completed!";
-    const titleColor = completionReason === 'must-leave' ? 'text-amber-400'
-        : completionReason === 'emergency' ? 'text-red-400'
-        : 'text-green-400';
-    const successMessage = completionReason === 'must-leave'
-        ? "Your 'Must Leave' deadline was reached."
-        : completionReason === 'emergency'
+    const title = completionReason === 'emergency' ? "Emergency Access" : "Goal Completed!";
+    const titleColor = completionReason === 'emergency' ? 'text-red-400' : 'text-green-400';
+    const successMessage = completionReason === 'emergency'
         ? "You passed the test. Your code is now available."
         : "Congratulations on achieving your goal!";
 

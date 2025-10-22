@@ -9,14 +9,13 @@ const PDFIcon = () => React.createElement(
     React.createElement('path', { fillRule: 'evenodd', d: 'M4 2a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V8.414a1 1 0 00-.293-.707l-4.414-4.414A1 1 0 0011.586 2H4zm6 6a1 1 0 100-2 1 1 0 000 2zM8 12a1 1 0 100-2 1 1 0 000 2zm2 1a1 1 0 011-1h.01a1 1 0 110 2H11a1 1 0 01-1-1z', clipRule: 'evenodd' })
 );
 
-const ProofUploader = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeLimitInMs, consequence, mustLeaveTime, onMustLeaveTimeUp, onStartEmergency }) => {
+const ProofUploader = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeLimitInMs, consequence, onStartEmergency }) => {
   const [proofFiles, setProofFiles] = useState([]);
   const [showCamera, setShowCamera] = useState(false);
   const fileInputRef = useRef(null);
   const [displayGoal, setDisplayGoal] = useState(goal);
   const [timeLeft, setTimeLeft] = useState(null);
   const [isTimeUp, setIsTimeUp] = useState(false);
-  const [mustLeaveTimeLeft, setMustLeaveTimeLeft] = useState(null);
   const [elapsedTime, setElapsedTime] = useState(null);
 
   useEffect(() => {
@@ -39,7 +38,6 @@ const ProofUploader = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeL
     if (isLoading) return; // Pause timers during verification
     
     let consequenceInterval;
-    let mustLeaveInterval;
 
     if (timeLimitInMs && goalSetTime) {
       const deadline = goalSetTime + timeLimitInMs;
@@ -73,35 +71,10 @@ const ProofUploader = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeL
       setDisplayGoal(goal);
     }
     
-    if (mustLeaveTime) {
-      const checkMustLeaveTime = () => {
-        const now = Date.now();
-        const remaining = mustLeaveTime - now;
-
-        if (remaining <= 0) {
-          setMustLeaveTimeLeft(formatCountdown(0));
-          onMustLeaveTimeUp();
-          return true; // Time is up
-        } else {
-          setMustLeaveTimeLeft(formatCountdown(remaining));
-          return false; // Time is not up
-        }
-      };
-
-      if (!checkMustLeaveTime()) {
-        mustLeaveInterval = window.setInterval(() => {
-          if (checkMustLeaveTime()) {
-            clearInterval(mustLeaveInterval);
-          }
-        }, 1000);
-      }
-    }
-
     return () => {
       if (consequenceInterval) clearInterval(consequenceInterval);
-      if (mustLeaveInterval) clearInterval(mustLeaveInterval);
     };
-  }, [goal, goalSetTime, timeLimitInMs, consequence, isTimeUp, mustLeaveTime, onMustLeaveTimeUp, isLoading]);
+  }, [goal, goalSetTime, timeLimitInMs, consequence, isTimeUp, isLoading]);
 
   const addFiles = (newFiles) => {
       const uniqueNewFiles = newFiles.filter(newFile => 
@@ -174,16 +147,6 @@ const ProofUploader = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeL
         React.createElement('p', { className: `text-3xl font-mono ${isTimeUp ? 'text-red-300' : 'text-cyan-300'}` }, timeLeft)
       )
     );
-  }
-  
-  if (mustLeaveTimeLeft) {
-    timerElements.push(
-        React.createElement(
-          'div', { key: 'reveal', className: 'flex-1 min-w-[150px] p-3 rounded-lg border bg-amber-900/50 border-amber-500/50 text-center' },
-          React.createElement('p', { className: 'text-sm text-amber-300 uppercase tracking-wider' }, 'Code Reveals In'),
-          React.createElement('p', { className: 'text-3xl font-mono text-amber-200' }, mustLeaveTimeLeft)
-        )
-      );
   }
 
   return React.createElement(

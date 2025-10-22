@@ -18,7 +18,7 @@ export interface CompletedGoal {
   startTime: number;
   endTime: number;
   duration: number;
-  completionReason: 'verified' | 'must-leave' | 'emergency';
+  completionReason: 'verified' | 'emergency';
 }
 
 export interface ActiveGoalState {
@@ -29,7 +29,6 @@ export interface ActiveGoalState {
     goalSetTime: number;
     timeLimitInMs: number | null;
     consequence: string | null;
-    mustLeaveTime: number | null;
 }
 
 export interface StreakData {

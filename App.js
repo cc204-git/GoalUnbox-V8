@@ -1,5 +1,4 @@
 
-
 import React, { useState, useCallback, useEffect } from 'react';
 import { AppState } from './types.js';
 import { extractCodeFromImage, verifyGoalCompletion, createVerificationChat, summarizeGoal } from './services/geminiService.js';
@@ -34,7 +33,6 @@ const App = () => {
   const [completionDuration, setCompletionDuration] = useState(null);
   const [timeLimitInMs, setTimeLimitInMs] = useState(null);
   const [consequence, setConsequence] = useState(null);
-  const [mustLeaveTime, setMustLeaveTime] = useState(null);
   
   const [completionReason, setCompletionReason] = useState(null);
   const [completionTrigger, setCompletionTrigger] = useState({ reason: null });
@@ -103,7 +101,6 @@ const App = () => {
     setCompletionDuration(null);
     setTimeLimitInMs(null);
     setConsequence(null);
-    setMustLeaveTime(null);
     setCompletionReason(null);
     setCompletionTrigger({ reason: null });
   };
@@ -118,7 +115,6 @@ const App = () => {
           setGoalSetTime(savedState.goalSetTime);
           setTimeLimitInMs(savedState.timeLimitInMs);
           setConsequence(savedState.consequence);
-          setMustLeaveTime(savedState.mustLeaveTime);
           setAppState(AppState.GOAL_SET);
       } else {
           setAppState(AppState.AWAITING_CODE);
@@ -198,23 +194,18 @@ const App = () => {
 
   const handleGoalSubmit = useCallback((payload) => {
     const goalStartTime = Date.now();
-    let totalMs = payload.timeLimit ? (payload.timeLimit.hours * 3600 + payload.timeLimit.minutes * 60) * 1000 : 0;
+    let totalMs = (payload.timeLimit.hours * 3600 + payload.timeLimit.minutes * 60) * 1000;
     const newTimeLimitInMs = totalMs > 0 ? totalMs : null;
-    let newMustLeaveTime = null;
-    if (payload.mustLeaveTime) {
-        const mustLeaveMs = (payload.mustLeaveTime.hours * 3600 + payload.mustLeaveTime.minutes * 60) * 1000;
-        if (mustLeaveMs > 0) newMustLeaveTime = goalStartTime + mustLeaveMs;
-    }
+    
     setGoal(payload.goal);
     setSubject(payload.subject);
     setConsequence(payload.consequence);
     setTimeLimitInMs(newTimeLimitInMs);
-    setMustLeaveTime(newMustLeaveTime);
     setGoalSetTime(goalStartTime);
     setAppState(AppState.GOAL_SET);
 
     if (secretCode && secretCodeImage) {
-        const activeState = { secretCode, secretCodeImage, goal: payload.goal, subject: payload.subject, goalSetTime: goalStartTime, timeLimitInMs: newTimeLimitInMs, consequence: payload.consequence, mustLeaveTime: newMustLeaveTime };
+        const activeState = { secretCode, secretCodeImage, goal: payload.goal, subject: payload.subject, goalSetTime: goalStartTime, timeLimitInMs: newTimeLimitInMs, consequence: payload.consequence };
         saveActiveGoal(currentUser, activeState);
     }
   }, [secretCode, secretCodeImage, currentUser]);
@@ -225,10 +216,6 @@ const App = () => {
     }
     return goal;
   }, [goal, timeLimitInMs, goalSetTime, consequence]);
-
-  const handleMustLeaveTimeUp = useCallback(() => {
-    if (appState === AppState.GOAL_SET) setCompletionTrigger({ reason: 'must-leave' });
-  }, [appState]);
 
   const handleProofImageSubmit = useCallback(async (files) => {
     const pauseStartTime = Date.now();
@@ -241,7 +228,6 @@ const App = () => {
     const resumeTimers = () => {
         const pausedMs = Date.now() - pauseStartTime;
         setGoalSetTime(prev => (prev ? prev + pausedMs : null));
-        setMustLeaveTime(prev => (prev ? prev + pausedMs : null));
     };
 
     try {
@@ -300,8 +286,7 @@ const App = () => {
           const endTime = Date.now();
           const duration = endTime - goalSetTime;
           const finalGoal = getEffectiveGoal();
-          if (reason === 'must-leave') setVerificationFeedback({ summary: "Your 'Must Leave' time has been reached.", approved_aspects: [], missing_aspects: ["Goal not verified before deadline."] });
-          else if (reason === 'emergency') setVerificationFeedback(null);
+          if (reason === 'emergency') setVerificationFeedback(null);
           
           try {
               const goalSummary = await summarizeGoal(finalGoal);
@@ -385,7 +370,7 @@ const App = () => {
       case AppState.AUTH: return React.createElement(Auth, { onLogin: handleLogin, onContinueAsGuest: handleContinueAsGuest });
       case AppState.AWAITING_CODE: return React.createElement(CodeUploader, { onCodeImageSubmit: handleCodeImageSubmit, isLoading: isLoading, onShowHistory: handleShowHistory, onLogout: handleLogout, currentUser: currentUser, streakData: streakData, onSetCommitment: handleSetDailyCommitment, onCompleteCommitment: handleCompleteDailyCommitment });
       case AppState.AWAITING_GOAL: return React.createElement(GoalSetter, { onGoalSubmit: handleGoalSubmit, isLoading: isLoading });
-      case AppState.GOAL_SET: return React.createElement(ProofUploader, { goal: goal, onProofImageSubmit: handleProofImageSubmit, isLoading: isLoading, goalSetTime: goalSetTime, timeLimitInMs: timeLimitInMs, consequence: consequence, mustLeaveTime: mustLeaveTime, onMustLeaveTimeUp: handleMustLeaveTimeUp, onStartEmergency: handleStartEmergency });
+      case AppState.GOAL_SET: return React.createElement(ProofUploader, { goal: goal, onProofImageSubmit: handleProofImageSubmit, isLoading: isLoading, goalSetTime: goalSetTime, timeLimitInMs: timeLimitInMs, consequence: consequence, onStartEmergency: handleStartEmergency });
       case AppState.EMERGENCY_TEST: return React.createElement(EmergencyTest, { onSuccess: handleEmergencySuccess, onCancel: handleEmergencyCancel });
       case AppState.HISTORY_VIEW:
         return React.createElement(GoalHistory, { 

@@ -1,57 +1,140 @@
 
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import Spinner from './Spinner.js';
+import Alert from './Alert.js';
 
 const GoalSetter = ({ onGoalSubmit, isLoading }) => {
   const [goal, setGoal] = useState('');
   const [subject, setSubject] = useState('');
-  const [isTimeLimitEnabled, setIsTimeLimitEnabled] = useState(false);
   const [hours, setHours] = useState('');
   const [minutes, setMinutes] = useState('');
   const [consequence, setConsequence] = useState('');
-  const [isMustLeaveModeEnabled, setIsMustLeaveModeEnabled] = useState(false);
-  const [mustLeaveHours, setMustLeaveHours] = useState('');
-  const [mustLeaveMinutes, setMustLeaveMinutes] = useState('');
+  const [subQuestions, setSubQuestions] = useState('');
+  const [timeError, setTimeError] = useState(null);
 
-  const isMustLeaveDisabledByTime = useMemo(() => {
-    // Tunisia is UTC+1.
-    const tunisiaHour = (new Date().getUTCHours() + 1) % 24;
-    // Disable if 8 PM or later
-    return tunisiaHour >= 20;
-  }, []);
+  useEffect(() => {
+    const userMinutes = (Number(hours) || 0) * 60 + (Number(minutes) || 0);
 
-  const handleTimeLimitChange = (e) => {
-    const isChecked = e.target.checked;
-    setIsTimeLimitEnabled(isChecked);
-    if (isChecked) {
-      setIsMustLeaveModeEnabled(false);
+    // Bypass time validation for major assignments.
+    const lowerCaseGoal = goal.toLowerCase();
+    const hasExemptionKeyword = lowerCaseGoal.includes('devoir') || lowerCaseGoal.includes('probleme') || lowerCaseGoal.includes('serie');
+
+    if (hasExemptionKeyword) {
+        setTimeError(null);
+        return;
     }
-  };
 
-  const handleMustLeaveChange = (e) => {
-    const isChecked = e.target.checked;
-    setIsMustLeaveModeEnabled(isChecked);
-    if (isChecked) {
-      setIsTimeLimitEnabled(false);
+    if (userMinutes === 0 || !goal.trim() || !subject.trim()) {
+        setTimeError(null);
+        return;
     }
-  };
 
+    const questionRegex = /(\d+)\s+questions?/gi;
+    const matches = [...goal.matchAll(questionRegex)];
+    let totalQuestions = 0;
+    if (matches.length > 0) {
+        totalQuestions = matches.reduce((sum, match) => sum + parseInt(match[1], 10), 0);
+    }
+
+    if (totalQuestions === 0) {
+        setTimeError(null);
+        return;
+    }
+
+    const lowerCaseSubject = subject.toLowerCase();
+    const isSpecialSubject = lowerCaseSubject.includes('analyse') || lowerCaseSubject.includes('algebre');
+    
+    // 1h 45m (105m) per 10q for special, 1h 20m (80m) per 10q for standard
+    const timePerQuestion = isSpecialSubject ? 10.5 : 8.0;
+    const estimatedMinutes = totalQuestions * timePerQuestion;
+
+    const numSubQuestions = Number(subQuestions) || 0;
+    const subQuestionBonusMinutes = numSubQuestions * 4;
+
+    const tolerance = 1.15; // Allow 15% buffer
+    const upperBoundMinutes = (estimatedMinutes * tolerance) + subQuestionBonusMinutes;
+
+    const formatMinutesToHM = (mins) => {
+        if (mins < 1) return "less than a minute";
+        const h = Math.floor(mins / 60);
+        const m = Math.round(mins % 60);
+        const hStr = h > 0 ? `${h}h` : '';
+        const mStr = m > 0 ? `${m}m` : '';
+        return [hStr, mStr].filter(Boolean).join(' ');
+    };
+
+    if (userMinutes > upperBoundMinutes) {
+        setTimeError(`Time limit is too high. For ${totalQuestions} question(s) in "${subject}", the maximum allowed time is ${formatMinutesToHM(upperBoundMinutes)}. (Estimated time: ~${formatMinutesToHM(estimatedMinutes)})`);
+    } else {
+        setTimeError(null);
+    }
+  }, [goal, subject, hours, minutes, subQuestions]);
+
+  const handleUseTemplate = () => {
+    const today = new Date();
+    const dd = String(today.getDate()).padStart(2, '0');
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const yy = today.getFullYear().toString().slice(-2);
+    const formattedDate = `${dd}/${mm}/${yy}`;
+
+    const template = `I will submit my homework on separate, numbered papers.
+Each paper will have the date ${formattedDate} written at the top.
+My homework will include:
+
+Exercise X: Y Questions (e.g., Q1, Q2a, Q2b...)
+
+I will make sure that all exercises and questions are clearly highlighted on each paper.`;
+    setGoal(template);
+  };
 
   const handleSubmit = useCallback(() => {
-    if (goal.trim() && subject.trim()) {
+    const totalMinutes = (Number(hours) || 0) * 60 + (Number(minutes) || 0);
+    if (goal.trim() && subject.trim() && consequence.trim() && totalMinutes > 0) {
+      let finalGoal = goal.trim();
+      const numSubQuestions = Number(subQuestions) || 0;
+      if (numSubQuestions > 0) {
+          finalGoal += `\n\n(Note for verifier: This assignment includes ${numSubQuestions} sub-questions in total that need to be completed.)`;
+      }
       const payload = {
-            goal: goal.trim(),
+            goal: finalGoal,
             subject: subject.trim(),
-            timeLimit: isTimeLimitEnabled ? { hours: Number(hours) || 0, minutes: Number(minutes) || 0 } : null,
-            consequence: isTimeLimitEnabled ? consequence.trim() : null,
-            mustLeaveTime: isMustLeaveModeEnabled ? { hours: Number(mustLeaveHours) || 0, minutes: Number(mustLeaveMinutes) || 0 } : null,
+            timeLimit: { hours: Number(hours) || 0, minutes: Number(minutes) || 0 },
+            consequence: consequence.trim(),
         };
       onGoalSubmit(payload);
     }
-  }, [goal, subject, onGoalSubmit, isTimeLimitEnabled, hours, minutes, consequence, isMustLeaveModeEnabled, mustLeaveHours, mustLeaveMinutes]);
+  }, [goal, subject, onGoalSubmit, hours, minutes, consequence, subQuestions]);
+  
+  const canSubmit = !goal.trim() || !subject.trim() || !consequence.trim() || !(Number(hours) > 0 || Number(minutes) > 0) || !!timeError || isLoading;
+  
+  const templateButton = React.createElement('div', { className: 'flex justify-between items-center mb-2' },
+    React.createElement('label', { htmlFor: 'goal-textarea', className: 'text-slate-400 text-sm' }, 'Goal Description'),
+    React.createElement('button', {
+        onClick: handleUseTemplate,
+        type: 'button',
+        className: 'text-sm bg-slate-700 text-cyan-300 font-semibold py-1 px-3 rounded-md hover:bg-slate-600 transition-colors'
+    }, 'Use Template')
+  );
 
-  const timeLimitContent = isTimeLimitEnabled ? React.createElement(
-      'div', { className: 'mt-4 space-y-4 text-left animate-fade-in' },
+  const timeErrorAlert = timeError ? React.createElement('div', { className: 'mt-2' }, React.createElement(Alert, { message: timeError, type: 'error' })) : null;
+
+  const subQuestionsInput = React.createElement('div', null,
+    React.createElement('label', { htmlFor: 'sub-questions', className: 'block text-sm font-medium text-slate-400 mb-1' }, 'Number of Sub-questions (optional)'),
+    React.createElement('p', { className: 'text-xs text-slate-500 mb-2' }, "For questions like 3a, 3b, etc. Each adds 4 mins to the time margin."),
+    React.createElement('input', {
+      id: 'sub-questions',
+      type: 'number',
+      value: subQuestions,
+      onChange: (e) => setSubQuestions(e.target.value),
+      placeholder: 'e.g., 2',
+      min: '0',
+      className: 'w-full bg-slate-900 border border-slate-600 rounded-lg p-2 text-white placeholder-slate-500 focus:ring-1 focus:ring-cyan-500',
+      disabled: isLoading
+    })
+  );
+
+  const timeLimitSection = React.createElement('div', { className: 'border-t border-slate-700 pt-6 mb-6 text-left space-y-4' },
+      React.createElement('h3', { className: 'text-slate-300 font-semibold text-lg' }, 'Set Time Limit & Consequence'),
       React.createElement('div', null,
           React.createElement('label', { className: 'block text-sm font-medium text-slate-400 mb-1' }, 'Time Limit'),
           React.createElement('div', { className: 'flex items-center gap-2' },
@@ -59,24 +142,13 @@ const GoalSetter = ({ onGoalSubmit, isLoading }) => {
               React.createElement('input', { type: 'number', value: minutes, onChange: (e) => setMinutes(e.target.value), placeholder: 'Minutes', min: '0', max: '59', className: 'w-full bg-slate-900 border border-slate-600 rounded-lg p-2 text-white placeholder-slate-500 focus:ring-1 focus:ring-cyan-500' })
           )
       ),
+      subQuestionsInput,
+      timeErrorAlert,
       React.createElement('div', null,
-          React.createElement('label', { htmlFor: 'consequence', className: 'block text-sm font-medium text-slate-400 mb-1' }, 'Consequence'),
+          React.createElement('label', { htmlFor: 'consequence', className: 'block text-sm font-medium text-slate-400 mb-1' }, 'Consequence for Failure'),
           React.createElement('textarea', { id: 'consequence', value: consequence, onChange: (e) => setConsequence(e.target.value), placeholder: "e.g., 'I must also clean the garage.'", className: 'w-full h-24 bg-slate-900 border border-slate-600 rounded-lg p-3 text-white placeholder-slate-500 focus:ring-1 focus:ring-cyan-500', disabled: isLoading })
       )
-  ) : null;
-
-  const mustLeaveContent = isMustLeaveModeEnabled ? React.createElement(
-      'div', { className: 'mt-4 space-y-4 text-left animate-fade-in' },
-      React.createElement('div', null,
-          React.createElement('label', { className: 'block text-sm font-medium text-slate-400 mb-1' }, 'Reveal Code After'),
-          React.createElement('div', { className: 'flex items-center gap-2' },
-              React.createElement('input', { type: 'number', value: mustLeaveHours, onChange: (e) => setMustLeaveHours(e.target.value), placeholder: 'Hours', min: '0', className: 'w-full bg-slate-900 border border-slate-600 rounded-lg p-2 text-white placeholder-slate-500 focus:ring-1 focus:ring-cyan-500' }),
-              React.createElement('input', { type: 'number', value: mustLeaveMinutes, onChange: (e) => setMustLeaveMinutes(e.target.value), placeholder: 'Minutes', min: '0', max: '59', className: 'w-full bg-slate-900 border border-slate-600 rounded-lg p-2 text-white placeholder-slate-500 focus:ring-1 focus:ring-cyan-500' })
-          )
-      )
-  ) : null;
-  
-  const mustLeaveDisabledMessage = isMustLeaveDisabledByTime ? React.createElement('p', { className: 'text-xs text-amber-400/80 text-left mt-1 ml-8' }, "This option is only available before 8:00 PM (20:00) Tunisia time.") : null;
+  );
 
   return React.createElement(
     'div',
@@ -86,55 +158,25 @@ const GoalSetter = ({ onGoalSubmit, isLoading }) => {
     React.createElement('input', {
       value: subject,
       onChange: (e) => setSubject(e.target.value),
-      placeholder: "Goal Subject (e.g., 'Work', 'Fitness', 'Learning')",
+      placeholder: "Goal Subject (e.g., 'Work', 'Analyse', 'Algebre')",
       className: 'w-full bg-slate-900 border border-slate-600 rounded-lg p-3 text-white placeholder-slate-500 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 transition mb-4',
       disabled: isLoading,
     }),
+    templateButton,
     React.createElement('textarea', {
+      id: 'goal-textarea',
       value: goal,
       onChange: (e) => setGoal(e.target.value),
       placeholder: "e.g., 'Finish writing chapter 1 of my book, ensuring it is at least 3,000 words.'",
       className: 'w-full h-40 bg-slate-900 border border-slate-600 rounded-lg p-4 text-white placeholder-slate-500 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 transition mb-6',
       disabled: isLoading,
     }),
-    React.createElement(
-        'div',
-        { className: 'border-t border-slate-700 pt-6 mb-6' },
-        React.createElement(
-            'label', { className: `flex items-center gap-3 ${isMustLeaveModeEnabled ? 'cursor-not-allowed' : 'cursor-pointer'}` },
-            React.createElement('input', { 
-                type: 'checkbox', 
-                checked: isTimeLimitEnabled, 
-                onChange: handleTimeLimitChange,
-                disabled: isMustLeaveModeEnabled,
-                className: 'h-5 w-5 rounded bg-slate-700 border-slate-500 text-cyan-500 focus:ring-cyan-500 disabled:opacity-50' 
-            }),
-            React.createElement('span', { className: `text-slate-300 font-semibold ${isMustLeaveModeEnabled ? 'text-slate-500' : ''}` }, 'Add a Time Limit & Consequence (Optional)')
-        ),
-        timeLimitContent
-    ),
-    React.createElement(
-        'div',
-        { className: 'border-t border-slate-700 pt-6 mb-6' },
-        React.createElement('label', { className: `flex items-center gap-3 ${(isTimeLimitEnabled || isMustLeaveDisabledByTime) ? 'cursor-not-allowed' : 'cursor-pointer'}` },
-            React.createElement('input', { 
-                type: 'checkbox', 
-                checked: isMustLeaveModeEnabled, 
-                onChange: handleMustLeaveChange,
-                disabled: isTimeLimitEnabled || isMustLeaveDisabledByTime,
-                className: 'h-5 w-5 rounded bg-slate-700 border-slate-500 text-cyan-500 focus:ring-cyan-500 disabled:opacity-50' 
-            }),
-            React.createElement('span', { className: `text-slate-300 font-semibold ${(isTimeLimitEnabled || isMustLeaveDisabledByTime) ? 'text-slate-500' : ''}` }, 'Add Must Leave Time (Optional)')
-        ),
-        React.createElement('p', { className: 'text-xs text-slate-500 text-left mt-1 ml-8' }, "Set a hard deadline to get your code back, even if the goal isn't complete."),
-        mustLeaveDisabledMessage,
-        mustLeaveContent
-    ),
+    timeLimitSection,
     React.createElement(
       'button',
       {
         onClick: handleSubmit,
-        disabled: !goal.trim() || !subject.trim() || isLoading,
+        disabled: canSubmit,
         className: 'w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed transition-all duration-300 flex items-center justify-center',
       },
       isLoading ? React.createElement(Spinner, null) : 'Set My Goal'
