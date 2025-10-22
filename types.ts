@@ -8,6 +8,9 @@ export enum AppState {
   GOAL_COMPLETED,
   EMERGENCY_TEST,
   HISTORY_VIEW,
+  AWAITING_BREAK,
+  BREAK_ACTIVE,
+  BREAK_FAILED,
 }
 
 export interface CompletedGoal {

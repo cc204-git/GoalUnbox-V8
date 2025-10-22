@@ -7,5 +7,8 @@ export const AppState = {
   GOAL_COMPLETED: 5,
   EMERGENCY_TEST: 6,
   HISTORY_VIEW: 7,
+  AWAITING_BREAK: 8,
+  BREAK_ACTIVE: 9,
+  BREAK_FAILED: 10,
 };
 Object.freeze(AppState);
