@@ -1,21 +1,22 @@
 
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import Spinner from './Spinner.js';
 import Alert from './Alert.js';
 
-const GoalSetter = ({ onGoalSubmit, isLoading }) => {
+const GoalSetter = ({ onGoalSubmit, isLoading, submitButtonText = 'Set My Goal', onCancel }) => {
   const [goal, setGoal] = useState('');
   const [subject, setSubject] = useState('');
   const [hours, setHours] = useState('');
   const [minutes, setMinutes] = useState('');
   const [consequence, setConsequence] = useState('');
   const [subQuestions, setSubQuestions] = useState('');
+  const [startTime, setStartTime] = useState('');
+  const [endTime, setEndTime] = useState('');
   const [timeError, setTimeError] = useState(null);
 
   useEffect(() => {
     const userMinutes = (Number(hours) || 0) * 60 + (Number(minutes) || 0);
 
-    // Bypass time validation for major assignments.
     const lowerCaseGoal = goal.toLowerCase();
     const hasExemptionKeyword = lowerCaseGoal.includes('devoir') || lowerCaseGoal.includes('probleme') || lowerCaseGoal.includes('serie');
 
@@ -23,35 +24,27 @@ const GoalSetter = ({ onGoalSubmit, isLoading }) => {
         setTimeError(null);
         return;
     }
-
     if (userMinutes === 0 || !goal.trim() || !subject.trim()) {
         setTimeError(null);
         return;
     }
-
     const questionRegex = /(\d+)\s+questions?/gi;
     const matches = [...goal.matchAll(questionRegex)];
     let totalQuestions = 0;
     if (matches.length > 0) {
         totalQuestions = matches.reduce((sum, match) => sum + parseInt(match[1], 10), 0);
     }
-
     if (totalQuestions === 0) {
         setTimeError(null);
         return;
     }
-
     const lowerCaseSubject = subject.toLowerCase();
     const isSpecialSubject = lowerCaseSubject.includes('analyse') || lowerCaseSubject.includes('algebre');
-    
-    // 1h 45m (105m) per 10q for special, 1h 20m (80m) per 10q for standard
     const timePerQuestion = isSpecialSubject ? 10.5 : 8.0;
     const estimatedMinutes = totalQuestions * timePerQuestion;
-
     const numSubQuestions = Number(subQuestions) || 0;
     const subQuestionBonusMinutes = numSubQuestions * 4;
-
-    const tolerance = 1.15; // Allow 15% buffer
+    const tolerance = 1.15;
     const upperBoundMinutes = (estimatedMinutes * tolerance) + subQuestionBonusMinutes;
 
     const formatMinutesToHM = (mins) => {
@@ -70,6 +63,7 @@ const GoalSetter = ({ onGoalSubmit, isLoading }) => {
     }
   }, [goal, subject, hours, minutes, subQuestions]);
 
+
   const handleUseTemplate = () => {
     const today = new Date();
     const dd = String(today.getDate()).padStart(2, '0');
@@ -87,99 +81,139 @@ I will make sure that all exercises and questions are clearly highlighted on eac
     setGoal(template);
   };
 
+
   const handleSubmit = useCallback(() => {
     const totalMinutes = (Number(hours) || 0) * 60 + (Number(minutes) || 0);
-    if (goal.trim() && subject.trim() && consequence.trim() && totalMinutes > 0) {
+    if (goal.trim() && subject.trim() && consequence.trim() && totalMinutes > 0 && startTime && endTime) {
       let finalGoal = goal.trim();
       const numSubQuestions = Number(subQuestions) || 0;
+
       if (numSubQuestions > 0) {
           finalGoal += `\n\n(Note for verifier: This assignment includes ${numSubQuestions} sub-questions in total that need to be completed.)`;
       }
+
       const payload = {
             goal: finalGoal,
             subject: subject.trim(),
             timeLimit: { hours: Number(hours) || 0, minutes: Number(minutes) || 0 },
             consequence: consequence.trim(),
+            startTime,
+            endTime,
         };
       onGoalSubmit(payload);
     }
-  }, [goal, subject, onGoalSubmit, hours, minutes, consequence, subQuestions]);
-  
-  const canSubmit = !goal.trim() || !subject.trim() || !consequence.trim() || !(Number(hours) > 0 || Number(minutes) > 0) || !!timeError || isLoading;
-  
-  const templateButton = React.createElement('div', { className: 'flex justify-between items-center mb-2' },
-    React.createElement('label', { htmlFor: 'goal-textarea', className: 'text-slate-400 text-sm' }, 'Goal Description'),
-    React.createElement('button', {
-        onClick: handleUseTemplate,
-        type: 'button',
-        className: 'text-sm bg-slate-700 text-cyan-300 font-semibold py-1 px-3 rounded-md hover:bg-slate-600 transition-colors'
-    }, 'Use Template')
-  );
+  }, [goal, subject, onGoalSubmit, hours, minutes, consequence, subQuestions, startTime, endTime]);
 
-  const timeErrorAlert = timeError ? React.createElement('div', { className: 'mt-2' }, React.createElement(Alert, { message: timeError, type: 'error' })) : null;
-
-  const subQuestionsInput = React.createElement('div', null,
-    React.createElement('label', { htmlFor: 'sub-questions', className: 'block text-sm font-medium text-slate-400 mb-1' }, 'Number of Sub-questions (optional)'),
-    React.createElement('p', { className: 'text-xs text-slate-500 mb-2' }, "For questions like 3a, 3b, etc. Each adds 4 mins to the time margin."),
-    React.createElement('input', {
-      id: 'sub-questions',
-      type: 'number',
-      value: subQuestions,
-      onChange: (e) => setSubQuestions(e.target.value),
-      placeholder: 'e.g., 2',
-      min: '0',
-      className: 'w-full bg-slate-900 border border-slate-600 rounded-lg p-2 text-white placeholder-slate-500 focus:ring-1 focus:ring-cyan-500',
-      disabled: isLoading
-    })
-  );
-
-  const timeLimitSection = React.createElement('div', { className: 'border-t border-slate-700 pt-6 mb-6 text-left space-y-4' },
-      React.createElement('h3', { className: 'text-slate-300 font-semibold text-lg' }, 'Set Time Limit & Consequence'),
-      React.createElement('div', null,
-          React.createElement('label', { className: 'block text-sm font-medium text-slate-400 mb-1' }, 'Time Limit'),
-          React.createElement('div', { className: 'flex items-center gap-2' },
-              React.createElement('input', { type: 'number', value: hours, onChange: (e) => setHours(e.target.value), placeholder: 'Hours', min: '0', className: 'w-full bg-slate-900 border border-slate-600 rounded-lg p-2 text-white placeholder-slate-500 focus:ring-1 focus:ring-cyan-500' }),
-              React.createElement('input', { type: 'number', value: minutes, onChange: (e) => setMinutes(e.target.value), placeholder: 'Minutes', min: '0', max: '59', className: 'w-full bg-slate-900 border border-slate-600 rounded-lg p-2 text-white placeholder-slate-500 focus:ring-1 focus:ring-cyan-500' })
-          )
-      ),
-      subQuestionsInput,
-      timeErrorAlert,
-      React.createElement('div', null,
-          React.createElement('label', { htmlFor: 'consequence', className: 'block text-sm font-medium text-slate-400 mb-1' }, 'Consequence for Failure'),
-          React.createElement('textarea', { id: 'consequence', value: consequence, onChange: (e) => setConsequence(e.target.value), placeholder: "e.g., 'I must also clean the garage.'", className: 'w-full h-24 bg-slate-900 border border-slate-600 rounded-lg p-3 text-white placeholder-slate-500 focus:ring-1 focus:ring-cyan-500', disabled: isLoading })
-      )
-  );
+  const canSubmit = !goal.trim() || !subject.trim() || !consequence.trim() || !(Number(hours) > 0 || Number(minutes) > 0) || !!timeError || isLoading || !startTime || !endTime;
 
   return React.createElement(
-    'div',
-    { className: 'bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full max-w-lg text-center animate-fade-in' },
-    React.createElement('h2', { className: 'text-2xl font-semibold mb-2 text-cyan-300' }, 'Step 2: Define Your Goal'),
+    'div', { className: 'bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full max-w-lg text-center animate-fade-in' },
+    React.createElement('h2', { className: 'text-2xl font-semibold mb-2 text-cyan-300' }, 'Add Goal to Plan'),
     React.createElement('p', { className: 'text-slate-400 mb-6' }, 'Be specific! The AI will use this description to verify your proof of completion.'),
     React.createElement('input', {
       value: subject,
       onChange: (e) => setSubject(e.target.value),
       placeholder: "Goal Subject (e.g., 'Work', 'Analyse', 'Algebre')",
       className: 'w-full bg-slate-900 border border-slate-600 rounded-lg p-3 text-white placeholder-slate-500 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 transition mb-4',
-      disabled: isLoading,
+      disabled: isLoading
     }),
-    templateButton,
+    React.createElement('div', { className: 'flex justify-between items-center mb-2' },
+      React.createElement('label', { htmlFor: 'goal-textarea', className: 'text-slate-400 text-sm' }, 'Goal Description'),
+      React.createElement('button', {
+        onClick: handleUseTemplate,
+        type: 'button',
+        className: 'text-sm bg-slate-700 text-cyan-300 font-semibold py-1 px-3 rounded-md hover:bg-slate-600 transition-colors'
+      }, 'Use Template')
+    ),
     React.createElement('textarea', {
       id: 'goal-textarea',
       value: goal,
       onChange: (e) => setGoal(e.target.value),
       placeholder: "e.g., 'Finish writing chapter 1 of my book, ensuring it is at least 3,000 words.'",
       className: 'w-full h-40 bg-slate-900 border border-slate-600 rounded-lg p-4 text-white placeholder-slate-500 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 transition mb-6',
-      disabled: isLoading,
+      disabled: isLoading
     }),
-    timeLimitSection,
-    React.createElement(
-      'button',
-      {
+    React.createElement('div', { className: 'border-t border-slate-700 pt-6 mb-6 text-left space-y-4' },
+      React.createElement('h3', { className: 'text-slate-300 font-semibold text-lg' }, 'Set Time Range & Consequence'),
+      React.createElement('div', null,
+        React.createElement('label', { className: 'block text-sm font-medium text-slate-400 mb-1' }, 'Time Range'),
+        React.createElement('div', { className: 'flex items-center gap-2' },
+          React.createElement('input', {
+            type: 'time',
+            value: startTime,
+            onChange: (e) => setStartTime(e.target.value),
+            className: 'w-full bg-slate-900 border border-slate-600 rounded-lg p-2 text-white placeholder-slate-500 focus:ring-1 focus:ring-cyan-500'
+          }),
+          React.createElement('span', { className: 'text-slate-400' }, 'to'),
+          React.createElement('input', {
+            type: 'time',
+            value: endTime,
+            onChange: (e) => setEndTime(e.target.value),
+            className: 'w-full bg-slate-900 border border-slate-600 rounded-lg p-2 text-white placeholder-slate-500 focus:ring-1 focus:ring-cyan-500'
+          })
+        )
+      ),
+      React.createElement('div', null,
+        React.createElement('label', { className: 'block text-sm font-medium text-slate-400 mb-1' }, 'Estimated Time to Complete'),
+        React.createElement('div', { className: 'flex items-center gap-2' },
+          React.createElement('input', {
+            type: 'number',
+            value: hours,
+            onChange: (e) => setHours(e.target.value),
+            placeholder: 'Hours',
+            min: '0',
+            className: 'w-full bg-slate-900 border border-slate-600 rounded-lg p-2 text-white placeholder-slate-500 focus:ring-1 focus:ring-cyan-500'
+          }),
+          React.createElement('input', {
+            type: 'number',
+            value: minutes,
+            onChange: (e) => setMinutes(e.target.value),
+            placeholder: 'Minutes',
+            min: '0',
+            max: '59',
+            className: 'w-full bg-slate-900 border border-slate-600 rounded-lg p-2 text-white placeholder-slate-500 focus:ring-1 focus:ring-cyan-500'
+          })
+        )
+      ),
+      React.createElement('div', null,
+        React.createElement('label', { htmlFor: 'sub-questions', className: 'block text-sm font-medium text-slate-400 mb-1' }, 'Number of Sub-questions (optional)'),
+        React.createElement('p', { className: 'text-xs text-slate-500 mb-2' }, 'For questions like 3a, 3b, etc. Each adds 4 mins to the time margin.'),
+        React.createElement('input', {
+          id: 'sub-questions',
+          type: 'number',
+          value: subQuestions,
+          onChange: (e) => setSubQuestions(e.target.value),
+          placeholder: 'e.g., 2',
+          min: '0',
+          className: 'w-full bg-slate-900 border border-slate-600 rounded-lg p-2 text-white placeholder-slate-500 focus:ring-1 focus:ring-cyan-500',
+          disabled: isLoading
+        })
+      ),
+      timeError && React.createElement('div', { className: 'mt-2' }, React.createElement(Alert, { message: timeError, type: 'error' })),
+      React.createElement('div', null,
+        React.createElement('label', { htmlFor: 'consequence', className: 'block text-sm font-medium text-slate-400 mb-1' }, 'Consequence for Failure'),
+        React.createElement('textarea', {
+          id: 'consequence',
+          value: consequence,
+          onChange: (e) => setConsequence(e.target.value),
+          placeholder: "e.g., 'I must also clean the garage.'",
+          className: 'w-full h-24 bg-slate-900 border border-slate-600 rounded-lg p-3 text-white placeholder-slate-500 focus:ring-1 focus:ring-cyan-500',
+          disabled: isLoading
+        })
+      )
+    ),
+    React.createElement('div', { className: 'flex gap-4' },
+      onCancel && React.createElement('button', {
+        type: 'button',
+        onClick: onCancel,
+        disabled: isLoading,
+        className: 'w-full bg-slate-700 text-white font-bold py-3 px-4 rounded-lg hover:bg-slate-600 transition-all duration-300'
+      }, 'Cancel'),
+      React.createElement('button', {
         onClick: handleSubmit,
         disabled: canSubmit,
-        className: 'w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed transition-all duration-300 flex items-center justify-center',
-      },
-      isLoading ? React.createElement(Spinner, null) : 'Set My Goal'
+        className: 'w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed transition-all duration-300 flex items-center justify-center'
+      }, isLoading ? React.createElement(Spinner, null) : submitButtonText)
     )
   );
 };

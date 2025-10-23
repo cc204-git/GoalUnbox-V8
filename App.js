@@ -1,13 +1,14 @@
-
 import React, { useState, useCallback, useEffect } from 'react';
 import { AppState } from './types.js';
 import { extractCodeFromImage, verifyGoalCompletion, createVerificationChat, summarizeGoal } from './services/geminiService.js';
 import { getUserHistory, saveUserHistory, getStreakData, saveStreakData } from './services/authService.js';
 import { saveActiveGoal, loadActiveGoal, clearActiveGoal } from './services/goalStateService.js';
+import { saveTodaysPlan, loadTodaysPlan } from './services/planService.js';
 import { fileToBase64 } from './utils/fileUtils.js';
 import { formatDuration, getISODateString, formatCountdown } from './utils/timeUtils.js';
 import Header from './components/Header.js';
 import CodeUploader from './components/CodeUploader.js';
+import TodaysPlanComponent from './components/TodaysPlan.js';
 import GoalSetter from './components/GoalSetter.js';
 import ProofUploader from './components/ProofUploader.js';
 import VerificationResult from './components/VerificationResult.js';
@@ -36,47 +37,50 @@ const App = () => {
   const [consequence, setConsequence] = useState(null);
   
   const [completionReason, setCompletionReason] = useState(null);
+  const [activePlannedGoal, setActivePlannedGoal] = useState(null);
 
-  // --- Assure Feature State ---
   const [availableBreakTime, setAvailableBreakTime] = useState(null);
   const [breakEndTime, setBreakEndTime] = useState(null);
   const [completedSecretCodeImage, setCompletedSecretCodeImage] = useState(null);
   const [nextGoal, setNextGoal] = useState(null);
   const [currentTime, setCurrentTime] = useState(Date.now());
+  const [breakChoice, setBreakChoice] = useState(null);
 
   const [chat, setChat] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [history, setHistory] = useState([]);
   const [streakData, setStreakData] = useState(null);
+  const [todaysPlan, setTodaysPlan] = useState(null);
   
   const handleLoginCallback = useCallback((email, rememberMe, isAutoLogin = false) => {
-      if (rememberMe && !isAutoLogin) {
-          localStorage.setItem('goalUnboxRememberedUser', email);
-      } else if (!rememberMe) {
-          localStorage.removeItem('goalUnboxRememberedUser');
-      }
-      setCurrentUser(email);
-      checkAndInitializeStreak(email);
-      restoreSession(email);
+    if (rememberMe && !isAutoLogin) {
+        localStorage.setItem('goalUnboxRememberedUser', email);
+    } else if (!rememberMe) {
+        localStorage.removeItem('goalUnboxRememberedUser');
+    }
+    setCurrentUser(email);
+    checkAndInitializeStreak(email);
+    restoreSession(email);
   }, []);
   
   useEffect(() => {
       if (apiKey) {
           const rememberedUser = localStorage.getItem('goalUnboxRememberedUser');
           if (rememberedUser) {
-              handleLoginCallback(rememberedUser, true, true); // auto-login
+              handleLoginCallback(rememberedUser, true, true);
           } else {
               setAppState(AppState.AUTH);
           }
       }
   }, [apiKey, handleLoginCallback]);
 
+
   const clearApiKey = useCallback(() => {
     localStorage.removeItem('GEMINI_API_KEY');
     setApiKey(null);
   }, []);
-
+  
   const handleApiError = useCallback((err) => {
       const error = err;
       if (error.message.includes("API Key is not valid")) {
@@ -89,10 +93,13 @@ const App = () => {
 
   const resetToStart = (isLogout = false) => {
     clearActiveGoal(currentUser);
-    setAppState(isLogout ? AppState.AUTH : AppState.AWAITING_CODE);
     if (isLogout) {
+      setAppState(AppState.AUTH);
       setCurrentUser(null);
       setStreakData(null);
+      setTodaysPlan(null);
+    } else {
+        setAppState(AppState.TODAYS_PLAN);
     }
     setSecretCode(null);
     setSecretCodeImage(null);
@@ -109,11 +116,12 @@ const App = () => {
     setTimeLimitInMs(null);
     setConsequence(null);
     setCompletionReason(null);
-    // Assure Feature state reset
+    setActivePlannedGoal(null);
     setAvailableBreakTime(null);
     setBreakEndTime(null);
     setCompletedSecretCodeImage(null);
     setNextGoal(null);
+    setBreakChoice(null);
   };
   
   const restoreSession = (email) => {
@@ -128,99 +136,103 @@ const App = () => {
           setConsequence(savedState.consequence);
           setAppState(AppState.GOAL_SET);
       } else {
-          setAppState(AppState.AWAITING_CODE);
+          let plan = loadTodaysPlan(email);
+          if (!plan) {
+              plan = { date: getISODateString(new Date()), goals: [] };
+              saveTodaysPlan(email, plan);
+          }
+          setTodaysPlan(plan);
+          setAppState(AppState.TODAYS_PLAN);
       }
   };
 
   const checkAndInitializeStreak = (email) => {
-    let data = getStreakData(email);
-
-    if (!data) { // For users created before this feature.
-        data = { currentStreak: 0, lastCompletionDate: '', commitment: null };
-    }
-
-    const today = new Date();
-    const todayStr = getISODateString(today);
-    const yesterday = new Date();
-    yesterday.setDate(today.getDate() - 1);
-    const yesterdayStr = getISODateString(yesterday);
-
-    // If the last completion was not today or yesterday, reset streak.
-    if (data.lastCompletionDate && data.lastCompletionDate !== todayStr && data.lastCompletionDate !== yesterdayStr) {
-        data.currentStreak = 0;
-    }
-
-    // If the saved commitment is not for today, clear it.
-    if (data.commitment && data.commitment.date !== todayStr) {
-        data.commitment = null;
-    }
-
-    setStreakData(data);
-    saveStreakData(email, data); // Save potentially updated data
+      let data = getStreakData(email);
+      if (!data) {
+          data = { currentStreak: 0, lastCompletionDate: '', commitment: null };
+      }
+      const today = new Date();
+      const todayStr = getISODateString(today);
+      const yesterday = new Date();
+      yesterday.setDate(today.getDate() - 1);
+      const yesterdayStr = getISODateString(yesterday);
+      if (data.lastCompletionDate && data.lastCompletionDate !== todayStr && data.lastCompletionDate !== yesterdayStr) {
+          data.currentStreak = 0;
+      }
+      if (data.commitment && data.commitment.date !== todayStr) {
+          data.commitment = null;
+      }
+      setStreakData(data);
+      saveStreakData(email, data);
   };
-
 
   const handleApiKeySubmit = (key) => {
     localStorage.setItem('GEMINI_API_KEY', key);
     setApiKey(key);
     setError(null);
   };
-  
+
   const handleLogin = (email, rememberMe) => {
-    handleLoginCallback(email, rememberMe, false);
+      handleLoginCallback(email, rememberMe, false);
   };
 
   const handleContinueAsGuest = () => {
-    localStorage.removeItem('goalUnboxRememberedUser');
-    setCurrentUser(null);
-    setStreakData(null);
-    restoreSession(null);
+      localStorage.removeItem('goalUnboxRememberedUser');
+      setCurrentUser(null);
+      setStreakData(null);
+      restoreSession(null);
   };
   
   const handleLogout = () => {
-    localStorage.removeItem('goalUnboxRememberedUser');
-    resetToStart(true);
+      localStorage.removeItem('goalUnboxRememberedUser');
+      resetToStart(true);
   };
-
+  
   const handleCodeImageSubmit = useCallback(async (file) => {
     setIsLoading(true);
     setError(null);
     
+    let tempSecretCodeImage = null;
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    const imagePromise = new Promise(resolve => {
+        reader.onload = () => {
+            tempSecretCodeImage = reader.result;
+            setSecretCodeImage(tempSecretCodeImage);
+            resolve();
+        };
+    });
+
     try {
         const base64 = await fileToBase64(file);
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = () => setSecretCodeImage(reader.result);
+        await imagePromise;
 
         const code = await extractCodeFromImage(base64, file.type);
         setSecretCode(code);
-        setAppState(AppState.AWAITING_GOAL);
+        
+        const goalStartTime = Date.now();
+        setGoalSetTime(goalStartTime);
+        
+        const activeState = { 
+            secretCode: code, 
+            secretCodeImage: tempSecretCodeImage, 
+            goal, 
+            subject, 
+            goalSetTime: goalStartTime, 
+            timeLimitInMs, 
+            consequence 
+        };
+        saveActiveGoal(currentUser, activeState);
+        setAppState(AppState.GOAL_SET);
+
     } catch (err) {
         handleApiError(err);
         setSecretCodeImage(null);
     } finally {
         setIsLoading(false);
     }
-  }, [handleApiError]);
+  }, [handleApiError, goal, subject, timeLimitInMs, consequence, currentUser]);
 
-  const handleGoalSubmit = useCallback((payload) => {
-    const goalStartTime = Date.now();
-    let totalMs = (payload.timeLimit.hours * 3600 + payload.timeLimit.minutes * 60) * 1000;
-    const newTimeLimitInMs = totalMs > 0 ? totalMs : null;
-    
-    setGoal(payload.goal);
-    setSubject(payload.subject);
-    setConsequence(payload.consequence);
-    setTimeLimitInMs(newTimeLimitInMs);
-    setGoalSetTime(goalStartTime);
-    setAppState(AppState.GOAL_SET);
-
-    if (secretCode && secretCodeImage) {
-        const activeState = { secretCode, secretCodeImage, goal: payload.goal, subject: payload.subject, goalSetTime: goalStartTime, timeLimitInMs: newTimeLimitInMs, consequence: payload.consequence };
-        saveActiveGoal(currentUser, activeState);
-    }
-  }, [secretCode, secretCodeImage, currentUser]);
-  
   const getEffectiveGoal = useCallback(() => {
     if (timeLimitInMs && goalSetTime && consequence && Date.now() > goalSetTime + timeLimitInMs) {
       return `The user's original goal was: "${goal}". They failed to meet the time limit. The consequence is: "${consequence}". The new combined goal is to complete BOTH the original goal AND the consequence.`;
@@ -237,28 +249,32 @@ const App = () => {
     try {
         const goalSummary = await summarizeGoal(finalGoal);
         const newEntry = { id: endTime, goalSummary, fullGoal: finalGoal, subject: subject, startTime: goalSetTime, endTime, duration, completionReason: reason };
-        const historyKey = currentUser ? null : 'goalUnboxHistory';
-        const currentHistory = currentUser ? getUserHistory(currentUser) : JSON.parse(localStorage.getItem(historyKey) || '[]');
+        const currentHistory = currentUser ? getUserHistory(currentUser) : JSON.parse(localStorage.getItem('goalUnboxHistory') || '[]');
         currentHistory.push(newEntry);
         if (currentUser) saveUserHistory(currentUser, currentHistory);
-        else localStorage.setItem(historyKey, JSON.stringify(currentHistory));
+        else localStorage.setItem('goalUnboxHistory', JSON.stringify(currentHistory));
     } catch (e) { console.error("Failed to save goal:", e); }
 
     clearActiveGoal(currentUser);
 
+    if (activePlannedGoal && todaysPlan) {
+        const updatedGoals = todaysPlan.goals.map(g => g.id === activePlannedGoal.id ? { ...g, completed: true } : g);
+        const updatedPlan = { ...todaysPlan, goals: updatedGoals };
+        setTodaysPlan(updatedPlan);
+        saveTodaysPlan(currentUser, updatedPlan);
+        setActivePlannedGoal(null);
+    }
+
+
     if (reason === 'verified') {
         let breakDurationMs = 0;
         const twoHoursInMs = 2 * 60 * 60 * 1000;
-
         if (duration < twoHoursInMs) {
-            // If the goal took less than 2 hours, give a 10-minute break.
             breakDurationMs = 10 * 60 * 1000;
         } else {
-            // If 2 hours or more, use the proportional calculation: 15 mins per 2 hours.
             breakDurationMs = (duration / twoHoursInMs) * (15 * 60 * 1000);
         }
-
-        if (breakDurationMs > 0) { // Offer break if any was calculated
+        if (breakDurationMs > 0) {
             setAvailableBreakTime(breakDurationMs);
             setCompletionDuration(formatDuration(duration > 0 ? duration : 0));
             setCompletedSecretCodeImage(secretCodeImage);
@@ -269,13 +285,12 @@ const App = () => {
         }
     }
 
-    // Default path for emergency or short goals
     setCompletionDuration(formatDuration(duration > 0 ? duration : 0));
     setCompletionReason(reason);
     setVerificationFeedback(feedback);
     setAppState(AppState.GOAL_COMPLETED);
     setIsLoading(false);
-}, [currentUser, goal, goalSetTime, getEffectiveGoal, secretCodeImage, subject]);
+}, [currentUser, goal, goalSetTime, getEffectiveGoal, secretCodeImage, subject, activePlannedGoal, todaysPlan]);
 
   const handleProofImageSubmit = useCallback(async (files) => {
     const pauseStartTime = Date.now();
@@ -322,15 +337,16 @@ const App = () => {
         const response = await chat.sendMessage(message);
         const jsonResponse = JSON.parse(response.text);
         const newResult = jsonResponse;
+        
         if (newResult.completed) {
-            setChatMessages(prev => [...prev, { role: 'model', text: newResult.feedback.summary + "\n\nGoal is now complete!" }]);
-           setTimeout(async () => {
-               await handleGoalSuccess(newResult.feedback, 'verified');
-           }, 1500);
-       } else {
-           setVerificationFeedback(newResult.feedback);
-           setChatMessages(prev => [...prev, { role: 'model', text: newResult.feedback.summary }]);
-       }
+             setChatMessages(prev => [...prev, { role: 'model', text: newResult.feedback.summary + "\n\nGoal is now complete!" }]);
+            setTimeout(async () => {
+                await handleGoalSuccess(newResult.feedback, 'verified');
+            }, 1500);
+        } else {
+            setVerificationFeedback(newResult.feedback);
+            setChatMessages(prev => [...prev, { role: 'model', text: newResult.feedback.summary }]);
+        }
     } catch (err) {
         const errorMessage = "The verifier couldn't process your message. Please try rephrasing.";
         setError(errorMessage);
@@ -339,7 +355,6 @@ const App = () => {
         setIsChatLoading(false);
     }
   }, [chat, handleGoalSuccess]);
-
 
   const handleRetry = () => {
     setError(null);
@@ -396,171 +411,266 @@ const App = () => {
       saveStreakData(currentUser, newData);
   };
 
-  // --- Assure Feature Handlers ---
-  const handleStartBreak = () => {
-    if (availableBreakTime) {
-        setBreakEndTime(Date.now() + availableBreakTime);
-        setAppState(AppState.BREAK_ACTIVE);
-    }
-  };
+    const handleSavePlan = (plan) => {
+        setTodaysPlan(plan);
+        saveTodaysPlan(currentUser, plan);
+    };
 
-  const handleSkipBreak = () => {
-    setCompletionReason('verified');
-    setAppState(AppState.GOAL_COMPLETED);
-  };
+    const handleStartPlannedGoal = (goalToStart) => {
+        setGoal(goalToStart.goal);
+        setSubject(goalToStart.subject);
+        setTimeLimitInMs(goalToStart.timeLimitInMs);
+        setConsequence(goalToStart.consequence);
+        setActivePlannedGoal(goalToStart);
+        setAppState(AppState.AWAITING_CODE);
+    };
 
-  const handleNextCodeImageSubmit = async (file) => {
-    setIsLoading(true);
-    setError(null);
-    try {
-        const base64 = await fileToBase64(file);
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = () => {
-            const dataUrl = reader.result;
-            extractCodeFromImage(base64, file.type).then(code => {
-                setNextGoal({ secretCode: code, secretCodeImage: dataUrl });
-                setIsLoading(false);
-            }).catch(err => {
-                handleApiError(err);
-                setIsLoading(false);
-            });
-        };
-    } catch (err) {
-        handleApiError(err);
-        setIsLoading(false);
-    }
-  };
-
-  const handleNextGoalSubmit = (payload) => {
-    let totalMs = (payload.timeLimit.hours * 3600 + payload.timeLimit.minutes * 60) * 1000;
-    const newTimeLimitInMs = totalMs > 0 ? totalMs : null;
-    setNextGoal(prev => ({
-        ...prev,
-        goal: payload.goal,
-        subject: payload.subject,
-        timeLimitInMs: newTimeLimitInMs,
-        consequence: payload.consequence,
-    }));
-  };
-
-  useEffect(() => {
-    if (appState !== AppState.BREAK_ACTIVE || !breakEndTime) {
-        return;
-    }
-
-    const interval = setInterval(() => {
-        setCurrentTime(Date.now());
-        const timeLeft = breakEndTime - Date.now();
-        if (timeLeft <= 0) {
-            clearInterval(interval);
-            if (nextGoal?.goal && nextGoal?.secretCode) {
-                const activeState = {
-                    secretCode: nextGoal.secretCode,
-                    secretCodeImage: nextGoal.secretCodeImage,
-                    goal: nextGoal.goal,
-                    subject: nextGoal.subject,
-                    goalSetTime: Date.now(),
-                    timeLimitInMs: nextGoal.timeLimitInMs,
-                    consequence: nextGoal.consequence,
-                };
-                saveActiveGoal(currentUser, activeState);
-                // Set all main states for the new goal
-                setSecretCode(activeState.secretCode);
-                setSecretCodeImage(activeState.secretCodeImage);
-                setGoal(activeState.goal);
-                setSubject(activeState.subject);
-                setGoalSetTime(activeState.goalSetTime);
-                setTimeLimitInMs(activeState.timeLimitInMs);
-                setConsequence(activeState.consequence);
-                setAppState(AppState.GOAL_SET);
-            } else {
-                setAppState(AppState.BREAK_FAILED);
-            }
-            // Clear break states
-            setBreakEndTime(null);
-            setAvailableBreakTime(null);
-            setNextGoal(null);
-            setCompletedSecretCodeImage(null);
+    const handleStartBreak = () => {
+        if (availableBreakTime) {
+            setBreakEndTime(Date.now() + availableBreakTime);
+            setAppState(AppState.BREAK_ACTIVE);
         }
-    }, 1000);
+    };
 
-    return () => clearInterval(interval);
-  }, [appState, breakEndTime, currentUser, nextGoal]);
+    const handleSkipBreak = () => {
+        setCompletionReason('verified');
+        setAppState(AppState.GOAL_COMPLETED);
+    };
+
+    const handleNextCodeImageSubmit = async (file) => {
+        setIsLoading(true);
+        setError(null);
+        try {
+            const base64 = await fileToBase64(file);
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = () => {
+                const dataUrl = reader.result;
+                extractCodeFromImage(base64, file.type).then(code => {
+                    setNextGoal(prev => ({ ...prev, secretCode: code, secretCodeImage: dataUrl }));
+                    setIsLoading(false);
+                }).catch(err => {
+                    handleApiError(err);
+                    setIsLoading(false);
+                });
+            };
+        } catch (err) {
+            handleApiError(err);
+            setIsLoading(false);
+        }
+    };
+    
+    const handleNextGoalSubmit = (payload) => {
+        let totalMs = (payload.timeLimit.hours * 3600 + payload.timeLimit.minutes * 60) * 1000;
+        const newTimeLimitInMs = totalMs > 0 ? totalMs : null;
+        setNextGoal(prev => {
+            if (!prev) return null;
+            return {
+                ...prev,
+                goal: payload.goal,
+                subject: payload.subject,
+                timeLimitInMs: newTimeLimitInMs,
+                consequence: payload.consequence,
+            }
+        });
+    };
+
+    const handleSelectPlannedGoalForNext = (goalToSelect) => {
+        setNextGoal({
+            goal: goalToSelect.goal,
+            subject: goalToSelect.subject,
+            timeLimitInMs: goalToSelect.timeLimitInMs,
+            consequence: goalToSelect.consequence,
+            plannedGoalId: goalToSelect.id,
+        });
+    };
+
+    const startNextGoal = useCallback(() => {
+        if (!nextGoal?.goal || !nextGoal?.secretCode || !nextGoal.secretCodeImage) {
+            setAppState(AppState.BREAK_FAILED);
+            return;
+        }
+        const nextGoalTime = Date.now();
+        const activeState = {
+            secretCode: nextGoal.secretCode,
+            secretCodeImage: nextGoal.secretCodeImage,
+            goal: nextGoal.goal,
+            subject: nextGoal.subject,
+            goalSetTime: nextGoalTime,
+            timeLimitInMs: nextGoal.timeLimitInMs,
+            consequence: nextGoal.consequence,
+        };
+        saveActiveGoal(currentUser, activeState);
+        setSecretCode(activeState.secretCode);
+        setSecretCodeImage(activeState.secretCodeImage);
+        setGoal(activeState.goal);
+        setSubject(activeState.subject);
+        setGoalSetTime(activeState.goalSetTime);
+        setTimeLimitInMs(activeState.timeLimitInMs);
+        setConsequence(activeState.consequence);
+
+        if (nextGoal.plannedGoalId && todaysPlan) {
+            const plannedGoal = todaysPlan.goals.find(g => g.id === nextGoal.plannedGoalId);
+            setActivePlannedGoal(plannedGoal || null);
+        } else {
+            setActivePlannedGoal(null);
+        }
+
+        setBreakEndTime(null);
+        setAvailableBreakTime(null);
+        setNextGoal(null);
+        setCompletedSecretCodeImage(null);
+        setBreakChoice(null);
+
+        // Reset feedback from the previous goal
+        setVerificationFeedback(null);
+        setChat(null);
+        setChatMessages([]);
+
+        setAppState(AppState.GOAL_SET);
+    }, [nextGoal, currentUser, todaysPlan]);
+
+    useEffect(() => {
+        if (appState !== AppState.BREAK_ACTIVE || !breakEndTime) {
+            return;
+        }
+        const interval = setInterval(() => {
+            setCurrentTime(Date.now());
+            const timeLeft = breakEndTime - Date.now();
+            if (timeLeft <= 0) {
+                clearInterval(interval);
+                if (nextGoal?.goal && nextGoal?.secretCode) {
+                    startNextGoal();
+                } else {
+                    setAppState(AppState.BREAK_FAILED);
+                }
+                setBreakEndTime(null);
+                setAvailableBreakTime(null);
+                setNextGoal(null);
+                setCompletedSecretCodeImage(null);
+                setBreakChoice(null);
+            }
+        }, 1000);
+
+        return () => clearInterval(interval);
+    }, [appState, breakEndTime, nextGoal, startNextGoal]);
 
   const renderContent = () => {
     if (!apiKey) return React.createElement(ApiKeyPrompt, { onSubmit: handleApiKeySubmit, error: error });
 
     switch (appState) {
       case AppState.AUTH: return React.createElement(Auth, { onLogin: handleLogin, onContinueAsGuest: handleContinueAsGuest });
+      case AppState.TODAYS_PLAN:
+        return todaysPlan ? React.createElement(TodaysPlanComponent, { initialPlan: todaysPlan, onSavePlan: handleSavePlan, onStartGoal: handleStartPlannedGoal }) : null;
       case AppState.AWAITING_CODE: return React.createElement(CodeUploader, { onCodeImageSubmit: handleCodeImageSubmit, isLoading: isLoading, onShowHistory: handleShowHistory, onLogout: handleLogout, currentUser: currentUser, streakData: streakData, onSetCommitment: handleSetDailyCommitment, onCompleteCommitment: handleCompleteDailyCommitment });
-      case AppState.AWAITING_GOAL: return React.createElement(GoalSetter, { onGoalSubmit: handleGoalSubmit, isLoading: isLoading });
       case AppState.GOAL_SET: return React.createElement(ProofUploader, { goal: goal, onProofImageSubmit: handleProofImageSubmit, isLoading: isLoading, goalSetTime: goalSetTime, timeLimitInMs: timeLimitInMs, consequence: consequence, onStartEmergency: handleStartEmergency });
       case AppState.EMERGENCY_TEST: return React.createElement(EmergencyTest, { onSuccess: handleEmergencySuccess, onCancel: handleEmergencyCancel });
       case AppState.HISTORY_VIEW:
         return React.createElement(GoalHistory, { 
-            onBack: () => { setHistory([]); restoreSession(currentUser); }, 
-            history: history, 
-            onDeleteHistoryItem: handleDeleteHistoryItem 
-        });
+                    onBack: () => { setHistory([]); restoreSession(currentUser); }, 
+                    history: history, 
+                    onDeleteHistoryItem: handleDeleteHistoryItem 
+                });
       case AppState.GOAL_COMPLETED: return React.createElement(VerificationResult, { isSuccess: true, secretCodeImage: secretCodeImage || completedSecretCodeImage, feedback: verificationFeedback, onRetry: handleRetry, onReset: () => resetToStart(false), completionDuration: completionDuration, completionReason: completionReason });
+      
       case AppState.AWAITING_BREAK:
-        return React.createElement('div', { className: "bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full max-w-md text-center animate-fade-in" },
-            React.createElement('h2', { className: "text-3xl font-bold mb-4 text-green-400" }, "Goal Completed!"),
-            React.createElement('p', { className: "text-slate-300 mb-6" }, verificationFeedback?.summary),
-            React.createElement('p', { className: "text-slate-300 mb-6" }, "You've earned a break of ", React.createElement('strong', { className: "text-cyan-300" }, formatDuration(availableBreakTime ?? 0)), "."),
-            React.createElement('div', { className: "space-y-4" },
-                 React.createElement('button', { onClick: handleStartBreak, className: "w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400 transition-all" }, "Start Break & Reveal Code"),
-                React.createElement('button', { onClick: handleSkipBreak, className: "w-full bg-slate-700 text-white font-semibold py-2 px-3 rounded-lg hover:bg-slate-600 transition-colors" }, "Skip Break & Finish")
+        return (
+            React.createElement('div', { className: "bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full max-w-md text-center animate-fade-in" },
+                React.createElement('h2', { className: "text-3xl font-bold mb-4 text-green-400" }, "Goal Completed!"),
+                React.createElement('p', { className: "text-slate-300 mb-6" }, verificationFeedback?.summary),
+                 React.createElement('p', { className: "text-slate-300 mb-6" }, "You've earned a break of ", React.createElement('strong', { className: "text-cyan-300" }, formatDuration(availableBreakTime ?? 0)), "."),
+                React.createElement('div', { className: "space-y-4" },
+                     React.createElement('button', { onClick: handleStartBreak, className: "w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400 transition-all" }, "Start Break & Reveal Code"),
+                    React.createElement('button', { onClick: handleSkipBreak, className: "w-full bg-slate-700 text-white font-semibold py-2 px-3 rounded-lg hover:bg-slate-600 transition-colors" }, "Skip Break & Finish")
+                )
             )
         );
       case AppState.BREAK_ACTIVE:
             const timeLeft = breakEndTime ? breakEndTime - currentTime : 0;
-            const nextGoalContent = !nextGoal?.secretCode ? 
-                React.createElement(CodeUploader, { onCodeImageSubmit: handleNextCodeImageSubmit, isLoading: isLoading, onShowHistory: handleShowHistory, onLogout: handleLogout, currentUser: currentUser, streakData: streakData, onSetCommitment: handleSetDailyCommitment, onCompleteCommitment: handleCompleteDailyCommitment}) :
-                !nextGoal.goal ?
-                React.createElement(GoalSetter, { onGoalSubmit: handleNextGoalSubmit, isLoading: isLoading }) :
-                React.createElement('div', { className: "bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full text-center" },
+            const uncompletedGoals = (todaysPlan?.goals.filter(g => !g.completed) ?? []).sort((a, b) => a.startTime.localeCompare(b.startTime));
+            const readyForNextGoal = nextGoal?.goal && nextGoal?.secretCode;
+
+            let content;
+            if (readyForNextGoal) {
+                content = React.createElement('div', { className: "bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full text-center" },
                     React.createElement('h2', { className: "text-2xl font-semibold text-green-400 flex items-center justify-center gap-2" },
                         React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", className: "h-8 w-8", viewBox: "0 0 20 20", fill: "currentColor" }, React.createElement('path', { fillRule: "evenodd", d: "M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z", clipRule: "evenodd" })),
-                        "Next Goal is Set!"
+                        "Next Goal is Ready!"
                     ),
-                    React.createElement('p', { className: "text-slate-300 mt-2" }, "Your new goal will begin automatically when the break is over.")
+                    React.createElement('p', { className: "text-slate-300 mt-2 mb-6" }, "Your new goal will begin automatically when the break is over."),
+                    React.createElement('button', { onClick: startNextGoal, className: "w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400" }, "Skip Break & Start Now")
                 );
+            } else if (!breakChoice) {
+                content = React.createElement('div', { className: "bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full text-center" },
+                    React.createElement('h2', { className: "text-xl font-semibold mb-4 text-slate-200" }, "Prepare Your Next Goal"),
+                    React.createElement('div', { className: "flex flex-col sm:flex-row gap-4" },
+                        React.createElement('button', { onClick: () => setBreakChoice('plan'), className: "flex-1 bg-slate-700 text-white font-bold py-3 px-4 rounded-lg hover:bg-slate-600 transition-colors", disabled: uncompletedGoals.length === 0 }, `Choose from Plan ${uncompletedGoals.length === 0 ? "(None Left)" : ""}`),
+                        React.createElement('button', { onClick: () => setBreakChoice('new'), className: "flex-1 bg-slate-700 text-white font-bold py-3 px-4 rounded-lg hover:bg-slate-600 transition-colors" }, "Set a New Goal")
+                    )
+                );
+            } else if (breakChoice === 'new' && !nextGoal?.secretCode) {
+                content = React.createElement(CodeUploader, { onCodeImageSubmit: handleNextCodeImageSubmit, isLoading: isLoading, onShowHistory: ()=>{}, onLogout: ()=>{}, currentUser: null, streakData: null, onSetCommitment: ()=>{}, onCompleteCommitment: ()=>{} });
+            } else if (breakChoice === 'new' && !nextGoal?.goal) {
+                content = React.createElement(GoalSetter, { onGoalSubmit: handleNextGoalSubmit, isLoading: false, submitButtonText: "Set Next Goal", onCancel: () => setNextGoal(null) });
+            } else if (breakChoice === 'plan' && !nextGoal?.goal) {
+                content = React.createElement('div', { className: "bg-slate-800/50 border border-slate-700 p-6 rounded-lg shadow-2xl w-full text-center" },
+                    React.createElement('h2', { className: "text-xl font-semibold mb-4 text-slate-200" }, "Select Next Goal from Plan"),
+                    React.createElement('div', { className: "space-y-3 max-h-64 overflow-y-auto pr-2" },
+                        ...uncompletedGoals.map(g => React.createElement('div', { key: g.id, className: "p-3 bg-slate-900/50 border border-slate-700 rounded-lg text-left flex items-center justify-between gap-4" },
+                            React.createElement('div', null,
+                                React.createElement('p', { className: "font-mono text-sm text-cyan-300" }, `${g.startTime} - ${g.endTime}`),
+                                React.createElement('p', { className: "font-bold text-white mt-1" }, g.subject),
+                                React.createElement('p', { className: "text-xs text-slate-400" }, `${g.goal.substring(0, 70)}...`)
+                            ),
+                            React.createElement('button', { onClick: () => handleSelectPlannedGoalForNext(g), className: "bg-cyan-500 text-slate-900 font-bold py-2 px-3 rounded-lg hover:bg-cyan-400 text-sm flex-shrink-0" }, "Select")
+                        ))
+                    ),
+                    React.createElement('button', { onClick: () => setBreakChoice(null), className: "mt-4 text-slate-400 hover:text-white text-sm" }, "Back")
+                );
+            } else if (breakChoice === 'plan' && !nextGoal?.secretCode) {
+                 content = React.createElement(CodeUploader, { onCodeImageSubmit: handleNextCodeImageSubmit, isLoading: isLoading, onShowHistory: ()=>{}, onLogout: ()=>{}, currentUser: null, streakData: null, onSetCommitment: ()=>{}, onCompleteCommitment: ()=>{} });
+            }
 
-            return React.createElement('div', { className: "w-full max-w-md flex flex-col items-center" },
-                React.createElement('div', { className: "w-full text-center bg-slate-800/80 backdrop-blur-sm p-3 rounded-lg border border-slate-700 mb-6" },
-                    React.createElement('p', { className: "text-sm text-slate-400 uppercase tracking-wider" }, "Break Ends In"),
-                    React.createElement('p', { className: `text-3xl font-mono ${timeLeft < 60000 ? 'text-red-400' : 'text-cyan-300'}` }, formatCountdown(timeLeft > 0 ? timeLeft : 0))
-                ),
-                completedSecretCodeImage && React.createElement('div', { className: "mb-6 text-center" },
-                    React.createElement('p', { className: "text-slate-400 text-sm mb-2" }, "Your unlock code:"),
-                    React.createElement('img', { src: completedSecretCodeImage, alt: "Sequestered code", className: "rounded-lg max-w-xs mx-auto border-2 border-green-500" })
-                ),
-                React.createElement('div', { className: "w-full" }, nextGoalContent)
+            return (
+                React.createElement('div', { className: "w-full max-w-2xl flex flex-col items-center gap-6" },
+                    React.createElement('div', { className: "w-full text-center bg-slate-800/80 backdrop-blur-sm p-3 rounded-lg border border-slate-700" },
+                        React.createElement('p', { className: "text-sm text-slate-400 uppercase tracking-wider" }, "Break Ends In"),
+                        React.createElement('p', { className: `text-3xl font-mono ${timeLeft < 60000 ? 'text-red-400' : 'text-cyan-300'}` }, formatCountdown(timeLeft > 0 ? timeLeft : 0))
+                    ),
+                    completedSecretCodeImage && (
+                        React.createElement('div', { className: "text-center" },
+                            React.createElement('p', { className: "text-slate-400 text-sm mb-2" }, "Your previous unlock code:"),
+                            React.createElement('img', { src: completedSecretCodeImage, alt: "Sequestered code", className: "rounded-lg max-w-xs mx-auto border-2 border-green-500" })
+                        )
+                    ),
+                    React.createElement('div', { className: "w-full max-w-lg" }, content)
+                )
             );
        case AppState.BREAK_FAILED:
-            return React.createElement('div', { className: "bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full max-w-md text-center animate-fade-in" },
-                React.createElement(Alert, { message: "Break finished. You failed to set a new goal in time.", type: "error" }),
-                React.createElement('button', { onClick: () => resetToStart(false), className: "w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400" }, "Start Over")
+            return (
+                React.createElement('div', { className: "bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full max-w-md text-center animate-fade-in" },
+                    React.createElement(Alert, { message: "Break finished. You failed to set a new goal in time.", type: "error" }),
+                    React.createElement('button', { onClick: () => resetToStart(false), className: "w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400" }, "Back to Plan")
+                )
             );
       default: return React.createElement(Auth, { onLogin: handleLogin, onContinueAsGuest: handleContinueAsGuest });
     }
   };
 
-  return React.createElement(
-    'div', { className: 'min-h-screen flex flex-col items-center justify-center p-4 bg-slate-900' },
-    React.createElement('style', {}, `@keyframes fade-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } } .animate-fade-in { animation: fade-in 0.5s ease-out forwards; }`),
-    React.createElement(Header, null),
-    React.createElement(
-      'main', { className: 'w-full flex flex-col items-center justify-center' },
-      error && appState !== AppState.AUTH && !apiKey && React.createElement('div', null),
-      error && (appState !== AppState.AUTH && apiKey) && React.createElement(Alert, { message: error, type: 'error' }),
-      appState === AppState.GOAL_SET && verificationFeedback && React.createElement(
-        'div', { className: 'w-full max-w-lg mb-4' },
-        React.createElement(VerificationResult, { isSuccess: false, secretCodeImage: null, feedback: verificationFeedback, onRetry: handleRetry, onReset: () => resetToStart(false), chatMessages: chatMessages, onSendChatMessage: handleSendChatMessage, isChatLoading: isChatLoading })
-      ),
-      !(appState === AppState.GOAL_SET && verificationFeedback) && renderContent()
+  return (
+    React.createElement('div', { className: 'min-h-screen flex flex-col items-center justify-center p-4 bg-slate-900' },
+        React.createElement('style', {}, `@keyframes fade-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } } .animate-fade-in { animation: fade-in 0.5s ease-out forwards; }`),
+      React.createElement(Header, null),
+      React.createElement('main', { className: 'w-full flex flex-col items-center justify-center' },
+        error && appState !== AppState.AUTH && !apiKey && React.createElement('div', null),
+        error && (appState !== AppState.AUTH && apiKey) && React.createElement(Alert, { message: error, type: "error" }),
+        appState === AppState.GOAL_SET && verificationFeedback && (
+            React.createElement('div', { className: 'w-full max-w-lg mb-4' },
+                 React.createElement(VerificationResult, { isSuccess: false, secretCodeImage: null, feedback: verificationFeedback, onRetry: handleRetry, onReset: () => resetToStart(false), chatMessages: chatMessages, onSendChatMessage: handleSendChatMessage, isChatLoading: isChatLoading })
+            )
+        ),
+        !(appState === AppState.GOAL_SET && verificationFeedback) && renderContent()
+      )
     )
   );
 };

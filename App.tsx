@@ -1,6 +1,5 @@
-
 import React, { useState, useCallback, useEffect } from 'react';
-import { AppState, CompletedGoal, ActiveGoalState, StreakData } from './types';
+import { AppState, CompletedGoal, ActiveGoalState, StreakData, TodaysPlan, PlannedGoal } from './types';
 import { 
     extractCodeFromImage, 
     verifyGoalCompletion, 
@@ -11,10 +10,12 @@ import {
 } from './services/geminiService';
 import { getUserHistory, saveUserHistory, getStreakData, saveStreakData } from './services/authService';
 import { saveActiveGoal, loadActiveGoal, clearActiveGoal } from './services/goalStateService';
+import { saveTodaysPlan, loadTodaysPlan } from './services/planService';
 import { fileToBase64 } from './utils/fileUtils';
 import { formatDuration, getISODateString, formatCountdown } from './utils/timeUtils';
 import Header from './components/Header';
 import CodeUploader from './components/CodeUploader';
+import TodaysPlanComponent from './components/TodaysPlan';
 import GoalSetter, { GoalPayload } from './components/GoalSetter';
 import ProofUploader from './components/ProofUploader';
 import VerificationResult from './components/VerificationResult';
@@ -24,7 +25,6 @@ import GoalHistory from './components/GoalHistory';
 import Auth from './components/Auth';
 import ApiKeyPrompt from './components/ApiKeyPrompt';
 import { Chat } from '@google/genai';
-import Spinner from './components/Spinner';
 
 type CompletionReason = 'verified' | 'emergency';
 
@@ -46,6 +46,7 @@ const App: React.FC = () => {
   const [consequence, setConsequence] = useState<string | null>(null);
   
   const [completionReason, setCompletionReason] = useState<CompletionReason | null>(null);
+  const [activePlannedGoal, setActivePlannedGoal] = useState<PlannedGoal | null>(null);
 
   // --- Assure Feature State ---
   const [availableBreakTime, setAvailableBreakTime] = useState<number | null>(null);
@@ -58,8 +59,10 @@ const App: React.FC = () => {
       subject?: string;
       timeLimitInMs?: number | null;
       consequence?: string | null;
+      plannedGoalId?: string;
   } | null>(null);
   const [currentTime, setCurrentTime] = useState(Date.now());
+  const [breakChoice, setBreakChoice] = useState<'new' | 'plan' | null>(null);
 
 
   const [chat, setChat] = useState<Chat | null>(null);
@@ -68,18 +71,17 @@ const App: React.FC = () => {
   const [history, setHistory] = useState<CompletedGoal[]>([]);
 
   const [streakData, setStreakData] = useState<StreakData | null>(null);
+  const [todaysPlan, setTodaysPlan] = useState<TodaysPlan | null>(null);
   
-  // Effect to handle auto-login
   useEffect(() => {
       if (apiKey) {
           const rememberedUser = localStorage.getItem('goalUnboxRememberedUser');
           if (rememberedUser) {
-              handleLogin(rememberedUser, true, true); // auto-login
+              handleLogin(rememberedUser, true, true);
           } else {
               setAppState(AppState.AUTH);
           }
       }
-      // If no apiKey, the ApiKeyPrompt will show, and this will re-run when it's set.
   }, [apiKey]);
 
 
@@ -100,10 +102,14 @@ const App: React.FC = () => {
 
   const resetToStart = (isLogout: boolean = false) => {
     clearActiveGoal(currentUser);
-    setAppState(isLogout ? AppState.AUTH : AppState.AWAITING_CODE);
     if (isLogout) {
+      setAppState(AppState.AUTH);
       setCurrentUser(null);
       setStreakData(null);
+      setTodaysPlan(null);
+    } else {
+        // If not logging out, go back to today's plan
+        setAppState(AppState.TODAYS_PLAN);
     }
     setSecretCode(null);
     setSecretCodeImage(null);
@@ -120,11 +126,12 @@ const App: React.FC = () => {
     setTimeLimitInMs(null);
     setConsequence(null);
     setCompletionReason(null);
-    // Assure Feature state reset
+    setActivePlannedGoal(null);
     setAvailableBreakTime(null);
     setBreakEndTime(null);
     setCompletedSecretCodeImage(null);
     setNextGoal(null);
+    setBreakChoice(null);
   };
   
   const restoreSession = (email: string | null) => {
@@ -139,35 +146,35 @@ const App: React.FC = () => {
           setConsequence(savedState.consequence);
           setAppState(AppState.GOAL_SET);
       } else {
-          setAppState(AppState.AWAITING_CODE);
+          // New flow: check for today's plan instead of going to code uploader
+          let plan = loadTodaysPlan(email);
+          if (!plan) {
+              plan = { date: getISODateString(new Date()), goals: [] };
+              saveTodaysPlan(email, plan);
+          }
+          setTodaysPlan(plan);
+          setAppState(AppState.TODAYS_PLAN);
       }
   };
 
   const checkAndInitializeStreak = (email: string) => {
       let data = getStreakData(email);
-
-      if (!data) { // For users created before this feature.
+      if (!data) {
           data = { currentStreak: 0, lastCompletionDate: '', commitment: null };
       }
-
       const today = new Date();
       const todayStr = getISODateString(today);
       const yesterday = new Date();
       yesterday.setDate(today.getDate() - 1);
       const yesterdayStr = getISODateString(yesterday);
-
-      // If the last completion was not today or yesterday, reset streak.
       if (data.lastCompletionDate && data.lastCompletionDate !== todayStr && data.lastCompletionDate !== yesterdayStr) {
           data.currentStreak = 0;
       }
-
-      // If the saved commitment is not for today, clear it.
       if (data.commitment && data.commitment.date !== todayStr) {
           data.commitment = null;
       }
-
       setStreakData(data);
-      saveStreakData(email, data); // Save potentially updated data
+      saveStreakData(email, data);
   };
 
   const handleApiKeySubmit = (key: string) => {
@@ -203,41 +210,47 @@ const App: React.FC = () => {
     setIsLoading(true);
     setError(null);
     
+    let tempSecretCodeImage: string | null = null;
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    const imagePromise = new Promise<void>(resolve => {
+        reader.onload = () => {
+            tempSecretCodeImage = reader.result as string;
+            setSecretCodeImage(tempSecretCodeImage);
+            resolve();
+        };
+    });
+
     try {
         const base64 = await fileToBase64(file);
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = () => setSecretCodeImage(reader.result as string);
+        await imagePromise;
 
         const code = await extractCodeFromImage(base64, file.type);
         setSecretCode(code);
-        setAppState(AppState.AWAITING_GOAL);
+        
+        const goalStartTime = Date.now();
+        setGoalSetTime(goalStartTime);
+        
+        const activeState: ActiveGoalState = { 
+            secretCode: code, 
+            secretCodeImage: tempSecretCodeImage!, 
+            goal, 
+            subject, 
+            goalSetTime: goalStartTime, 
+            timeLimitInMs, 
+            consequence 
+        };
+        saveActiveGoal(currentUser, activeState);
+        setAppState(AppState.GOAL_SET);
+
     } catch (err) {
         handleApiError(err);
         setSecretCodeImage(null);
     } finally {
         setIsLoading(false);
     }
-  }, [handleApiError]);
+  }, [handleApiError, goal, subject, timeLimitInMs, consequence, currentUser]);
 
-  const handleGoalSubmit = useCallback((payload: GoalPayload) => {
-    const goalStartTime = Date.now();
-    let totalMs = (payload.timeLimit.hours * 3600 + payload.timeLimit.minutes * 60) * 1000;
-    const newTimeLimitInMs = totalMs > 0 ? totalMs : null;
-    
-    setGoal(payload.goal);
-    setSubject(payload.subject);
-    setConsequence(payload.consequence);
-    setTimeLimitInMs(newTimeLimitInMs);
-    setGoalSetTime(goalStartTime);
-    setAppState(AppState.GOAL_SET);
-
-    if (secretCode && secretCodeImage) {
-        const activeState: ActiveGoalState = { secretCode, secretCodeImage, goal: payload.goal, subject: payload.subject, goalSetTime: goalStartTime, timeLimitInMs: newTimeLimitInMs, consequence: payload.consequence };
-        saveActiveGoal(currentUser, activeState);
-    }
-  }, [secretCode, secretCodeImage, currentUser]);
-  
   const getEffectiveGoal = useCallback(() => {
     if (timeLimitInMs && goalSetTime && consequence && Date.now() > goalSetTime + timeLimitInMs) {
       return `The user's original goal was: "${goal}". They failed to meet the time limit. The consequence is: "${consequence}". The new combined goal is to complete BOTH the original goal AND the consequence.`;
@@ -254,28 +267,32 @@ const App: React.FC = () => {
     try {
         const goalSummary = await summarizeGoal(finalGoal);
         const newEntry: CompletedGoal = { id: endTime, goalSummary, fullGoal: finalGoal, subject: subject, startTime: goalSetTime!, endTime, duration, completionReason: reason };
-        const historyKey = currentUser ? null : 'goalUnboxHistory';
-        const currentHistory = currentUser ? getUserHistory(currentUser) : JSON.parse(localStorage.getItem(historyKey!) || '[]');
+        const currentHistory = currentUser ? getUserHistory(currentUser) : JSON.parse(localStorage.getItem('goalUnboxHistory') || '[]');
         currentHistory.push(newEntry);
         if (currentUser) saveUserHistory(currentUser, currentHistory);
-        else localStorage.setItem(historyKey!, JSON.stringify(currentHistory));
+        else localStorage.setItem('goalUnboxHistory', JSON.stringify(currentHistory));
     } catch (e) { console.error("Failed to save goal:", e); }
 
     clearActiveGoal(currentUser);
 
+    if (activePlannedGoal && todaysPlan) {
+        const updatedGoals = todaysPlan.goals.map(g => g.id === activePlannedGoal.id ? { ...g, completed: true } : g);
+        const updatedPlan = { ...todaysPlan, goals: updatedGoals };
+        setTodaysPlan(updatedPlan);
+        saveTodaysPlan(currentUser, updatedPlan);
+        setActivePlannedGoal(null);
+    }
+
+
     if (reason === 'verified') {
         let breakDurationMs = 0;
         const twoHoursInMs = 2 * 60 * 60 * 1000;
-
         if (duration < twoHoursInMs) {
-            // If the goal took less than 2 hours, give a 10-minute break.
             breakDurationMs = 10 * 60 * 1000;
         } else {
-            // If 2 hours or more, use the proportional calculation: 15 mins per 2 hours.
             breakDurationMs = (duration / twoHoursInMs) * (15 * 60 * 1000);
         }
-
-        if (breakDurationMs > 0) { // Offer break if any was calculated
+        if (breakDurationMs > 0) {
             setAvailableBreakTime(breakDurationMs);
             setCompletionDuration(formatDuration(duration > 0 ? duration : 0));
             setCompletedSecretCodeImage(secretCodeImage);
@@ -286,13 +303,12 @@ const App: React.FC = () => {
         }
     }
 
-    // Default path for emergency or short goals
     setCompletionDuration(formatDuration(duration > 0 ? duration : 0));
     setCompletionReason(reason);
     setVerificationFeedback(feedback);
     setAppState(AppState.GOAL_COMPLETED);
     setIsLoading(false);
-}, [currentUser, goal, goalSetTime, getEffectiveGoal, secretCodeImage, subject]);
+}, [currentUser, goal, goalSetTime, getEffectiveGoal, secretCodeImage, subject, activePlannedGoal, todaysPlan]);
 
   const handleProofImageSubmit = useCallback(async (files: File[]) => {
     const pauseStartTime = Date.now();
@@ -413,7 +429,20 @@ const App: React.FC = () => {
       saveStreakData(currentUser, newData);
   };
 
-  // --- Assure Feature Handlers ---
+    const handleSavePlan = (plan: TodaysPlan) => {
+        setTodaysPlan(plan);
+        saveTodaysPlan(currentUser, plan);
+    };
+
+    const handleStartPlannedGoal = (goalToStart: PlannedGoal) => {
+        setGoal(goalToStart.goal);
+        setSubject(goalToStart.subject);
+        setTimeLimitInMs(goalToStart.timeLimitInMs);
+        setConsequence(goalToStart.consequence);
+        setActivePlannedGoal(goalToStart);
+        setAppState(AppState.AWAITING_CODE);
+    };
+
     const handleStartBreak = () => {
         if (availableBreakTime) {
             setBreakEndTime(Date.now() + availableBreakTime);
@@ -436,7 +465,7 @@ const App: React.FC = () => {
             reader.onload = () => {
                 const dataUrl = reader.result as string;
                 extractCodeFromImage(base64, file.type).then(code => {
-                    setNextGoal({ secretCode: code, secretCodeImage: dataUrl });
+                    setNextGoal(prev => ({ ...prev, secretCode: code, secretCodeImage: dataUrl }));
                     setIsLoading(false);
                 }).catch(err => {
                     handleApiError(err);
@@ -452,67 +481,109 @@ const App: React.FC = () => {
     const handleNextGoalSubmit = (payload: GoalPayload) => {
         let totalMs = (payload.timeLimit.hours * 3600 + payload.timeLimit.minutes * 60) * 1000;
         const newTimeLimitInMs = totalMs > 0 ? totalMs : null;
-        setNextGoal(prev => ({
-            ...prev,
-            goal: payload.goal,
-            subject: payload.subject,
-            timeLimitInMs: newTimeLimitInMs,
-            consequence: payload.consequence,
-        }));
+        setNextGoal(prev => {
+            if (!prev) return null; // Should not happen in this flow
+            return {
+                ...prev,
+                goal: payload.goal,
+                subject: payload.subject,
+                timeLimitInMs: newTimeLimitInMs,
+                consequence: payload.consequence,
+            }
+        });
     };
     
-    // Timer effect
+    const handleSelectPlannedGoalForNext = (goalToSelect: PlannedGoal) => {
+        setNextGoal({
+            goal: goalToSelect.goal,
+            subject: goalToSelect.subject,
+            timeLimitInMs: goalToSelect.timeLimitInMs,
+            consequence: goalToSelect.consequence,
+            plannedGoalId: goalToSelect.id,
+        });
+    };
+
+    const startNextGoal = useCallback(() => {
+        if (!nextGoal?.goal || !nextGoal?.secretCode || !nextGoal.secretCodeImage) {
+            setAppState(AppState.BREAK_FAILED); // Safety check
+            return;
+        }
+
+        const nextGoalTime = Date.now();
+        const activeState: ActiveGoalState = {
+            secretCode: nextGoal.secretCode,
+            secretCodeImage: nextGoal.secretCodeImage,
+            goal: nextGoal.goal,
+            subject: nextGoal.subject!,
+            goalSetTime: nextGoalTime,
+            timeLimitInMs: nextGoal.timeLimitInMs!,
+            consequence: nextGoal.consequence!,
+        };
+        saveActiveGoal(currentUser, activeState);
+        
+        setSecretCode(activeState.secretCode);
+        setSecretCodeImage(activeState.secretCodeImage);
+        setGoal(activeState.goal);
+        setSubject(activeState.subject);
+        setGoalSetTime(activeState.goalSetTime);
+        setTimeLimitInMs(activeState.timeLimitInMs);
+        setConsequence(activeState.consequence);
+        
+        if (nextGoal.plannedGoalId && todaysPlan) {
+            const plannedGoal = todaysPlan.goals.find(g => g.id === nextGoal.plannedGoalId);
+            setActivePlannedGoal(plannedGoal || null);
+        } else {
+            setActivePlannedGoal(null);
+        }
+        
+        setBreakEndTime(null);
+        setAvailableBreakTime(null);
+        setNextGoal(null);
+        setCompletedSecretCodeImage(null);
+        setBreakChoice(null);
+        
+        // Reset feedback from the previous goal
+        setVerificationFeedback(null);
+        setChat(null);
+        setChatMessages([]);
+
+        setAppState(AppState.GOAL_SET);
+
+    }, [nextGoal, currentUser, todaysPlan]);
+    
     useEffect(() => {
         if (appState !== AppState.BREAK_ACTIVE || !breakEndTime) {
             return;
         }
-
         const interval = setInterval(() => {
             setCurrentTime(Date.now());
             const timeLeft = breakEndTime - Date.now();
             if (timeLeft <= 0) {
                 clearInterval(interval);
                 if (nextGoal?.goal && nextGoal?.secretCode) {
-                    const activeState: ActiveGoalState = {
-                        secretCode: nextGoal.secretCode!,
-                        secretCodeImage: nextGoal.secretCodeImage!,
-                        goal: nextGoal.goal!,
-                        subject: nextGoal.subject!,
-                        goalSetTime: Date.now(),
-                        timeLimitInMs: nextGoal.timeLimitInMs!,
-                        consequence: nextGoal.consequence!,
-                    };
-                    saveActiveGoal(currentUser, activeState);
-                    // Set all main states for the new goal
-                    setSecretCode(activeState.secretCode);
-                    setSecretCodeImage(activeState.secretCodeImage);
-                    setGoal(activeState.goal);
-                    setSubject(activeState.subject);
-                    setGoalSetTime(activeState.goalSetTime);
-                    setTimeLimitInMs(activeState.timeLimitInMs);
-                    setConsequence(activeState.consequence);
-                    setAppState(AppState.GOAL_SET);
+                    startNextGoal();
                 } else {
                     setAppState(AppState.BREAK_FAILED);
                 }
-                // Clear break states
                 setBreakEndTime(null);
                 setAvailableBreakTime(null);
                 setNextGoal(null);
                 setCompletedSecretCodeImage(null);
+                setBreakChoice(null);
             }
         }, 1000);
 
         return () => clearInterval(interval);
-    }, [appState, breakEndTime, currentUser, nextGoal]);
+    }, [appState, breakEndTime, nextGoal, startNextGoal]);
 
   const renderContent = () => {
     if (!apiKey) return <ApiKeyPrompt onSubmit={handleApiKeySubmit} error={error} />;
 
     switch (appState) {
       case AppState.AUTH: return <Auth onLogin={handleLogin} onContinueAsGuest={handleContinueAsGuest} />;
+      case AppState.TODAYS_PLAN:
+        return todaysPlan ? <TodaysPlanComponent initialPlan={todaysPlan} onSavePlan={handleSavePlan} onStartGoal={handleStartPlannedGoal} /> : null;
       case AppState.AWAITING_CODE: return <CodeUploader onCodeImageSubmit={handleCodeImageSubmit} isLoading={isLoading} onShowHistory={handleShowHistory} onLogout={handleLogout} currentUser={currentUser} streakData={streakData} onSetCommitment={handleSetDailyCommitment} onCompleteCommitment={handleCompleteDailyCommitment} />;
-      case AppState.AWAITING_GOAL: return <GoalSetter onGoalSubmit={handleGoalSubmit} isLoading={isLoading} />;
       case AppState.GOAL_SET: return <ProofUploader goal={goal} onProofImageSubmit={handleProofImageSubmit} isLoading={isLoading} goalSetTime={goalSetTime} timeLimitInMs={timeLimitInMs} consequence={consequence} onStartEmergency={handleStartEmergency} />;
       case AppState.EMERGENCY_TEST: return <EmergencyTest onSuccess={handleEmergencySuccess} onCancel={handleEmergencyCancel} />;
       case AppState.HISTORY_VIEW:
@@ -537,32 +608,70 @@ const App: React.FC = () => {
         );
       case AppState.BREAK_ACTIVE:
             const timeLeft = breakEndTime ? breakEndTime - currentTime : 0;
+            const uncompletedGoals = (todaysPlan?.goals.filter(g => !g.completed) ?? []).sort((a, b) => a.startTime.localeCompare(b.startTime));
+
+            const readyForNextGoal = nextGoal?.goal && nextGoal?.secretCode;
+
             return (
-                <div className="w-full max-w-md flex flex-col items-center">
-                    <div className="w-full text-center bg-slate-800/80 backdrop-blur-sm p-3 rounded-lg border border-slate-700 mb-6">
+                <div className="w-full max-w-2xl flex flex-col items-center gap-6">
+                    <div className="w-full text-center bg-slate-800/80 backdrop-blur-sm p-3 rounded-lg border border-slate-700">
                         <p className="text-sm text-slate-400 uppercase tracking-wider">Break Ends In</p>
                         <p className={`text-3xl font-mono ${timeLeft < 60000 ? 'text-red-400' : 'text-cyan-300'}`}>{formatCountdown(timeLeft > 0 ? timeLeft : 0)}</p>
                     </div>
                     {completedSecretCodeImage && (
-                        <div className="mb-6 text-center">
-                            <p className="text-slate-400 text-sm mb-2">Your unlock code:</p>
+                        <div className="text-center">
+                            <p className="text-slate-400 text-sm mb-2">Your previous unlock code:</p>
                             <img src={completedSecretCodeImage} alt="Sequestered code" className="rounded-lg max-w-xs mx-auto border-2 border-green-500" />
                         </div>
                     )}
-                    <div className="w-full">
-                        {!nextGoal?.secretCode ? (
-                            <CodeUploader onCodeImageSubmit={handleNextCodeImageSubmit} isLoading={isLoading} onShowHistory={handleShowHistory} onLogout={handleLogout} currentUser={currentUser} streakData={streakData} onSetCommitment={handleSetDailyCommitment} onCompleteCommitment={handleCompleteDailyCommitment}/>
-                        ) : !nextGoal.goal ? (
-                            <GoalSetter onGoalSubmit={handleNextGoalSubmit} isLoading={isLoading} />
-                        ) : (
-                            <div className="bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full text-center">
+                    <div className="w-full max-w-lg">
+                        {readyForNextGoal ? (
+                             <div className="bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full text-center">
                                 <h2 className="text-2xl font-semibold text-green-400 flex items-center justify-center gap-2">
                                      <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>
-                                    Next Goal is Set!
+                                    Next Goal is Ready!
                                 </h2>
-                                <p className="text-slate-300 mt-2">Your new goal will begin automatically when the break is over.</p>
+                                <p className="text-slate-300 mt-2 mb-6">Your new goal will begin automatically when the break is over.</p>
+                                <button onClick={startNextGoal} className="w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400">
+                                    Skip Break & Start Now
+                                </button>
                             </div>
-                        )}
+                        ) : !breakChoice ? (
+                            <div className="bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full text-center">
+                                <h2 className="text-xl font-semibold mb-4 text-slate-200">Prepare Your Next Goal</h2>
+                                <div className="flex flex-col sm:flex-row gap-4">
+                                    <button onClick={() => setBreakChoice('plan')} className="flex-1 bg-slate-700 text-white font-bold py-3 px-4 rounded-lg hover:bg-slate-600 transition-colors" disabled={uncompletedGoals.length === 0}>
+                                        Choose from Plan {uncompletedGoals.length === 0 && "(None Left)"}
+                                    </button>
+                                    <button onClick={() => setBreakChoice('new')} className="flex-1 bg-slate-700 text-white font-bold py-3 px-4 rounded-lg hover:bg-slate-600 transition-colors">
+                                        Set a New Goal
+                                    </button>
+                                </div>
+                            </div>
+                        ) : breakChoice === 'new' && !nextGoal?.secretCode ? (
+                            <CodeUploader onCodeImageSubmit={handleNextCodeImageSubmit} isLoading={isLoading} onShowHistory={()=>{}} onLogout={()=>{}} currentUser={null} streakData={null} onSetCommitment={()=>{}} onCompleteCommitment={()=>{}}/>
+                        ) : breakChoice === 'new' && !nextGoal?.goal ? (
+                           <GoalSetter onGoalSubmit={handleNextGoalSubmit} isLoading={false} submitButtonText="Set Next Goal" onCancel={() => setNextGoal(null)} />
+                        ) : breakChoice === 'plan' && !nextGoal?.goal ? (
+                             <div className="bg-slate-800/50 border border-slate-700 p-6 rounded-lg shadow-2xl w-full text-center">
+                                <h2 className="text-xl font-semibold mb-4 text-slate-200">Select Next Goal from Plan</h2>
+                                <div className="space-y-3 max-h-64 overflow-y-auto pr-2">
+                                    {uncompletedGoals.map(g => (
+                                        <div key={g.id} className="p-3 bg-slate-900/50 border border-slate-700 rounded-lg text-left flex items-center justify-between gap-4">
+                                            <div>
+                                                <p className="font-mono text-sm text-cyan-300">{g.startTime} - {g.endTime}</p>
+                                                <p className="font-bold text-white mt-1">{g.subject}</p>
+                                                <p className="text-xs text-slate-400">{g.goal.substring(0, 70)}...</p>
+                                            </div>
+                                            <button onClick={() => handleSelectPlannedGoalForNext(g)} className="bg-cyan-500 text-slate-900 font-bold py-2 px-3 rounded-lg hover:bg-cyan-400 text-sm flex-shrink-0">Select</button>
+                                        </div>
+                                    ))}
+                                </div>
+                                <button onClick={() => setBreakChoice(null)} className="mt-4 text-slate-400 hover:text-white text-sm">Back</button>
+                             </div>
+                        ) : breakChoice === 'plan' && !nextGoal?.secretCode ? (
+                             <CodeUploader onCodeImageSubmit={handleNextCodeImageSubmit} isLoading={isLoading} onShowHistory={()=>{}} onLogout={()=>{}} currentUser={null} streakData={null} onSetCommitment={()=>{}} onCompleteCommitment={()=>{}}/>
+                        ) : null}
                     </div>
                 </div>
             );
@@ -570,7 +679,7 @@ const App: React.FC = () => {
             return (
                 <div className="bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full max-w-md text-center animate-fade-in">
                     <Alert message="Break finished. You failed to set a new goal in time." type="error" />
-                    <button onClick={() => resetToStart(false)} className="w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400">Start Over</button>
+                    <button onClick={() => resetToStart(false)} className="w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400">Back to Plan</button>
                 </div>
             );
       default: return <Auth onLogin={handleLogin} onContinueAsGuest={handleContinueAsGuest} />;

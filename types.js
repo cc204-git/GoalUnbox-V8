@@ -1,7 +1,8 @@
+
 export const AppState = {
   AUTH: 0,
-  AWAITING_CODE: 1,
-  AWAITING_GOAL: 2,
+  TODAYS_PLAN: 1,
+  AWAITING_CODE: 2,
   GOAL_SET: 3,
   VERIFYING_PROOF: 4,
   GOAL_COMPLETED: 5,

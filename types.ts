@@ -1,8 +1,8 @@
 
 export enum AppState {
   AUTH,
+  TODAYS_PLAN,
   AWAITING_CODE,
-  AWAITING_GOAL,
   GOAL_SET,
   VERIFYING_PROOF,
   GOAL_COMPLETED,
@@ -38,4 +38,20 @@ export interface StreakData {
     currentStreak: number;
     lastCompletionDate: string; // YYYY-MM-DD
     commitment: { date: string; text: string; completed: boolean; } | null;
+}
+
+export interface PlannedGoal {
+  id: string;
+  goal: string;
+  subject: string;
+  timeLimitInMs: number | null;
+  consequence: string | null;
+  startTime: string; // "HH:mm"
+  endTime: string; // "HH:mm"
+  completed: boolean;
+}
+
+export interface TodaysPlan {
+    date: string; // "YYYY-MM-DD"
+    goals: PlannedGoal[];
 }
