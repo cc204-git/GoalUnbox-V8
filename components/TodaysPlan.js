@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import GoalSetter from './GoalSetter.js';
 import { formatDuration } from '../utils/timeUtils.js';
@@ -73,7 +72,7 @@ const TodaysPlan = ({ initialPlan, onSavePlan, onStartGoal }) => {
                 'Add New Goal'
             )
         ),
-        showForm && React.createElement('div', { className: 'mt-6' },
+        showForm && React.createElement('div', { className: 'mt-6 flex justify-center' },
             React.createElement(GoalSetter, {
                 onGoalSubmit: handleAddGoal,
                 isLoading: false,

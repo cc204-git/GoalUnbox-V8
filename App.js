@@ -643,7 +643,7 @@ const App = () => {
                             React.createElement('img', { src: completedSecretCodeImage, alt: "Sequestered code", className: "rounded-lg max-w-xs mx-auto border-2 border-green-500" })
                         )
                     ),
-                    React.createElement('div', { className: "w-full max-w-lg" }, content)
+                    React.createElement('div', { className: "w-full max-w-lg flex justify-center" }, content)
                 )
             );
        case AppState.BREAK_FAILED:
@@ -665,7 +665,7 @@ const App = () => {
         error && appState !== AppState.AUTH && !apiKey && React.createElement('div', null),
         error && (appState !== AppState.AUTH && apiKey) && React.createElement(Alert, { message: error, type: "error" }),
         appState === AppState.GOAL_SET && verificationFeedback && (
-            React.createElement('div', { className: 'w-full max-w-lg mb-4' },
+            React.createElement('div', { className: 'w-full max-w-lg mb-4 flex justify-center' },
                  React.createElement(VerificationResult, { isSuccess: false, secretCodeImage: null, feedback: verificationFeedback, onRetry: handleRetry, onReset: () => resetToStart(false), chatMessages: chatMessages, onSendChatMessage: handleSendChatMessage, isChatLoading: isChatLoading })
             )
         ),

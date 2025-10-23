@@ -624,7 +624,7 @@ const App: React.FC = () => {
                             <img src={completedSecretCodeImage} alt="Sequestered code" className="rounded-lg max-w-xs mx-auto border-2 border-green-500" />
                         </div>
                     )}
-                    <div className="w-full max-w-lg">
+                    <div className="w-full max-w-lg flex justify-center">
                         {readyForNextGoal ? (
                              <div className="bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full text-center">
                                 <h2 className="text-2xl font-semibold text-green-400 flex items-center justify-center gap-2">
@@ -694,7 +694,7 @@ const App: React.FC = () => {
         {error && appState !== AppState.AUTH && !apiKey && <div />}
         {error && (appState !== AppState.AUTH && apiKey) && <Alert message={error} type="error" />}
         {appState === AppState.GOAL_SET && verificationFeedback && (
-            <div className="w-full max-w-lg mb-4">
+            <div className="w-full max-w-lg mb-4 flex justify-center">
                  <VerificationResult isSuccess={false} secretCodeImage={null} feedback={verificationFeedback} onRetry={handleRetry} onReset={() => resetToStart(false)} chatMessages={chatMessages} onSendChatMessage={handleSendChatMessage} isChatLoading={isChatLoading} />
             </div>
         )}

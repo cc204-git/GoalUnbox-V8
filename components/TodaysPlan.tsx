@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import { PlannedGoal, TodaysPlan as TodaysPlanType } from '../types';
 import GoalSetter, { GoalPayload } from './GoalSetter';
@@ -94,7 +93,7 @@ const TodaysPlan: React.FC<TodaysPlanProps> = ({ initialPlan, onSavePlan, onStar
             </div>
 
             {showForm && (
-                <div className="mt-6">
+                <div className="mt-6 flex justify-center">
                     <GoalSetter 
                         onGoalSubmit={handleAddGoal} 
                         isLoading={false} 
