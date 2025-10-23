@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useEffect } from 'react';
 import { AppState } from './types.js';
 import { extractCodeFromImage, verifyGoalCompletion, createVerificationChat, summarizeGoal } from './services/geminiService.js';
@@ -45,6 +46,7 @@ const App = () => {
   const [nextGoal, setNextGoal] = useState(null);
   const [currentTime, setCurrentTime] = useState(Date.now());
   const [breakChoice, setBreakChoice] = useState(null);
+  const [breakChoiceCountdown, setBreakChoiceCountdown] = useState(null);
 
   const [chat, setChat] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
@@ -425,12 +427,12 @@ const App = () => {
         setAppState(AppState.AWAITING_CODE);
     };
 
-    const handleStartBreak = () => {
+    const handleStartBreak = useCallback(() => {
         if (availableBreakTime) {
             setBreakEndTime(Date.now() + availableBreakTime);
             setAppState(AppState.BREAK_ACTIVE);
         }
-    };
+    }, [availableBreakTime]);
 
     const handleSkipBreak = () => {
         setCompletionReason('verified');
@@ -554,6 +556,37 @@ const App = () => {
 
         return () => clearInterval(interval);
     }, [appState, breakEndTime, nextGoal, startNextGoal]);
+    
+    useEffect(() => {
+        let intervalId;
+    
+        if (appState === AppState.AWAITING_BREAK) {
+            setBreakChoiceCountdown(10);
+    
+            intervalId = window.setInterval(() => {
+                setBreakChoiceCountdown(prev => {
+                    if (prev === null) {
+                        clearInterval(intervalId);
+                        return null;
+                    }
+                    if (prev <= 1) {
+                        clearInterval(intervalId);
+                        handleStartBreak(); // Automatically start the break
+                        return 0;
+                    }
+                    return prev - 1;
+                });
+            }, 1000);
+        } else if (breakChoiceCountdown !== null) {
+            setBreakChoiceCountdown(null);
+        }
+    
+        return () => {
+            if (intervalId) {
+                clearInterval(intervalId);
+            }
+        };
+    }, [appState, handleStartBreak]);
 
   const renderContent = () => {
     if (!apiKey) return React.createElement(ApiKeyPrompt, { onSubmit: handleApiKeySubmit, error: error });
@@ -580,7 +613,10 @@ const App = () => {
                 React.createElement('p', { className: "text-slate-300 mb-6" }, verificationFeedback?.summary),
                  React.createElement('p', { className: "text-slate-300 mb-6" }, "You've earned a break of ", React.createElement('strong', { className: "text-cyan-300" }, formatDuration(availableBreakTime ?? 0)), "."),
                 React.createElement('div', { className: "space-y-4" },
-                     React.createElement('button', { onClick: handleStartBreak, className: "w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400 transition-all" }, "Start Break & Reveal Code"),
+                     React.createElement('button', { onClick: handleStartBreak, className: "w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400 transition-all" }, 
+                        "Start Break & Reveal Code",
+                        breakChoiceCountdown !== null && ` (${breakChoiceCountdown})`
+                    ),
                     React.createElement('button', { onClick: handleSkipBreak, className: "w-full bg-slate-700 text-white font-semibold py-2 px-3 rounded-lg hover:bg-slate-600 transition-colors" }, "Skip Break & Finish")
                 )
             )

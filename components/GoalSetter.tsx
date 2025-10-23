@@ -34,6 +34,21 @@ const GoalSetter: React.FC<GoalSetterProps> = ({ onGoalSubmit, isLoading, submit
   const [endTime, setEndTime] = useState('');
   const [timeError, setTimeError] = useState<string | null>(null);
 
+  const consequenceTemplates = [
+    "I will not watch any TV or streaming services for 24 hours.",
+    "I must do 30 minutes of an exercise I dislike.",
+    "I will donate $5 to a charity.",
+    "I must clean the bathroom from top to bottom."
+  ];
+  const [consequenceTemplateIndex, setConsequenceTemplateIndex] = useState(0);
+
+  const handleUseConsequenceTemplate = () => {
+      const nextIndex = (consequenceTemplateIndex + 1) % consequenceTemplates.length;
+      setConsequence(consequenceTemplates[consequenceTemplateIndex]);
+      setConsequenceTemplateIndex(nextIndex);
+  };
+
+
   useEffect(() => {
     const userMinutes = (Number(hours) || 0) * 60 + (Number(minutes) || 0);
 
@@ -218,7 +233,16 @@ I will make sure that all exercises and questions are clearly highlighted on eac
             </div>
         )}
          <div>
-            <label htmlFor="consequence" className="block text-sm font-medium text-slate-400 mb-1">Consequence for Failure</label>
+            <div className="flex justify-between items-center mb-1">
+                <label htmlFor="consequence" className="block text-sm font-medium text-slate-400">Consequence for Failure</label>
+                <button
+                  onClick={handleUseConsequenceTemplate}
+                  type="button"
+                  className="text-sm bg-slate-700 text-cyan-300 font-semibold py-1 px-3 rounded-md hover:bg-slate-600 transition-colors"
+                >
+                  Template
+                </button>
+            </div>
             <textarea
                 id="consequence"
                 value={consequence}
