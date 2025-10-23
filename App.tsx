@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useEffect } from 'react';
 import { AppState, CompletedGoal, ActiveGoalState, StreakData, TodaysPlan, PlannedGoal } from './types';
 import { 
@@ -636,7 +635,7 @@ const App: React.FC = () => {
     switch (appState) {
       case AppState.AUTH: return <Auth onLogin={handleLogin} onContinueAsGuest={handleContinueAsGuest} />;
       case AppState.TODAYS_PLAN:
-        return todaysPlan ? <TodaysPlanComponent initialPlan={todaysPlan} onSavePlan={handleSavePlan} onStartGoal={handleStartPlannedGoal} /> : null;
+        return todaysPlan ? <TodaysPlanComponent initialPlan={todaysPlan} onSavePlan={handleSavePlan} onStartGoal={handleStartPlannedGoal} currentUser={currentUser} /> : null;
       case AppState.AWAITING_CODE: return <CodeUploader onCodeImageSubmit={handleCodeImageSubmit} isLoading={isLoading} onShowHistory={handleShowHistory} onLogout={handleLogout} currentUser={currentUser} streakData={streakData} onSetCommitment={handleSetDailyCommitment} onCompleteCommitment={handleCompleteDailyCommitment} />;
       case AppState.GOAL_SET: return <ProofUploader goal={goal} onProofImageSubmit={handleProofImageSubmit} isLoading={isLoading} goalSetTime={goalSetTime} timeLimitInMs={timeLimitInMs} consequence={consequence} onStartEmergency={handleStartEmergency} />;
       case AppState.EMERGENCY_TEST: return <EmergencyTest onSuccess={handleEmergencySuccess} onCancel={handleEmergencyCancel} />;
