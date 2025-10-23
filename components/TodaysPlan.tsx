@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { PlannedGoal, TodaysPlan as TodaysPlanType } from '../types';
 import GoalSetter, { GoalPayload } from './GoalSetter';
@@ -12,6 +13,11 @@ interface TodaysPlanProps {
 const TodaysPlan: React.FC<TodaysPlanProps> = ({ initialPlan, onSavePlan, onStartGoal }) => {
     const [plan, setPlan] = useState(initialPlan);
     const [showForm, setShowForm] = useState(false);
+    const [expandedGoalId, setExpandedGoalId] = useState<string | null>(null);
+
+    const handleToggleExpand = (goalId: string) => {
+        setExpandedGoalId(prevId => (prevId === goalId ? null : goalId));
+    };
 
     const handleAddGoal = (payload: GoalPayload) => {
         const newGoal: PlannedGoal = {
@@ -32,7 +38,12 @@ const TodaysPlan: React.FC<TodaysPlanProps> = ({ initialPlan, onSavePlan, onStar
 
     const sortedGoals = useMemo(() => {
         return [...plan.goals].sort((a, b) => {
-            return a.startTime.localeCompare(b.startTime);
+            const aHasTime = a.startTime && a.endTime;
+            const bHasTime = b.startTime && b.endTime;
+            if (aHasTime && !bHasTime) return -1;
+            if (!aHasTime && bHasTime) return 1;
+            if (aHasTime && bHasTime) return a.startTime.localeCompare(b.startTime);
+            return a.id.localeCompare(b.id); // Fallback sort for stability
         });
     }, [plan.goals]);
 
@@ -50,33 +61,53 @@ const TodaysPlan: React.FC<TodaysPlanProps> = ({ initialPlan, onSavePlan, onStar
                             <p className="text-slate-500">Your plan is empty. Add a goal to get started!</p>
                         </div>
                     )}
-                    {sortedGoals.map(goal => (
-                        <div key={goal.id} className={`p-4 rounded-lg flex flex-col sm:flex-row items-center gap-4 transition-colors ${goal.completed ? 'bg-slate-900/50 border border-slate-700' : 'bg-slate-800 border border-slate-600'}`}>
-                            <div className="flex-shrink-0 text-center sm:text-left">
-                                <p className={`font-mono text-lg ${goal.completed ? 'text-slate-500' : 'text-cyan-300'}`}>{goal.startTime} - {goal.endTime}</p>
-                                {goal.timeLimitInMs && <p className={`text-xs ${goal.completed ? 'text-slate-600' : 'text-slate-400'}`}>({formatDuration(goal.timeLimitInMs)})</p>}
+                    {sortedGoals.map(goal => {
+                        const isExpanded = expandedGoalId === goal.id;
+                        return (
+                            <div key={goal.id} className={`p-4 rounded-lg flex flex-col sm:flex-row items-center gap-4 transition-colors ${goal.completed ? 'bg-slate-900/50 border border-slate-700' : 'bg-slate-800 border border-slate-600'}`}>
+                                <div className="flex-shrink-0 text-center sm:text-left w-36">
+                                    {goal.startTime && goal.endTime ? (
+                                        <p className={`font-mono text-lg ${goal.completed ? 'text-slate-500' : 'text-cyan-300'}`}>{goal.startTime} - {goal.endTime}</p>
+                                    ) : (
+                                        <p className={`font-mono text-lg ${goal.completed ? 'text-slate-500' : 'text-slate-400'}`}>Unscheduled</p>
+                                    )}
+                                    {goal.timeLimitInMs && <p className={`text-xs ${goal.completed ? 'text-slate-600' : 'text-slate-400'}`}>({formatDuration(goal.timeLimitInMs)})</p>}
+                                </div>
+                                <div 
+                                    className="flex-1 text-center sm:text-left cursor-pointer"
+                                    onClick={() => handleToggleExpand(goal.id)}
+                                >
+                                    <p className={`font-bold text-lg ${goal.completed ? 'text-slate-500 line-through' : 'text-white'}`}>{goal.subject}</p>
+                                    <p className={`text-sm ${goal.completed ? 'text-slate-600' : 'text-slate-400'} ${isExpanded ? 'whitespace-pre-wrap' : ''}`}>
+                                        {isExpanded ? goal.goal : `${goal.goal.substring(0, 100)}${goal.goal.length > 100 ? '...' : ''}`}
+                                    </p>
+                                    {goal.goal.length > 100 && (
+                                        <span className="text-xs text-cyan-400/80 mt-1 inline-block">
+                                            {isExpanded ? 'Show Less' : 'Show More'}
+                                        </span>
+                                    )}
+                                </div>
+                                <div className="flex-shrink-0">
+                                    {goal.completed ? (
+                                        <div className="flex items-center gap-2 text-green-500 font-bold py-2 px-4 rounded-lg bg-green-900/50 border border-green-500/30">
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>
+                                            Completed
+                                        </div>
+                                    ) : (
+                                        <button 
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                onStartGoal(goal);
+                                            }}
+                                            className="bg-cyan-500 text-slate-900 font-bold py-2 px-4 rounded-lg hover:bg-cyan-400 transition-colors"
+                                        >
+                                            Start Goal
+                                        </button>
+                                    )}
+                                </div>
                             </div>
-                            <div className="flex-1 text-center sm:text-left">
-                                <p className={`font-bold text-lg ${goal.completed ? 'text-slate-500 line-through' : 'text-white'}`}>{goal.subject}</p>
-                                <p className={`text-sm ${goal.completed ? 'text-slate-600' : 'text-slate-400'}`}>{goal.goal.substring(0, 100)}{goal.goal.length > 100 ? '...' : ''}</p>
-                            </div>
-                            <div className="flex-shrink-0">
-                                {goal.completed ? (
-                                     <div className="flex items-center gap-2 text-green-500 font-bold py-2 px-4 rounded-lg bg-green-900/50 border border-green-500/30">
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>
-                                        Completed
-                                    </div>
-                                ) : (
-                                    <button 
-                                        onClick={() => onStartGoal(goal)}
-                                        className="bg-cyan-500 text-slate-900 font-bold py-2 px-4 rounded-lg hover:bg-cyan-400 transition-colors"
-                                    >
-                                        Start Goal
-                                    </button>
-                                )}
-                            </div>
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
 
                 {!showForm && (

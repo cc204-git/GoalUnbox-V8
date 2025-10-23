@@ -151,7 +151,28 @@ const App: React.FC = () => {
           // New flow: check for today's plan instead of going to code uploader
           let plan = loadTodaysPlan(email);
           if (!plan) {
-              plan = { date: getISODateString(new Date()), goals: [] };
+              const defaultGoal1: PlannedGoal = {
+                  id: `default-${new Date().getTime()}-1`,
+                  subject: "Anki Review",
+                  goal: "Upload a verification of finishing all anki flash cards. I must upload a screenshot from my Windows computer. One half of the screen must show the Anki 'Congratulations!' screen (or similar proof of completion), and the other half must show the current date. The date in the screenshot must match today's date.",
+                  timeLimitInMs: 3600000, // 1 hour
+                  consequence: null,
+                  startTime: "",
+                  endTime: "",
+                  completed: false,
+              };
+
+              const defaultGoal2: PlannedGoal = {
+                  id: `default-${new Date().getTime()}-2`,
+                  subject: "Anki Creation",
+                  goal: "I must send verification of me uploading flashcards to anki. I must upload a screenshot from my Windows computer. One half of the screen must show the Anki interface after adding new cards, and the other half must show the current date. The date in the screenshot must match today's date.",
+                  timeLimitInMs: null,
+                  consequence: null,
+                  startTime: "",
+                  endTime: "",
+                  completed: false,
+              };
+              plan = { date: getISODateString(new Date()), goals: [defaultGoal1, defaultGoal2] };
               saveTodaysPlan(email, plan);
           }
           setTodaysPlan(plan);
