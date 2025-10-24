@@ -1,7 +1,6 @@
 import React, { useState, useCallback, useRef } from 'react';
 import Spinner from './Spinner';
 import CameraCapture from './CameraCapture';
-import DataSyncModal from './DataSyncModal';
 import DailyCommitment from './DailyCommitment';
 import { StreakData } from '../types';
 
@@ -10,7 +9,7 @@ interface CodeUploaderProps {
   isLoading: boolean;
   onShowHistory: () => void;
   onLogout: () => void;
-  currentUser: string | null;
+  currentUser: any | null; // Firebase user object
   streakData: StreakData | null;
   onSetCommitment: (text: string) => void;
   onCompleteCommitment: () => void;
@@ -28,7 +27,6 @@ const CodeUploader: React.FC<CodeUploaderProps> = ({
 }) => {
   const [file, setFile] = useState<File | null>(null);
   const [showCamera, setShowCamera] = useState(false);
-  const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -56,11 +54,10 @@ const CodeUploader: React.FC<CodeUploaderProps> = ({
   return (
     <div className="relative w-full max-w-md flex flex-col items-center">
       {showCamera && <CameraCapture onCapture={handleCapture} onCancel={() => setShowCamera(false)} />}
-      {isSyncModalOpen && <DataSyncModal onClose={() => setIsSyncModalOpen(false)} />}
       <div className="bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full text-center animate-fade-in">
         
         <div className="absolute top-4 right-4 flex items-center gap-2">
-            {currentUser && (
+            {currentUser && !currentUser.isAnonymous && (
                  <button
                     onClick={onLogout}
                     className="text-slate-500 hover:text-red-400 transition-colors p-2"
@@ -73,17 +70,6 @@ const CodeUploader: React.FC<CodeUploaderProps> = ({
                 </button>
             )}
             <button
-                onClick={() => setIsSyncModalOpen(true)}
-                className="text-slate-500 hover:text-cyan-400 transition-colors p-2"
-                aria-label="Sync data between devices"
-                title="Account & Data Sync"
-            >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h5M20 20v-5h-5M4 4l5 5M20 20l-5-5" />
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 9V4h5m11 11v5h-5M4 9l16-5M20 15L4 20" />
-                </svg>
-            </button>
-            <button
                 onClick={onShowHistory}
                 className="text-slate-500 hover:text-cyan-400 transition-colors p-2"
                 aria-label="View goal history"
@@ -95,7 +81,8 @@ const CodeUploader: React.FC<CodeUploaderProps> = ({
             </button>
         </div>
 
-        {currentUser && <p className="text-sm text-slate-500 mb-6 -mt-2 text-left">Logged in as: <strong>{currentUser}</strong></p>}
+        {currentUser && !currentUser.isAnonymous && <p className="text-sm text-slate-500 mb-6 -mt-2 text-left">Logged in as: <strong>{currentUser.email}</strong></p>}
+        {currentUser && currentUser.isAnonymous && <p className="text-sm text-slate-500 mb-6 -mt-2 text-left">Logged in as: <strong>Guest</strong></p>}
 
         <h2 className="text-2xl font-semibold mb-2 text-cyan-300">Step 1: Sequester Your Code</h2>
         <p className="text-slate-400 mb-6">Take a picture of the 3-digit code on your lock box. The code will be hidden until your goal is complete.</p>
@@ -158,7 +145,7 @@ const CodeUploader: React.FC<CodeUploaderProps> = ({
         </button>
       </div>
 
-      {currentUser && streakData && (
+      {currentUser && !currentUser.isAnonymous && streakData && (
         <DailyCommitment
             streakData={streakData}
             onSetCommitment={onSetCommitment}

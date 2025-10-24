@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { createUser, loginUser } from '../services/authService.js';
+import { signUp, signIn, signInGuest } from '../services/authService.js';
 import Spinner from './Spinner.js';
 import Alert from './Alert.js';
 
-const Auth = ({ onLogin, onContinueAsGuest }) => {
+const Auth = () => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [rememberMe, setRememberMe] = useState(true);
@@ -18,13 +18,25 @@ const Auth = ({ onLogin, onContinueAsGuest }) => {
 
         try {
             if (isLoginView) {
-                await loginUser(email, password);
+                await signIn(email, password, rememberMe);
             } else {
-                await createUser(email, password);
+                await signUp(email, password);
             }
-            onLogin(email, rememberMe);
         } catch (err) {
             setError(err.message);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+    
+    const handleGuest = async () => {
+        setIsLoading(true);
+        setError(null);
+        try {
+            await signInGuest();
+        } catch(err) {
+            setError(err.message);
+        } finally {
             setIsLoading(false);
         }
     };
@@ -45,25 +57,16 @@ const Auth = ({ onLogin, onContinueAsGuest }) => {
 
     const form = React.createElement('form', { onSubmit: handleSubmit, className: "space-y-4" },
         React.createElement('input', {
-            type: "email",
-            value: email,
-            onChange: (e) => setEmail(e.target.value),
-            placeholder: "Email",
-            required: true,
+            type: "email", value: email, onChange: (e) => setEmail(e.target.value),
+            placeholder: "Email", required: true,
             className: "w-full bg-slate-900 border border-slate-600 rounded-lg p-3 text-white placeholder-slate-500 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 transition",
-            disabled: isLoading,
-            autoComplete: "email"
+            disabled: isLoading, autoComplete: "email"
         }),
         React.createElement('input', {
-            type: "password",
-            value: password,
-            onChange: (e) => setPassword(e.target.value),
-            placeholder: "Password",
-            required: true,
-            minLength: 6,
+            type: "password", value: password, onChange: (e) => setPassword(e.target.value),
+            placeholder: "Password", required: true, minLength: 6,
             className: "w-full bg-slate-900 border border-slate-600 rounded-lg p-3 text-white placeholder-slate-500 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 transition",
-            disabled: isLoading,
-            autoComplete: isLoginView ? "current-password" : "new-password"
+            disabled: isLoading, autoComplete: isLoginView ? "current-password" : "new-password"
         }),
         rememberMeCheckbox,
         React.createElement('button', {
@@ -75,15 +78,12 @@ const Auth = ({ onLogin, onContinueAsGuest }) => {
 
     return React.createElement('div', { className: "bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full max-w-md text-center animate-fade-in" },
         React.createElement('h2', { className: "text-2xl font-semibold mb-2 text-cyan-300" }, isLoginView ? 'Welcome Back' : 'Create an Account'),
-        React.createElement('p', { className: "text-slate-400 mb-6" }, isLoginView ? 'Log in to access your goal history.' : 'Sign up to save your progress across devices.'),
+        React.createElement('p', { className: "text-slate-400 mb-6" }, isLoginView ? 'Log in to sync your data.' : 'Sign up to save & sync your progress.'),
         error && React.createElement(Alert, { message: error, type: "error" }),
         form,
         React.createElement('div', { className: "mt-6 text-sm" },
             React.createElement('button', {
-                onClick: () => {
-                    setIsLoginView(!isLoginView);
-                    setError(null);
-                },
+                onClick: () => { setIsLoginView(!isLoginView); setError(null); },
                 className: "text-cyan-400 hover:text-cyan-300"
             }, isLoginView ? 'Need an account? Sign Up' : 'Already have an account? Login')
         ),
@@ -96,9 +96,10 @@ const Auth = ({ onLogin, onContinueAsGuest }) => {
             )
         ),
         React.createElement('button', {
-            onClick: onContinueAsGuest,
-            className: "w-full bg-slate-700 text-white font-semibold py-3 px-4 rounded-lg hover:bg-slate-600 transition-colors"
-        }, 'Continue as Guest')
+            onClick: handleGuest,
+            disabled: isLoading,
+            className: "w-full bg-slate-700 text-white font-semibold py-3 px-4 rounded-lg hover:bg-slate-600 transition-colors flex items-center justify-center"
+        }, isLoading ? React.createElement(Spinner, null) : 'Continue as Guest')
     );
 };
 

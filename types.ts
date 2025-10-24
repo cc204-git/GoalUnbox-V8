@@ -15,6 +15,7 @@ export enum AppState {
 
 export interface CompletedGoal {
   id: number;
+  firestoreId?: string; // For Firestore document ID
   goalSummary: string;
   fullGoal: string;
   subject: string;

@@ -1,14 +1,9 @@
 import React, { useState } from 'react';
-import { createUser, loginUser } from '../services/authService';
+import { signUp, signIn, signInGuest } from '../services/authService';
 import Spinner from './Spinner';
 import Alert from './Alert';
 
-interface AuthProps {
-    onLogin: (email: string, rememberMe: boolean) => void;
-    onContinueAsGuest: () => void;
-}
-
-const Auth: React.FC<AuthProps> = ({ onLogin, onContinueAsGuest }) => {
+const Auth: React.FC = () => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [rememberMe, setRememberMe] = useState(true);
@@ -23,13 +18,27 @@ const Auth: React.FC<AuthProps> = ({ onLogin, onContinueAsGuest }) => {
 
         try {
             if (isLoginView) {
-                await loginUser(email, password);
+                await signIn(email, password, rememberMe);
             } else {
-                await createUser(email, password);
+                await signUp(email, password);
+                // After sign-up, Firebase automatically logs the user in.
+                // The onAuthStateChanged listener in App.tsx will handle the UI transition.
             }
-            onLogin(email, rememberMe);
         } catch (err) {
             setError((err as Error).message);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleGuest = async () => {
+        setIsLoading(true);
+        setError(null);
+        try {
+            await signInGuest();
+        } catch(err) {
+            setError((err as Error).message);
+        } finally {
             setIsLoading(false);
         }
     };
@@ -40,7 +49,7 @@ const Auth: React.FC<AuthProps> = ({ onLogin, onContinueAsGuest }) => {
                 {isLoginView ? 'Welcome Back' : 'Create an Account'}
             </h2>
             <p className="text-slate-400 mb-6">
-                {isLoginView ? 'Log in to access your goal history.' : 'Sign up to save your progress across devices.'}
+                {isLoginView ? 'Log in to sync your data.' : 'Sign up to save & sync your progress.'}
             </p>
 
             {error && <Alert message={error} type="error" />}
@@ -113,10 +122,11 @@ const Auth: React.FC<AuthProps> = ({ onLogin, onContinueAsGuest }) => {
             </div>
 
             <button
-                onClick={onContinueAsGuest}
-                className="w-full bg-slate-700 text-white font-semibold py-3 px-4 rounded-lg hover:bg-slate-600 transition-colors"
+                onClick={handleGuest}
+                disabled={isLoading}
+                className="w-full bg-slate-700 text-white font-semibold py-3 px-4 rounded-lg hover:bg-slate-600 transition-colors flex items-center justify-center"
             >
-                Continue as Guest
+                {isLoading ? <Spinner/> : 'Continue as Guest'}
             </button>
         </div>
     );

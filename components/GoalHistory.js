@@ -49,8 +49,8 @@ const GoalHistory = ({ onBack, history, onDeleteHistoryItem }) => {
     };
 
     const handleDelete = (item) => {
-        if (window.confirm(`Are you sure you want to delete the goal: "${item.goalSummary}"? This action cannot be undone.`)) {
-            onDeleteHistoryItem(item.id);
+        if (item.firestoreId && window.confirm(`Are you sure you want to delete the goal: "${item.goalSummary}"? This action cannot be undone.`)) {
+            onDeleteHistoryItem(item.firestoreId);
         }
     };
 
@@ -82,7 +82,7 @@ const GoalHistory = ({ onBack, history, onDeleteHistoryItem }) => {
                     React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M6 18L18 6M6 6l12 12' })
                 )
             ),
-            React.createElement('pre', { className: 'text-slate-300 whitespace-pre-wrap font-sans text-sm' }, insights)
+            React.createElement('div', { className: 'text-slate-300 whitespace-pre-wrap font-sans text-sm', dangerouslySetInnerHTML: { __html: insights.replace(/\n/g, '<br />') }})
         ) : React.createElement(
             'button', {
                 onClick: handleGetInsights,
@@ -146,8 +146,9 @@ const GoalHistory = ({ onBack, history, onDeleteHistoryItem }) => {
                 React.createElement(
                     'tfoot', { className: 'border-t-2 border-slate-500 font-bold' },
                     React.createElement('tr', null,
-                        React.createElement('td', { colSpan: 5, className: 'p-3 text-right text-slate-300' }, 'Total Focused Time'),
-                        React.createElement('td', { className: 'p-3 text-right text-cyan-300 font-mono text-lg' }, totalDuration)
+                        React.createElement('td', { colSpan: 4, className: 'p-3 text-right text-slate-300' }, 'Total Focused Time'),
+                        React.createElement('td', { className: 'p-3 text-right text-cyan-300 font-mono text-lg' }, totalDuration),
+                        React.createElement('td', null)
                     )
                 )
             )

@@ -2,23 +2,23 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
 let ai = null;
+let usedApiKey = null;
 
+// FIX: Refactored to avoid accessing private 'apiKey' property and to correctly handle API key changes.
 function getAiClient() {
-    if (ai) {
-        const currentKey = localStorage.getItem('GEMINI_API_KEY');
-        if (ai.apiKey !== currentKey) {
-            ai = null;
-        } else {
-            return ai;
-        }
-    }
-    
     const apiKey = localStorage.getItem('GEMINI_API_KEY');
     if (!apiKey) {
         throw new Error("API Key not found in local storage. Please set it to use the application.");
     }
 
+    // If 'ai' instance exists and was created with the current apiKey, return it.
+    if (ai && usedApiKey === apiKey) {
+        return ai;
+    }
+
+    // Otherwise, create a new instance.
     ai = new GoogleGenAI({ apiKey });
+    usedApiKey = apiKey;
     return ai;
 }
 

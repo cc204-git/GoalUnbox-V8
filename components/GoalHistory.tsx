@@ -9,7 +9,7 @@ import Alert from './Alert';
 interface GoalHistoryProps {
   onBack: () => void;
   history: CompletedGoal[];
-  onDeleteHistoryItem: (id: number) => void;
+  onDeleteHistoryItem: (firestoreDocId: string) => void;
 }
 
 const GoalHistory: React.FC<GoalHistoryProps> = ({ onBack, history, onDeleteHistoryItem }) => {
@@ -54,8 +54,8 @@ const GoalHistory: React.FC<GoalHistoryProps> = ({ onBack, history, onDeleteHist
     };
 
     const handleDelete = (item: CompletedGoal) => {
-        if (window.confirm(`Are you sure you want to delete the goal: "${item.goalSummary}"? This action cannot be undone.`)) {
-            onDeleteHistoryItem(item.id);
+        if (item.firestoreId && window.confirm(`Are you sure you want to delete the goal: "${item.goalSummary}"? This action cannot be undone.`)) {
+            onDeleteHistoryItem(item.firestoreId);
         }
     };
 
@@ -93,7 +93,7 @@ const GoalHistory: React.FC<GoalHistoryProps> = ({ onBack, history, onDeleteHist
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                             </svg>
                         </button>
-                        <pre className="text-slate-300 whitespace-pre-wrap font-sans text-sm">{insights}</pre>
+                        <div className="text-slate-300 whitespace-pre-wrap font-sans text-sm" dangerouslySetInnerHTML={{ __html: insights.replace(/\n/g, '<br />') }}></div>
                     </div>
                 ) : (
                     <button 
@@ -161,8 +161,9 @@ const GoalHistory: React.FC<GoalHistoryProps> = ({ onBack, history, onDeleteHist
                         </tbody>
                         <tfoot className="border-t-2 border-slate-500 font-bold">
                             <tr>
-                                <td colSpan={5} className="p-3 text-right text-slate-300">Total Focused Time</td>
+                                <td colSpan={4} className="p-3 text-right text-slate-300">Total Focused Time</td>
                                 <td className="p-3 text-right text-cyan-300 font-mono text-lg">{totalDuration}</td>
+                                <td></td>
                             </tr>
                         </tfoot>
                     </table>
