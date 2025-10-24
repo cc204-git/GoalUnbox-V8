@@ -1,6 +1,3 @@
-
-
-
 import React, { useMemo, useState } from 'react';
 import { formatDuration } from '../utils/timeUtils.js';
 import { generateHistoryInsights } from '../services/geminiService.js';
@@ -129,14 +126,15 @@ const GoalHistory = ({ onBack, history, onDeleteHistoryItem }) => {
                 React.createElement(
                     'tbody', { className: 'divide-y divide-slate-700' },
                     ...sortedHistory.map(item => React.createElement(
-                        'tr', { key: item.id, className: `hover:bg-slate-800/40 ${item.completionReason === 'skipped' ? 'opacity-60' : ''}` },
+                        'tr', { key: item.id, className: `hover:bg-slate-800/40 ${item.completionReason === 'skipped' ? 'opacity-70' : ''}` },
                         React.createElement('td', { className: 'p-3 font-medium' },
                              React.createElement('div', { className: 'flex items-center gap-2' },
                                 item.completionReason === 'skipped' && React.createElement(
-                                    'svg', { xmlns: 'http://www.w3.org/2000/svg', className: 'h-5 w-5 text-amber-400 flex-shrink-0', viewBox: '0 0 20 20', fill: 'currentColor', title: 'Skipped' },
+                                    'svg', { xmlns: 'http://www.w3.org/2000/svg', className: 'h-5 w-5 text-red-400 flex-shrink-0', viewBox: '0 0 20 20', fill: 'currentColor'},
+                                    React.createElement('title', null, 'Skipped'),
                                     React.createElement('path', { d: "M4.555 5.168A1 1 0 003 6v8a1 1 0 001.555.832L10 11.202V14a1 1 0 001.555.832l6-4a1 1 0 000-1.664l-6-4A1 1 0 0010 6v2.798L4.555 5.168z" })
                                 ),
-                                React.createElement('span', null, item.goalSummary)
+                                React.createElement('span', { className: item.completionReason === 'skipped' ? 'text-red-400' : '' }, item.goalSummary)
                             )
                         ),
                         React.createElement('td', { className: 'p-3 text-slate-300' }, item.subject),

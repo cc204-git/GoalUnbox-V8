@@ -1,4 +1,3 @@
-
 import React, { useMemo, useState } from 'react';
 import { CompletedGoal } from '../types';
 import { formatDuration } from '../utils/timeUtils';
@@ -140,17 +139,18 @@ const GoalHistory: React.FC<GoalHistoryProps> = ({ onBack, history, onDeleteHist
                         </thead>
                         <tbody className="divide-y divide-slate-700">
                             {sortedHistory.map((item: CompletedGoal) => (
-                                <tr key={item.id} className={`hover:bg-slate-800/40 ${item.completionReason === 'skipped' ? 'opacity-60' : ''}`}>
+                                <tr key={item.id} className={`hover:bg-slate-800/40 ${item.completionReason === 'skipped' ? 'opacity-70' : ''}`}>
                                     <td className="p-3 font-medium">
                                         <div className="flex items-center gap-2">
                                             {item.completionReason === 'skipped' && (
-                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-amber-400 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
-                                                    {/* FIX: Replaced invalid `title` attribute with a `<title>` element for accessibility. */}
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-red-400 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
                                                     <title>Skipped</title>
                                                     <path d="M4.555 5.168A1 1 0 003 6v8a1 1 0 001.555.832L10 11.202V14a1 1 0 001.555.832l6-4a1 1 0 000-1.664l-6-4A1 1 0 0010 6v2.798L4.555 5.168z" />
                                                 </svg>
                                             )}
-                                            <span>{item.goalSummary}</span>
+                                            <span className={item.completionReason === 'skipped' ? 'text-red-400' : ''}>
+                                              {item.goalSummary}
+                                            </span>
                                         </div>
                                     </td>
                                     <td className="p-3 text-slate-300">{item.subject}</td>

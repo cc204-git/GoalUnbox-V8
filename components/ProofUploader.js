@@ -9,7 +9,7 @@ const PDFIcon = () => React.createElement(
     React.createElement('path', { fillRule: 'evenodd', d: 'M4 2a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V8.414a1 1 0 00-.293-.707l-4.414-4.414A1 1 0 0011.586 2H4zm6 6a1 1 0 100-2 1 1 0 000 2zM8 12a1 1 0 100-2 1 1 0 000 2zm2 1a1 1 0 011-1h.01a1 1 0 110 2H11a1 1 0 01-1-1z', clipRule: 'evenodd' })
 );
 
-const ProofUploader = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeLimitInMs, consequence, onStartEmergency, onSkipGoal, lastCompletedCodeImage }) => {
+const ProofUploader = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeLimitInMs, consequence, onStartEmergency, onSkipGoal, skipsLeftThisWeek, lastCompletedCodeImage }) => {
   const [proofFiles, setProofFiles] = useState([]);
   const [showCamera, setShowCamera] = useState(false);
   const fileInputRef = useRef(null);
@@ -165,19 +165,25 @@ const ProofUploader = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeL
             ),
             'Emergency Exit'
         ),
-        React.createElement(
-            'button',
-            {
-                onClick: onSkipGoal,
-                disabled: isLoading,
-                className: 'text-sm text-slate-500 hover:text-amber-400 transition-colors duration-300 flex items-center justify-center gap-2'
-            },
+        React.createElement('div', { className: 'flex flex-col items-center' },
             React.createElement(
-                'svg',
-                { xmlns: 'http://www.w3.org/2000/svg', className: 'h-4 w-4', viewBox: '0 0 20 20', fill: 'currentColor' },
-                React.createElement('path', { d: 'M4.555 5.168A1 1 0 003 6v8a1 1 0 001.555.832L10 11.202V14a1 1 0 001.555.832l6-4a1 1 0 000-1.664l-6-4A1 1 0 0010 6v2.798L4.555 5.168z' })
+                'button',
+                {
+                    onClick: onSkipGoal,
+                    disabled: isLoading || skipsLeftThisWeek <= 0,
+                    className: 'text-sm text-slate-500 hover:text-amber-400 transition-colors duration-300 flex items-center justify-center gap-2 disabled:text-slate-600 disabled:hover:text-slate-600 disabled:cursor-not-allowed',
+                    title: skipsLeftThisWeek > 0 ? `Skip this goal. You have ${skipsLeftThisWeek} skips left this week.` : 'You have no skips left for this week.'
+                },
+                React.createElement(
+                    'svg',
+                    { xmlns: 'http://www.w3.org/2000/svg', className: 'h-4 w-4', viewBox: '0 0 20 20', fill: 'currentColor' },
+                    React.createElement('path', { d: 'M4.555 5.168A1 1 0 003 6v8a1 1 0 001.555.832L10 11.202V14a1 1 0 001.555.832l6-4a1 1 0 000-1.664l-6-4A1 1 0 0010 6v2.798L4.555 5.168z' })
+                ),
+                'Skip Goal'
             ),
-            'Skip Goal'
+            React.createElement('span', { className: `text-xs mt-1 ${skipsLeftThisWeek > 0 ? 'text-slate-500' : 'text-red-500/80'}`},
+                 `(${skipsLeftThisWeek} left this week)`
+            )
         )
     );
 

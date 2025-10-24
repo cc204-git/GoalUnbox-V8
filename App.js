@@ -11,7 +11,7 @@ import { auth } from './services/firebaseService.js';
 import * as authService from './services/authService.js';
 import * as dataService from './services/dataService.js';
 import { fileToBase64 } from './utils/fileUtils.js';
-import { formatDuration, getISODateString, formatCountdown } from './utils/timeUtils.js';
+import { formatDuration, getISODateString, formatCountdown, getStartOfWeekISOString } from './utils/timeUtils.js';
 
 import Header from './components/Header.js';
 import CodeUploader from './components/CodeUploader.js';
@@ -115,11 +115,11 @@ const App = () => {
         if (!plan) {
             const defaultGoal1 = {
                 id: `default-${new Date().getTime()}-1`, subject: "Anki Review", goal: "Upload a verification of finishing all anki flash cards. I must upload a screenshot from my Windows computer. One half of the screen must show the Anki 'Congratulations!' screen (or similar proof of completion), and the other half must show the current date. The date in the screenshot must match today's date.",
-                timeLimitInMs: 3600000, consequence: null, startTime: "", endTime: "", completed: false,
+                timeLimitInMs: 3600000, consequence: null, startTime: "", endTime: "", status: 'pending',
             };
             const defaultGoal2 = {
                 id: `default-${new Date().getTime()}-2`, subject: "Anki Creation", goal: "I must send verification of me uploading flashcards to anki. I must upload a screenshot from my Windows computer. One half of the screen must show the Anki interface after adding new cards, and the other half must show the current date. The date in the screenshot must match today's date.",
-                timeLimitInMs: null, consequence: null, startTime: "", endTime: "", completed: false,
+                timeLimitInMs: null, consequence: null, startTime: "", endTime: "", status: 'pending',
             };
             const newPlan = { date: getISODateString(new Date()), goals: [defaultGoal1, defaultGoal2] };
             dataService.savePlan(uid, newPlan);
@@ -133,10 +133,19 @@ const App = () => {
 
     dataService.getStreakData(uid).then(data => {
         let streak = data;
-        if (!streak) {
-            streak = { currentStreak: 0, lastCompletionDate: '', commitment: null };
-        }
         const today = new Date();
+        const currentWeekStart = getStartOfWeekISOString(today);
+
+        if (!streak) {
+            streak = { 
+                currentStreak: 0, 
+                lastCompletionDate: '', 
+                commitment: null,
+                skipsThisWeek: 0,
+                weekStartDate: currentWeekStart
+            };
+        }
+        
         const todayStr = getISODateString(today);
         const yesterday = new Date();
         yesterday.setDate(today.getDate() - 1);
@@ -148,8 +157,21 @@ const App = () => {
         if (streak.commitment && streak.commitment.date !== todayStr) {
             streak.commitment = null;
         }
+        
+        // Check and reset weekly skip count
+        if (!streak.weekStartDate || streak.weekStartDate !== currentWeekStart) {
+            streak.skipsThisWeek = 0;
+            streak.weekStartDate = currentWeekStart;
+        }
+        if (streak.skipsThisWeek === undefined) {
+            streak.skipsThisWeek = 0;
+        }
+
+
         setStreakData(streak);
-        if (!data) dataService.saveStreakData(uid, streak);
+        if (!data || !data.weekStartDate) { // Save back if it was newly created or needed updating
+            dataService.saveStreakData(uid, streak);
+        }
     }).finally(() => {
         if (isInitialLoad) {
             setIsLoading(false);
@@ -272,7 +294,7 @@ const App = () => {
     await dataService.clearActiveGoal(currentUser.uid);
 
     if (activePlannedGoal && todaysPlan) {
-        const updatedGoals = todaysPlan.goals.map(g => g.id === activePlannedGoal.id ? { ...g, completed: true } : g);
+        const updatedGoals = todaysPlan.goals.map(g => g.id === activePlannedGoal.id ? { ...g, status: 'completed' } : g);
         const updatedPlan = { ...todaysPlan, goals: updatedGoals };
         await dataService.savePlan(currentUser.uid, updatedPlan);
         setActivePlannedGoal(null);
@@ -367,8 +389,15 @@ const App = () => {
   const handleEmergencyCancel = () => { setAppState(AppState.GOAL_SET); };
   
   const handleSkipGoal = useCallback(async () => {
-    if (!currentUser || !activeGoal) return;
-    if (!window.confirm("Are you sure you want to skip this goal? This will be recorded in your history as skipped.")) {
+    if (!currentUser || !activeGoal || !streakData) return;
+
+    const skipsLeft = 2 - (streakData.skipsThisWeek ?? 0);
+    if (skipsLeft <= 0) {
+        setError("You have no skips left for this week.");
+        return;
+    }
+
+    if (!window.confirm(`Are you sure you want to skip this goal? This will use 1 of your ${skipsLeft} skips for the week.`)) {
         return;
     }
     
@@ -391,6 +420,22 @@ const App = () => {
             completionReason: 'skipped'
         };
         await dataService.addHistoryItem(currentUser.uid, newEntry);
+
+        if (activePlannedGoal && todaysPlan) {
+            const updatedGoals = todaysPlan.goals.map(g => 
+                g.id === activePlannedGoal.id ? { ...g, status: 'skipped' } : g
+            );
+            const updatedPlan = { ...todaysPlan, goals: updatedGoals };
+            await dataService.savePlan(currentUser.uid, updatedPlan);
+        }
+
+        const updatedStreakData = {
+            ...streakData,
+            skipsThisWeek: (streakData.skipsThisWeek ?? 0) + 1
+        };
+        await dataService.saveStreakData(currentUser.uid, updatedStreakData);
+        setStreakData(updatedStreakData);
+
         await dataService.clearActiveGoal(currentUser.uid);
         resetToStart(false);
     } catch (err) {
@@ -398,7 +443,7 @@ const App = () => {
     } finally {
         setIsLoading(false);
     }
-  }, [currentUser, activeGoal, goalSetTime, goal, subject, handleApiError]);
+  }, [currentUser, activeGoal, goalSetTime, goal, subject, handleApiError, activePlannedGoal, todaysPlan, streakData]);
 
   const handleShowHistory = () => setAppState(AppState.HISTORY_VIEW);
   const handleHistoryBack = () => setAppState(AppState.TODAYS_PLAN);
@@ -546,15 +591,18 @@ const App = () => {
 
     switch (appState) {
       case AppState.TODAYS_PLAN:
-        return todaysPlan ? React.createElement(TodaysPlanComponent, { initialPlan: todaysPlan, onSavePlan: handleSavePlan, onStartGoal: handleStartPlannedGoal, currentUser: currentUser.uid }) : React.createElement('div', { className: 'flex justify-center items-center p-8' }, React.createElement(Spinner));
+        return todaysPlan ? React.createElement(TodaysPlanComponent, { initialPlan: todaysPlan, onSavePlan: handleSavePlan, onStartGoal: handleStartPlannedGoal, currentUser: currentUser.uid, onShowHistory: handleShowHistory }) : React.createElement('div', { className: 'flex justify-center items-center p-8' }, React.createElement(Spinner));
       case AppState.AWAITING_CODE: return React.createElement(CodeUploader, { onCodeImageSubmit: handleCodeImageSubmit, isLoading: isLoading, onShowHistory: handleShowHistory, onLogout: handleLogout, currentUser: currentUser, streakData: streakData, onSetCommitment: handleSetDailyCommitment, onCompleteCommitment: handleCompleteDailyCommitment });
-      case AppState.GOAL_SET: return React.createElement(ProofUploader, { goal: goal, onProofImageSubmit: handleProofImageSubmit, isLoading: isLoading, goalSetTime: goalSetTime, timeLimitInMs: timeLimitInMs, consequence: consequence, onStartEmergency: handleStartEmergency, onSkipGoal: handleSkipGoal, lastCompletedCodeImage: streakData?.lastCompletedCodeImage });
+      case AppState.GOAL_SET: {
+          const skipsLeft = 2 - (streakData?.skipsThisWeek ?? 0);
+          return React.createElement(ProofUploader, { goal: goal, onProofImageSubmit: handleProofImageSubmit, isLoading: isLoading, goalSetTime: goalSetTime, timeLimitInMs: timeLimitInMs, consequence: consequence, onStartEmergency: handleStartEmergency, onSkipGoal: handleSkipGoal, skipsLeftThisWeek: skipsLeft > 0 ? skipsLeft : 0, lastCompletedCodeImage: streakData?.lastCompletedCodeImage });
+      }
       case AppState.EMERGENCY_TEST: return React.createElement(EmergencyTest, { onSuccess: handleEmergencySuccess, onCancel: handleEmergencyCancel });
       case AppState.HISTORY_VIEW: return React.createElement(GoalHistory, { onBack: handleHistoryBack, history: history, onDeleteHistoryItem: handleDeleteHistoryItem });
       case AppState.GOAL_COMPLETED: return React.createElement(VerificationResult, { isSuccess: true, secretCodeImage: secretCodeImage || completedSecretCodeImage, feedback: verificationFeedback, onRetry: handleRetry, onReset: () => resetToStart(false), completionDuration: completionDuration, completionReason: completionReason });
       
       case AppState.AWAITING_BREAK: {
-            const uncompletedGoals = (todaysPlan?.goals.filter(g => !g.completed) ?? []).sort((a, b) => a.startTime.localeCompare(b.startTime));
+            const uncompletedGoals = (todaysPlan?.goals.filter(g => g.status === 'pending') ?? []).sort((a, b) => a.startTime.localeCompare(b.startTime));
             let choiceContent;
             if (!breakChoice) {
                 choiceContent = React.createElement('div', { className: "bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full text-center" },

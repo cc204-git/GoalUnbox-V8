@@ -42,3 +42,11 @@ export const formatCountdown = (ms) => {
 export const getISODateString = (date) => {
     return date.toISOString().split('T')[0];
 };
+
+export const getStartOfWeekISOString = (date) => {
+    const d = new Date(date);
+    const day = d.getDay(); // Sunday - 0, Monday - 1, ...
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1); // adjust when day is sunday
+    const monday = new Date(d.setDate(diff));
+    return getISODateString(monday);
+};

@@ -1,3 +1,5 @@
+import { User } from "firebase/auth";
+
 export enum AppState {
   AUTH,
   TODAYS_PLAN,
@@ -39,6 +41,8 @@ export interface StreakData {
     lastCompletionDate: string; // YYYY-MM-DD
     commitment: { date: string; text: string; completed: boolean; } | null;
     lastCompletedCodeImage?: string;
+    skipsThisWeek?: number;
+    weekStartDate?: string; // YYYY-MM-DD
 }
 
 export interface PlannedGoal {
@@ -49,7 +53,7 @@ export interface PlannedGoal {
   consequence: string | null;
   startTime: string; // "HH:mm"
   endTime: string; // "HH:mm"
-  completed: boolean;
+  status: 'pending' | 'completed' | 'skipped';
 }
 
 export interface TodaysPlan {

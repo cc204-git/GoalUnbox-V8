@@ -14,7 +14,7 @@ import { auth } from './services/firebaseService';
 import * as authService from './services/authService';
 import * as dataService from './services/dataService';
 import { fileToBase64 } from './utils/fileUtils';
-import { formatDuration, getISODateString, formatCountdown } from './utils/timeUtils';
+import { formatDuration, getISODateString, formatCountdown, getStartOfWeekISOString } from './utils/timeUtils';
 
 import Header from './components/Header';
 import CodeUploader from './components/CodeUploader';
@@ -65,6 +65,7 @@ const App: React.FC = () => {
       timeLimitInMs?: number | null;
       consequence?: string | null;
       plannedGoalId?: string;
+// FIX: Initialized state with `null` instead of itself to prevent a "used before declaration" error.
   } | null>(null);
   const [currentTime, setCurrentTime] = useState(Date.now());
   const [breakChoice, setBreakChoice] = useState<'new' | 'plan' | null>(null);
@@ -133,12 +134,12 @@ const App: React.FC = () => {
             const defaultGoal1: PlannedGoal = {
                 id: `default-${new Date().getTime()}-1`,
                 subject: "Anki Review", goal: "Upload a verification of finishing all anki flash cards. I must upload a screenshot from my Windows computer. One half of the screen must show the Anki 'Congratulations!' screen (or similar proof of completion), and the other half must show the current date. The date in the screenshot must match today's date.",
-                timeLimitInMs: 3600000, consequence: null, startTime: "", endTime: "", completed: false,
+                timeLimitInMs: 3600000, consequence: null, startTime: "", endTime: "", status: 'pending',
             };
             const defaultGoal2: PlannedGoal = {
                 id: `default-${new Date().getTime()}-2`,
                 subject: "Anki Creation", goal: "I must send verification of me uploading flashcards to anki. I must upload a screenshot from my Windows computer. One half of the screen must show the Anki interface after adding new cards, and the other half must show the current date. The date in the screenshot must match today's date.",
-                timeLimitInMs: null, consequence: null, startTime: "", endTime: "", completed: false,
+                timeLimitInMs: null, consequence: null, startTime: "", endTime: "", status: 'pending',
             };
             const newPlan = { date: getISODateString(new Date()), goals: [defaultGoal1, defaultGoal2] };
             dataService.savePlan(uid, newPlan);
@@ -154,10 +155,19 @@ const App: React.FC = () => {
     // Fetch initial streak data
     dataService.getStreakData(uid).then(data => {
         let streak = data;
-        if (!streak) {
-            streak = { currentStreak: 0, lastCompletionDate: '', commitment: null };
-        }
         const today = new Date();
+        const currentWeekStart = getStartOfWeekISOString(today);
+
+        if (!streak) {
+            streak = { 
+                currentStreak: 0, 
+                lastCompletionDate: '', 
+                commitment: null,
+                skipsThisWeek: 0,
+                weekStartDate: currentWeekStart
+            };
+        }
+        
         const todayStr = getISODateString(today);
         const yesterday = new Date();
         yesterday.setDate(today.getDate() - 1);
@@ -169,8 +179,20 @@ const App: React.FC = () => {
         if (streak.commitment && streak.commitment.date !== todayStr) {
             streak.commitment = null;
         }
+
+        // Check and reset weekly skip count
+        if (!streak.weekStartDate || streak.weekStartDate !== currentWeekStart) {
+            streak.skipsThisWeek = 0;
+            streak.weekStartDate = currentWeekStart;
+        }
+        if (streak.skipsThisWeek === undefined) {
+            streak.skipsThisWeek = 0;
+        }
+
         setStreakData(streak);
-        if (!data) dataService.saveStreakData(uid, streak);
+        if (!data || !data.weekStartDate) { // Save back if it was newly created or needed updating
+            dataService.saveStreakData(uid, streak);
+        }
     }).finally(() => {
         if (isInitialLoad) {
             setIsLoading(false);
@@ -294,7 +316,7 @@ const App: React.FC = () => {
     await dataService.clearActiveGoal(currentUser.uid);
 
     if (activePlannedGoal && todaysPlan) {
-        const updatedGoals = todaysPlan.goals.map(g => g.id === activePlannedGoal.id ? { ...g, completed: true } : g);
+        const updatedGoals = todaysPlan.goals.map(g => g.id === activePlannedGoal.id ? { ...g, status: 'completed' as const } : g);
         const updatedPlan = { ...todaysPlan, goals: updatedGoals };
         await dataService.savePlan(currentUser.uid, updatedPlan);
         setActivePlannedGoal(null);
@@ -389,8 +411,15 @@ const App: React.FC = () => {
   const handleEmergencyCancel = () => { setAppState(AppState.GOAL_SET); };
   
   const handleSkipGoal = useCallback(async () => {
-    if (!currentUser || !activeGoal) return;
-    if (!window.confirm("Are you sure you want to skip this goal? This will be recorded in your history as skipped.")) {
+    if (!currentUser || !activeGoal || !streakData) return;
+
+    const skipsLeft = 2 - (streakData.skipsThisWeek ?? 0);
+    if (skipsLeft <= 0) {
+        setError("You have no skips left for this week.");
+        return;
+    }
+
+    if (!window.confirm(`Are you sure you want to skip this goal? This will use 1 of your ${skipsLeft} skips for the week.`)) {
         return;
     }
     
@@ -413,6 +442,22 @@ const App: React.FC = () => {
             completionReason: 'skipped'
         };
         await dataService.addHistoryItem(currentUser.uid, newEntry);
+        
+        if (activePlannedGoal && todaysPlan) {
+            const updatedGoals = todaysPlan.goals.map(g => 
+                g.id === activePlannedGoal.id ? { ...g, status: 'skipped' as const } : g
+            );
+            const updatedPlan = { ...todaysPlan, goals: updatedGoals };
+            await dataService.savePlan(currentUser.uid, updatedPlan);
+        }
+
+        const updatedStreakData: StreakData = {
+            ...streakData,
+            skipsThisWeek: (streakData.skipsThisWeek ?? 0) + 1
+        };
+        await dataService.saveStreakData(currentUser.uid, updatedStreakData);
+        setStreakData(updatedStreakData);
+
         await dataService.clearActiveGoal(currentUser.uid);
         resetToStart(false);
     } catch (err) {
@@ -420,7 +465,7 @@ const App: React.FC = () => {
     } finally {
         setIsLoading(false);
     }
-  }, [currentUser, activeGoal, goalSetTime, goal, subject, handleApiError]);
+  }, [currentUser, activeGoal, goalSetTime, goal, subject, handleApiError, activePlannedGoal, todaysPlan, streakData]);
 
 
   const handleShowHistory = () => setAppState(AppState.HISTORY_VIEW);
@@ -570,15 +615,18 @@ const App: React.FC = () => {
 
     switch (appState) {
       case AppState.TODAYS_PLAN:
-        return todaysPlan ? <TodaysPlanComponent initialPlan={todaysPlan} onSavePlan={handleSavePlan} onStartGoal={handleStartPlannedGoal} currentUser={currentUser.uid} /> : <div className="flex justify-center items-center p-8"><Spinner /></div>;
+        return todaysPlan ? <TodaysPlanComponent initialPlan={todaysPlan} onSavePlan={handleSavePlan} onStartGoal={handleStartPlannedGoal} currentUser={currentUser.uid} onShowHistory={handleShowHistory} /> : <div className="flex justify-center items-center p-8"><Spinner /></div>;
       case AppState.AWAITING_CODE: return <CodeUploader onCodeImageSubmit={handleCodeImageSubmit} isLoading={isLoading} onShowHistory={handleShowHistory} onLogout={handleLogout} currentUser={currentUser} streakData={streakData} onSetCommitment={handleSetDailyCommitment} onCompleteCommitment={handleCompleteDailyCommitment} />;
-      case AppState.GOAL_SET: return <ProofUploader goal={goal} onProofImageSubmit={handleProofImageSubmit} isLoading={isLoading} goalSetTime={goalSetTime} timeLimitInMs={timeLimitInMs} consequence={consequence} onStartEmergency={handleStartEmergency} onSkipGoal={handleSkipGoal} lastCompletedCodeImage={streakData?.lastCompletedCodeImage} />;
+      case AppState.GOAL_SET: {
+        const skipsLeft = 2 - (streakData?.skipsThisWeek ?? 0);
+        return <ProofUploader goal={goal} onProofImageSubmit={handleProofImageSubmit} isLoading={isLoading} goalSetTime={goalSetTime} timeLimitInMs={timeLimitInMs} consequence={consequence} onStartEmergency={handleStartEmergency} onSkipGoal={handleSkipGoal} skipsLeftThisWeek={skipsLeft > 0 ? skipsLeft : 0} lastCompletedCodeImage={streakData?.lastCompletedCodeImage} />;
+      }
       case AppState.EMERGENCY_TEST: return <EmergencyTest onSuccess={handleEmergencySuccess} onCancel={handleEmergencyCancel} />;
       case AppState.HISTORY_VIEW: return <GoalHistory onBack={handleHistoryBack} history={history} onDeleteHistoryItem={handleDeleteHistoryItem} />;
       case AppState.GOAL_COMPLETED: return <VerificationResult isSuccess={true} secretCodeImage={secretCodeImage || completedSecretCodeImage} feedback={verificationFeedback} onRetry={handleRetry} onReset={() => resetToStart(false)} completionDuration={completionDuration} completionReason={completionReason} />;
       
       case AppState.AWAITING_BREAK: {
-            const uncompletedGoals = (todaysPlan?.goals.filter(g => !g.completed) ?? []).sort((a, b) => a.startTime.localeCompare(b.startTime));
+            const uncompletedGoals = (todaysPlan?.goals.filter(g => g.status === 'pending') ?? []).sort((a, b) => a.startTime.localeCompare(b.startTime));
             return (
                  <div className="w-full max-w-2xl flex flex-col items-center gap-6">
                     <div className="w-full text-center bg-slate-800/80 backdrop-blur-sm p-3 rounded-lg border border-slate-700">
