@@ -39,6 +39,7 @@ export interface StreakData {
     currentStreak: number;
     lastCompletionDate: string; // YYYY-MM-DD
     commitment: { date: string; text: string; completed: boolean; } | null;
+    lastCompletedCodeImage?: string;
 }
 
 export interface PlannedGoal {

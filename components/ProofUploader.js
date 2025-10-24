@@ -9,7 +9,7 @@ const PDFIcon = () => React.createElement(
     React.createElement('path', { fillRule: 'evenodd', d: 'M4 2a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V8.414a1 1 0 00-.293-.707l-4.414-4.414A1 1 0 0011.586 2H4zm6 6a1 1 0 100-2 1 1 0 000 2zM8 12a1 1 0 100-2 1 1 0 000 2zm2 1a1 1 0 011-1h.01a1 1 0 110 2H11a1 1 0 01-1-1z', clipRule: 'evenodd' })
 );
 
-const ProofUploader = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeLimitInMs, consequence, onStartEmergency }) => {
+const ProofUploader = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeLimitInMs, consequence, onStartEmergency, lastCompletedCodeImage }) => {
   const [proofFiles, setProofFiles] = useState([]);
   const [showCamera, setShowCamera] = useState(false);
   const fileInputRef = useRef(null);
@@ -17,6 +17,7 @@ const ProofUploader = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeL
   const [timeLeft, setTimeLeft] = useState(null);
   const [isTimeUp, setIsTimeUp] = useState(false);
   const [elapsedTime, setElapsedTime] = useState(null);
+  const [showPreviousCodeModal, setShowPreviousCodeModal] = useState(false);
 
   useEffect(() => {
     if (!goalSetTime || isLoading) return;
@@ -149,6 +150,70 @@ const ProofUploader = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeL
     );
   }
 
+  const actionButtons = React.createElement('div', { className: 'mt-8 text-center flex flex-col sm:flex-row items-center justify-center gap-x-6 gap-y-2' },
+        React.createElement(
+            'button',
+            {
+                onClick: onStartEmergency,
+                disabled: isLoading,
+                className: 'text-sm text-slate-500 hover:text-red-400 transition-colors duration-300 flex items-center justify-center gap-2 mx-auto'
+            },
+            React.createElement(
+                'svg', 
+                { xmlns: 'http://www.w3.org/2000/svg', className: 'h-4 w-4', viewBox: '0 0 20 20', fill: 'currentColor' },
+                React.createElement('path', { fillRule: 'evenodd', d: 'M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.21 3.03-1.742 3.03H4.42c-1.532 0-2.492-1.696-1.742-3.03l5.58-9.92zM10 13a1 1 0 110-2 1 1 0 010 2zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z', clipRule: 'evenodd' })
+            ),
+            'Emergency Exit'
+        ),
+        lastCompletedCodeImage && React.createElement(
+            'button',
+            {
+                onClick: () => setShowPreviousCodeModal(true),
+                disabled: isLoading,
+                className: 'text-sm text-slate-500 hover:text-cyan-400 transition-colors duration-300 flex items-center justify-center gap-2 mx-auto'
+            },
+            React.createElement(
+                'svg',
+                { xmlns: 'http://www.w3.org/2000/svg', className: 'h-4 w-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M15 12a3 3 0 11-6 0 3 3 0 016 0z' }),
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z' })
+            ),
+            'View Previous Code'
+        )
+    );
+
+    const previousCodeModal = showPreviousCodeModal && lastCompletedCodeImage && React.createElement(
+        'div',
+        {
+            className: 'fixed inset-0 bg-black/80 flex items-center justify-center z-50 animate-fade-in p-4',
+            onClick: () => setShowPreviousCodeModal(false)
+        },
+        React.createElement(
+            'div',
+            { className: 'relative', onClick: (e) => e.stopPropagation() },
+            React.createElement('p', { className: 'text-white text-center mb-2 font-semibold' }, 'Code from Previous Goal'),
+            React.createElement('img', {
+                src: lastCompletedCodeImage,
+                alt: 'Sequestered code from previous goal',
+                className: 'rounded-lg max-h-[80vh] max-w-[90vw] object-contain'
+            }),
+            React.createElement(
+                'button',
+                {
+                    onClick: () => setShowPreviousCodeModal(false),
+                    className: 'absolute -top-3 -right-3 bg-slate-800 text-white rounded-full p-1.5 leading-none hover:bg-slate-700 transition-colors',
+                    'aria-label': 'Close image view'
+                },
+                React.createElement(
+                    'svg',
+                    { xmlns: 'http://www.w3.org/2000/svg', className: 'h-6 w-6', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: '2' },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M6 18L18 6M6 6l12 12' })
+                )
+            )
+        )
+    );
+
+
   return React.createElement(
     React.Fragment,
     null,
@@ -214,25 +279,9 @@ const ProofUploader = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeL
         { onClick: handleSubmit, disabled: proofFiles.length === 0 || isLoading, className: 'w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed transition-all duration-300 flex items-center justify-center' },
         isLoading ? React.createElement(React.Fragment, null, React.createElement(Spinner, null), React.createElement('span', {className: 'ml-2'}, 'Verifying...')) : 'Submit Proof for Verification'
       ),
-      React.createElement(
-        'div',
-        { className: 'mt-8 text-center' },
-        React.createElement(
-            'button',
-            {
-                onClick: onStartEmergency,
-                disabled: isLoading,
-                className: 'text-sm text-slate-500 hover:text-red-400 transition-colors duration-300 flex items-center justify-center gap-2 mx-auto'
-            },
-            React.createElement(
-                'svg', 
-                { xmlns: 'http://www.w3.org/2000/svg', className: 'h-4 w-4', viewBox: '0 0 20 20', fill: 'currentColor' },
-                React.createElement('path', { fillRule: 'evenodd', d: 'M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.21 3.03-1.742 3.03H4.42c-1.532 0-2.492-1.696-1.742-3.03l5.58-9.92zM10 13a1 1 0 110-2 1 1 0 010 2zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z', clipRule: 'evenodd' })
-            ),
-            'Need your code back now? Try the Emergency Exit.'
-        )
-      )
-    )
+      actionButtons
+    ),
+    previousCodeModal
   );
 };
 
