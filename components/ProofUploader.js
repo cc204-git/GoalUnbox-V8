@@ -150,7 +150,7 @@ const ProofUploader = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeL
     );
   }
 
-  const actionButtons = React.createElement('div', { className: 'mt-8 text-center flex flex-col sm:flex-row items-center justify-center gap-x-6 gap-y-2' },
+    const actionButtons = React.createElement('div', { className: 'mt-8 text-center' },
         React.createElement(
             'button',
             {
@@ -164,21 +164,6 @@ const ProofUploader = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeL
                 React.createElement('path', { fillRule: 'evenodd', d: 'M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.21 3.03-1.742 3.03H4.42c-1.532 0-2.492-1.696-1.742-3.03l5.58-9.92zM10 13a1 1 0 110-2 1 1 0 010 2zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z', clipRule: 'evenodd' })
             ),
             'Emergency Exit'
-        ),
-        lastCompletedCodeImage && React.createElement(
-            'button',
-            {
-                onClick: () => setShowPreviousCodeModal(true),
-                disabled: isLoading,
-                className: 'text-sm text-slate-500 hover:text-cyan-400 transition-colors duration-300 flex items-center justify-center gap-2 mx-auto'
-            },
-            React.createElement(
-                'svg',
-                { xmlns: 'http://www.w3.org/2000/svg', className: 'h-4 w-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M15 12a3 3 0 11-6 0 3 3 0 016 0z' }),
-                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z' })
-            ),
-            'View Previous Code'
         )
     );
 
@@ -213,6 +198,23 @@ const ProofUploader = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeL
         )
     );
 
+    const viewPreviousCodeButton = React.createElement(
+        'button',
+        {
+            onClick: () => setShowPreviousCodeModal(true),
+            disabled: isLoading || !lastCompletedCodeImage,
+            className: "absolute top-4 right-4 text-sm text-slate-400 hover:text-cyan-400 transition-colors duration-300 flex items-center justify-center gap-2 p-2 rounded-lg bg-slate-900/50 hover:bg-slate-800 disabled:text-slate-600 disabled:cursor-not-allowed disabled:hover:bg-slate-900/50",
+            title: !lastCompletedCodeImage ? "No previous code available" : "View Previous Code"
+        },
+        React.createElement(
+            'svg',
+            { xmlns: 'http://www.w3.org/2000/svg', className: 'h-5 w-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+            React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M15 12a3 3 0 11-6 0 3 3 0 016 0z' }),
+            React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z' })
+        ),
+        React.createElement('span', null, 'View Previous Code')
+    );
+
 
   return React.createElement(
     React.Fragment,
@@ -220,7 +222,8 @@ const ProofUploader = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeL
     showCamera && React.createElement(CameraCapture, { onCapture: handleCapture, onCancel: () => setShowCamera(false) }),
     React.createElement(
       'div',
-      { className: 'bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full max-w-2xl text-center animate-fade-in' },
+      { className: 'relative bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full max-w-2xl text-center animate-fade-in' },
+      viewPreviousCodeButton,
       React.createElement('h2', { className: 'text-2xl font-semibold mb-2 text-cyan-300' }, 'Your Goal Is Set!'),
       React.createElement(
         'div', { className: 'my-4 flex flex-wrap justify-center gap-4' },

@@ -160,7 +160,20 @@ const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit,
   return (
     <>
       {showCamera && <CameraCapture onCapture={handleCapture} onCancel={() => setShowCamera(false)} />}
-      <div className="bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full max-w-2xl text-center animate-fade-in">
+      <div className="relative bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full max-w-2xl text-center animate-fade-in">
+        <button
+            onClick={() => setShowPreviousCodeModal(true)}
+            disabled={isLoading || !lastCompletedCodeImage}
+            className="absolute top-4 right-4 text-sm text-slate-400 hover:text-cyan-400 transition-colors duration-300 flex items-center justify-center gap-2 p-2 rounded-lg bg-slate-900/50 hover:bg-slate-800 disabled:text-slate-600 disabled:cursor-not-allowed disabled:hover:bg-slate-900/50"
+            title={!lastCompletedCodeImage ? "No previous code available" : "View Previous Code"}
+        >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+            </svg>
+            <span>View Previous Code</span>
+        </button>
+
         <h2 className="text-2xl font-semibold mb-2 text-cyan-300">Your Goal Is Set!</h2>
         
         <div className="my-4 flex flex-wrap justify-center gap-4">
@@ -249,7 +262,7 @@ const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit,
           {isLoading ? <><Spinner /><span className="ml-2">Verifying...</span></> : 'Submit Proof for Verification'}
         </button>
 
-        <div className="mt-8 text-center flex flex-col sm:flex-row items-center justify-center gap-x-6 gap-y-2">
+        <div className="mt-8 text-center">
             <button
                 onClick={onStartEmergency}
                 disabled={isLoading}
@@ -260,19 +273,6 @@ const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit,
                 </svg>
                 Emergency Exit
             </button>
-            {lastCompletedCodeImage && (
-                 <button
-                    onClick={() => setShowPreviousCodeModal(true)}
-                    disabled={isLoading}
-                    className="text-sm text-slate-500 hover:text-cyan-400 transition-colors duration-300 flex items-center justify-center gap-2 mx-auto"
-                >
-                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                    </svg>
-                    View Previous Code
-                </button>
-            )}
         </div>
       </div>
        {showPreviousCodeModal && lastCompletedCodeImage && (
