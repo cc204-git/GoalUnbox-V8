@@ -9,7 +9,7 @@ const PDFIcon = () => React.createElement(
     React.createElement('path', { fillRule: 'evenodd', d: 'M4 2a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V8.414a1 1 0 00-.293-.707l-4.414-4.414A1 1 0 0011.586 2H4zm6 6a1 1 0 100-2 1 1 0 000 2zM8 12a1 1 0 100-2 1 1 0 000 2zm2 1a1 1 0 011-1h.01a1 1 0 110 2H11a1 1 0 01-1-1z', clipRule: 'evenodd' })
 );
 
-const ProofUploader = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeLimitInMs, consequence, onStartEmergency, onSkipGoal, skipsLeftThisWeek, lastCompletedCodeImage }) => {
+const ProofUploader = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeLimitInMs, consequence, onSkipGoal, skipsLeftThisWeek, lastCompletedCodeImage }) => {
   const [proofFiles, setProofFiles] = useState([]);
   const [showCamera, setShowCamera] = useState(false);
   const fileInputRef = useRef(null);
@@ -151,20 +151,6 @@ const ProofUploader = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeL
   }
 
     const actionButtons = React.createElement('div', { className: 'mt-8 text-center flex items-center justify-center gap-6' },
-        React.createElement(
-            'button',
-            {
-                onClick: onStartEmergency,
-                disabled: isLoading,
-                className: 'text-sm text-slate-500 hover:text-red-400 transition-colors duration-300 flex items-center justify-center gap-2'
-            },
-            React.createElement(
-                'svg', 
-                { xmlns: 'http://www.w3.org/2000/svg', className: 'h-4 w-4', viewBox: '0 0 20 20', fill: 'currentColor' },
-                React.createElement('path', { fillRule: 'evenodd', d: 'M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.21 3.03-1.742 3.03H4.42c-1.532 0-2.492-1.696-1.742-3.03l5.58-9.92zM10 13a1 1 0 110-2 1 1 0 010 2zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z', clipRule: 'evenodd' })
-            ),
-            'Emergency Exit'
-        ),
         React.createElement('div', { className: 'flex flex-col items-center' },
             React.createElement(
                 'button',

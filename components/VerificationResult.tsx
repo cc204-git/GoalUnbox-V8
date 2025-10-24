@@ -12,8 +12,7 @@ interface VerificationResultProps {
   onSendChatMessage?: (message: string) => void;
   isChatLoading?: boolean;
   completionDuration?: string | null;
-  // FIX: Added 'skipped' to the type to match the possible values from App.tsx state.
-  completionReason?: 'verified' | 'emergency' | 'skipped' | null;
+  completionReason?: 'verified' | 'skipped' | null;
 }
 
 const FeedbackSection: React.FC<{title: string; items: string[]; color: 'green' | 'red'}> = ({ title, items, color }) => {
@@ -44,14 +43,6 @@ const VerificationResult: React.FC<VerificationResultProps> = ({ isSuccess, secr
     let borderColor: string;
 
     switch (completionReason) {
-        case 'emergency':
-            title = "Emergency Access";
-            titleColor = "text-red-400";
-            successMessage = "You passed the test. Your code is now available.";
-            achievementText = "Your emergency access has been logged to your goal history.";
-            iconColor = "text-red-500";
-            borderColor = "border-red-500";
-            break;
         case 'skipped':
             title = "Goal Skipped";
             titleColor = "text-amber-400";

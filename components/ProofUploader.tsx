@@ -11,7 +11,6 @@ interface ProofUploaderProps {
   goalSetTime: number | null;
   timeLimitInMs: number | null;
   consequence: string | null;
-  onStartEmergency: () => void;
   onSkipGoal: () => void;
   skipsLeftThisWeek: number;
   lastCompletedCodeImage?: string | null;
@@ -31,7 +30,7 @@ const PDFIcon = () => (
 );
 
 
-const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeLimitInMs, consequence, onStartEmergency, onSkipGoal, skipsLeftThisWeek, lastCompletedCodeImage }) => {
+const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeLimitInMs, consequence, onSkipGoal, skipsLeftThisWeek, lastCompletedCodeImage }) => {
   const [proofFiles, setProofFiles] = useState<ProofFile[]>([]);
   const [showCamera, setShowCamera] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -265,16 +264,6 @@ const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit,
         </button>
 
         <div className="mt-8 text-center flex items-center justify-center gap-6">
-            <button
-                onClick={onStartEmergency}
-                disabled={isLoading}
-                className="text-sm text-slate-500 hover:text-red-400 transition-colors duration-300 flex items-center justify-center gap-2"
-            >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.21 3.03-1.742 3.03H4.42c-1.532 0-2.492-1.696-1.742-3.03l5.58-9.92zM10 13a1 1 0 110-2 1 1 0 010 2zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                </svg>
-                Emergency Exit
-            </button>
             <div className="flex flex-col items-center">
                 <button
                     onClick={onSkipGoal}

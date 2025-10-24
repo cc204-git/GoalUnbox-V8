@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useEffect } from 'react';
 import { User, onAuthStateChanged } from 'firebase/auth';
 import { Unsubscribe } from 'firebase/firestore';
@@ -23,14 +24,13 @@ import GoalSetter, { GoalPayload } from './components/GoalSetter';
 import ProofUploader from './components/ProofUploader';
 import VerificationResult from './components/VerificationResult';
 import Alert from './components/Alert';
-import EmergencyTest from './components/EmergencyTest';
 import GoalHistory from './components/GoalHistory';
 import Auth from './components/Auth';
 import ApiKeyPrompt from './components/ApiKeyPrompt';
 import Spinner from './components/Spinner';
 import { Chat } from '@google/genai';
 
-type CompletionReason = 'verified' | 'emergency' | 'skipped';
+type CompletionReason = 'verified' | 'skipped';
 
 const App: React.FC = () => {
   const [apiKey, setApiKey] = useState<string | null>(() => localStorage.getItem('GEMINI_API_KEY'));
@@ -307,12 +307,12 @@ const App: React.FC = () => {
     return goal;
   }, [goal, timeLimitInMs, goalSetTime, consequence]);
 
-  const handleGoalSuccess = useCallback(async (feedback: VerificationFeedback | null, reason: 'verified' | 'emergency') => {
+  const handleGoalSuccess = useCallback(async (feedback: VerificationFeedback | null, reason: 'verified') => {
     if (!currentUser) return;
     setIsLoading(true);
     const endTime = Date.now();
     const duration = goalSetTime ? endTime - goalSetTime : 0;
-    const finalGoal = reason === 'emergency' ? goal : getEffectiveGoal();
+    const finalGoal = getEffectiveGoal();
 
     try {
         const goalSummary = await summarizeGoal(finalGoal);
@@ -354,7 +354,7 @@ const App: React.FC = () => {
     setVerificationFeedback(feedback);
     setAppState(AppState.GOAL_COMPLETED);
     setIsLoading(false);
-}, [currentUser, goal, goalSetTime, getEffectiveGoal, secretCodeImage, subject, activePlannedGoal, todaysPlan, streakData]);
+}, [currentUser, goalSetTime, getEffectiveGoal, secretCodeImage, subject, activePlannedGoal, todaysPlan, streakData]);
 
   const handleProofImageSubmit = useCallback(async (files: File[]) => {
     const pauseStartTime = Date.now();
@@ -419,10 +419,6 @@ const App: React.FC = () => {
     setError(null); setVerificationFeedback(null); setChat(null); setChatMessages([]);
     setAppState(AppState.GOAL_SET);
   };
-
-  const handleStartEmergency = () => { setError(null); setAppState(AppState.EMERGENCY_TEST); };
-  const handleEmergencySuccess = useCallback(() => { handleGoalSuccess(null, 'emergency'); }, [handleGoalSuccess]);
-  const handleEmergencyCancel = () => { setAppState(AppState.GOAL_SET); };
   
   const handleSkipGoal = useCallback(async () => {
     if (!currentUser || !activeGoal || !streakData) return;
@@ -650,9 +646,8 @@ const App: React.FC = () => {
       case AppState.AWAITING_CODE: return <CodeUploader onCodeImageSubmit={handleCodeImageSubmit} isLoading={isLoading} onShowHistory={handleShowHistory} onLogout={handleLogout} currentUser={currentUser} streakData={streakData} onSetCommitment={handleSetDailyCommitment} onCompleteCommitment={handleCompleteDailyCommitment} />;
       case AppState.GOAL_SET: {
         const skipsLeft = 2 - (streakData?.skipsThisWeek ?? 0);
-        return <ProofUploader goal={goal} onProofImageSubmit={handleProofImageSubmit} isLoading={isLoading} goalSetTime={goalSetTime} timeLimitInMs={timeLimitInMs} consequence={consequence} onStartEmergency={handleStartEmergency} onSkipGoal={handleSkipGoal} skipsLeftThisWeek={skipsLeft > 0 ? skipsLeft : 0} lastCompletedCodeImage={streakData?.lastCompletedCodeImage} />;
+        return <ProofUploader goal={goal} onProofImageSubmit={handleProofImageSubmit} isLoading={isLoading} goalSetTime={goalSetTime} timeLimitInMs={timeLimitInMs} consequence={consequence} onSkipGoal={handleSkipGoal} skipsLeftThisWeek={skipsLeft > 0 ? skipsLeft : 0} lastCompletedCodeImage={streakData?.lastCompletedCodeImage} />;
       }
-      case AppState.EMERGENCY_TEST: return <EmergencyTest onSuccess={handleEmergencySuccess} onCancel={handleEmergencyCancel} />;
       case AppState.HISTORY_VIEW: return <GoalHistory onBack={handleHistoryBack} history={history} onDeleteHistoryItem={handleDeleteHistoryItem} />;
       case AppState.GOAL_COMPLETED: return <VerificationResult isSuccess={true} secretCodeImage={secretCodeImage || completedSecretCodeImage} feedback={verificationFeedback} onRetry={handleRetry} onReset={() => resetToStart(false)} completionDuration={completionDuration} completionReason={completionReason} />;
       

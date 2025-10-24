@@ -129,46 +129,6 @@ export const createVerificationChat = (goal: string, images: { base64: string, m
     });
 };
 
-// --- Emergency Test Feature ---
-// Interfaces and Schemas remain the same
-export interface FrenchTestQuestion { question: string; options: string[]; answer: string; }
-export interface FrenchTestData { paragraphB2: string; paragraphC1: string; questions: FrenchTestQuestion[]; }
-export interface TestCorrection { questionNumber: number; userAnswer: string; correctAnswer: string; explanation: string; }
-export interface GradingResult { scorePercentage: number; passed: boolean; corrections: TestCorrection[]; }
-
-const frenchTestSchema = { /* ... schema ... */ };
-const gradingSchema = { /* ... schema ... */ };
-
-export const generateFrenchTest = async (level: 'B2' | 'C1'): Promise<FrenchTestData> => {
-    const prompt = `You are a French language teaching assistant...`; // prompt is long, keeping it collapsed
-    try {
-        const ai = getAiClient();
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-            config: { responseMimeType: "application/json", responseSchema: frenchTestSchema }
-        });
-        return JSON.parse(response.text) as FrenchTestData;
-    } catch (error) {
-        throw handleApiError(error);
-    }
-};
-
-export const gradeFrenchTest = async (questions: FrenchTestQuestion[], userAnswers: { [key: number]: string }): Promise<GradingResult> => {
-    const prompt = `You are an expert French language examiner...`; // prompt is long, keeping it collapsed
-    try {
-        const ai = getAiClient();
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-            config: { responseMimeType: "application/json", responseSchema: gradingSchema }
-        });
-        return JSON.parse(response.text) as GradingResult;
-    } catch (error) {
-        throw handleApiError(error);
-    }
-};
-
 export const summarizeGoal = async (goal: string): Promise<string> => {
     const prompt = `Summarize the following user goal into a concise phrase of 3 to 5 words, suitable for a table entry. Goal: "${goal}"`;
     try {
@@ -262,4 +222,140 @@ export const extractScheduleFromImage = async (base64Image: string, mimeType: st
   } catch (error) {
     throw handleApiError(error);
   }
+};
+// FIX: Add missing French test generation and grading functions and types.
+export interface FrenchTestQuestion {
+    question: string;
+    options: string[];
+    answer: string; // The correct option letter, e.g., "A"
+}
+
+export interface FrenchTestData {
+    paragraphB2: string;
+    paragraphC1: string;
+    questions: FrenchTestQuestion[];
+}
+
+export interface GradingResult {
+    passed: boolean;
+    scorePercentage: number;
+    corrections: {
+        questionNumber: number;
+        userAnswer: string;
+        correctAnswer: string;
+        explanation: string;
+    }[];
+}
+
+const frenchTestSchema = {
+    type: Type.OBJECT,
+    properties: {
+        paragraphB2: { type: Type.STRING, description: "A French paragraph of 4-5 sentences at a B2 CEFR level on a topic of general interest." },
+        paragraphC1: { type: Type.STRING, description: "An improved, more nuanced version of the B2 paragraph, elevated to a C1 CEFR level with more complex vocabulary and sentence structures." },
+        questions: {
+            type: Type.ARRAY,
+            description: "An array of 20 multiple-choice questions.",
+            items: {
+                type: Type.OBJECT,
+                properties: {
+                    question: { type: Type.STRING, description: "The question text in French." },
+                    options: { type: Type.ARRAY, items: { type: Type.STRING }, description: "An array of 4 possible answers (A, B, C, D)." },
+                    answer: { type: Type.STRING, description: "The letter of the correct option (e.g., 'A')." }
+                },
+                required: ["question", "options", "answer"]
+            }
+        }
+    },
+    required: ["paragraphB2", "paragraphC1", "questions"]
+};
+
+export const generateFrenchTest = async (level: 'B2' | 'C1'): Promise<FrenchTestData> => {
+    const prompt = `
+        Generate a French language test for a user at the ${level} CEFR level. The test must follow this structure:
+        1.  A short paragraph (4-5 sentences) in French at a B2 level on a topic like technology, environment, or culture.
+        2.  An "improved" version of the same paragraph, elevated to a C1 level with more sophisticated vocabulary and complex grammar.
+        3.  A total of 20 multiple-choice questions in French, with 4 options each (A, B, C, D).
+            - The first 10 questions should be based on the provided paragraphs (testing reading comprehension, vocabulary, and grammar from the texts).
+            - The next 10 questions should be general knowledge French questions appropriate for the ${level} level, covering grammar, idioms, and cultural nuances.
+        
+        Ensure all questions have exactly 4 options and a single correct answer specified by its letter.
+        Return the entire test as a single JSON object matching the provided schema.
+    `;
+    try {
+        const ai = getAiClient();
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-pro',
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: frenchTestSchema,
+            }
+        });
+
+        const result = JSON.parse(response.text) as FrenchTestData;
+        if (!result.questions || result.questions.length !== 20 || !result.paragraphB2 || !result.paragraphC1) {
+            throw new Error("AI returned an incomplete or invalid test structure.");
+        }
+        return result;
+    } catch (error) {
+        console.error("Error generating French test:", error);
+        throw handleApiError(error);
+    }
+};
+
+const gradingSchema = {
+    type: Type.OBJECT,
+    properties: {
+        passed: { type: Type.BOOLEAN },
+        scorePercentage: { type: Type.NUMBER },
+        corrections: {
+            type: Type.ARRAY,
+            items: {
+                type: Type.OBJECT,
+                properties: {
+                    questionNumber: { type: Type.NUMBER },
+                    userAnswer: { type: Type.STRING },
+                    correctAnswer: { type: Type.STRING },
+                    explanation: { type: Type.STRING }
+                },
+                required: ["questionNumber", "userAnswer", "correctAnswer", "explanation"]
+            }
+        }
+    },
+    required: ["passed", "scorePercentage", "corrections"]
+};
+
+export const gradeFrenchTest = async (questions: FrenchTestQuestion[], userAnswers: { [key: number]: string }): Promise<GradingResult> => {
+    const answersForGrading = questions.map((q, index) => ({
+        question: q.question,
+        options: q.options,
+        correctAnswerLetter: q.answer,
+        userAnswerLetter: userAnswers[index] || "Not answered"
+    }));
+
+    const prompt = `
+        You are a French language test grader. Grade the following test based on the user's answers. The pass mark is 80%.
+        For each incorrect answer, provide a concise, helpful explanation in English about why the user's choice was wrong and the correct answer was right.
+        Respond ONLY with a JSON object matching the provided schema.
+
+        Test data:
+        ${JSON.stringify(answersForGrading, null, 2)}
+    `;
+
+    try {
+        const ai = getAiClient();
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: gradingSchema,
+            }
+        });
+
+        return JSON.parse(response.text) as GradingResult;
+    } catch (error) {
+        console.error("Error grading French test:", error);
+        throw handleApiError(error);
+    }
 };

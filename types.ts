@@ -7,7 +7,6 @@ export enum AppState {
   GOAL_SET,
   VERIFYING_PROOF,
   GOAL_COMPLETED,
-  EMERGENCY_TEST,
   HISTORY_VIEW,
   AWAITING_BREAK,
   BREAK_ACTIVE,
@@ -23,7 +22,7 @@ export interface CompletedGoal {
   startTime: number;
   endTime: number;
   duration: number;
-  completionReason: 'verified' | 'emergency' | 'skipped';
+  completionReason: 'verified' | 'skipped';
 }
 
 export interface ActiveGoalState {

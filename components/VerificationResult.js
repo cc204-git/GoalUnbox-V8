@@ -31,14 +31,6 @@ const VerificationResult = ({ isSuccess, secretCodeImage, feedback, onRetry, onR
     let borderColor;
 
     switch (completionReason) {
-        case 'emergency':
-            title = "Emergency Access";
-            titleColor = "text-red-400";
-            successMessage = "You passed the test. Your code is now available.";
-            achievementText = "Your emergency access has been logged to your goal history.";
-            iconColor = "text-red-500";
-            borderColor = "border-red-500";
-            break;
         case 'skipped':
             title = "Goal Skipped";
             titleColor = "text-amber-400";
