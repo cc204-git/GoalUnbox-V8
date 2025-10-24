@@ -1,4 +1,3 @@
-
 export const AppState = {
   AUTH: 0,
   TODAYS_PLAN: 1,

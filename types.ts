@@ -1,4 +1,3 @@
-
 export enum AppState {
   AUTH,
   TODAYS_PLAN,

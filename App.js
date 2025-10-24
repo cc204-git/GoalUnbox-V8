@@ -1,5 +1,3 @@
-
-
 import React, { useState, useCallback, useEffect } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { AppState } from './types.js';
@@ -56,7 +54,7 @@ const App = () => {
   const [nextGoal, setNextGoal] = useState(null);
   const [currentTime, setCurrentTime] = useState(Date.now());
   const [breakChoice, setBreakChoice] = useState(null);
-  const [breakChoiceCountdown, setBreakChoiceCountdown] = useState(null);
+  const [nextGoalSelectionCountdown, setNextGoalSelectionCountdown] = useState(null);
 
 
   const [chat, setChat] = useState(null);
@@ -105,7 +103,9 @@ const App = () => {
         } else if (
             appState !== AppState.GOAL_COMPLETED &&
             appState !== AppState.AWAITING_BREAK &&
-            appState !== AppState.AWAITING_CODE
+            appState !== AppState.AWAITING_CODE &&
+            appState !== AppState.BREAK_ACTIVE &&
+            appState !== AppState.BREAK_FAILED
         ) {
             setAppState(AppState.TODAYS_PLAN);
         }
@@ -335,7 +335,6 @@ const App = () => {
     setChatMessages(prev => [...prev, { role: 'user', text: message }]);
 
     try {
-        // FIX: chat.sendMessage expects an object, not a string.
         const response = await chat.sendMessage({ message });
         const jsonResponse = JSON.parse(response.text);
         const newResult = jsonResponse;
@@ -409,13 +408,6 @@ const App = () => {
         setActivePlannedGoal(goalToStart); setAppState(AppState.AWAITING_CODE);
     };
 
-    const handleStartBreak = useCallback(() => {
-        if (availableBreakTime) {
-            setBreakEndTime(Date.now() + availableBreakTime);
-            setAppState(AppState.BREAK_ACTIVE);
-        }
-    }, [availableBreakTime]);
-
     const handleSkipBreak = () => {
         setCompletionReason('verified'); setAppState(AppState.GOAL_COMPLETED);
     };
@@ -439,7 +431,14 @@ const App = () => {
     const handleNextGoalSubmit = (payload) => {
         let totalMs = (payload.timeLimit.hours * 3600 + payload.timeLimit.minutes * 60) * 1000;
         const newTimeLimitInMs = totalMs > 0 ? totalMs : null;
-        setNextGoal(prev => ({ ...prev, goal: payload.goal, subject: payload.subject, timeLimitInMs: newTimeLimitInMs, consequence: payload.consequence }));
+        setNextGoal({ 
+            goal: payload.goal, 
+            subject: payload.subject, 
+            timeLimitInMs: newTimeLimitInMs, 
+            consequence: payload.consequence 
+        });
+        if(availableBreakTime) setBreakEndTime(Date.now() + availableBreakTime);
+        setAppState(AppState.BREAK_ACTIVE);
     };
     
     const handleSelectPlannedGoalForNext = (goalToSelect) => {
@@ -447,9 +446,11 @@ const App = () => {
             goal: goalToSelect.goal, subject: goalToSelect.subject, timeLimitInMs: goalToSelect.timeLimitInMs,
             consequence: goalToSelect.consequence, plannedGoalId: goalToSelect.id,
         });
+        if(availableBreakTime) setBreakEndTime(Date.now() + availableBreakTime);
+        setAppState(AppState.BREAK_ACTIVE);
     };
 
-    const startNextGoal = useCallback(async () => {
+    const handleFinishBreakAndStartNextGoal = useCallback(async () => {
         if (!currentUser || !nextGoal?.goal || !nextGoal?.secretCode || !nextGoal.secretCodeImage) {
             setAppState(AppState.BREAK_FAILED); return;
         }
@@ -471,38 +472,38 @@ const App = () => {
     }, [nextGoal, currentUser, todaysPlan]);
     
     useEffect(() => {
+        let intervalId;
+        if (appState === AppState.AWAITING_BREAK) {
+            setNextGoalSelectionCountdown(120000); // 2 minutes
+            intervalId = window.setInterval(() => {
+                setNextGoalSelectionCountdown(prev => {
+                    if (prev === null || prev <= 1000) {
+                        clearInterval(intervalId);
+                        setAppState(AppState.BREAK_FAILED);
+                        return 0;
+                    }
+                    return prev - 1000;
+                });
+            }, 1000);
+        } else if (nextGoalSelectionCountdown !== null) {
+            setNextGoalSelectionCountdown(null);
+        }
+        return () => { if (intervalId) clearInterval(intervalId); };
+    }, [appState]);
+
+    useEffect(() => {
         if (appState !== AppState.BREAK_ACTIVE || !breakEndTime) return;
         const interval = setInterval(() => {
             const now = Date.now();
             setCurrentTime(now);
             if (breakEndTime - now <= 0) {
                 clearInterval(interval);
-                if (nextGoal?.goal && nextGoal?.secretCode) {
-                    startNextGoal();
-                } else { setAppState(AppState.BREAK_FAILED); }
-                setBreakEndTime(null); setAvailableBreakTime(null); setNextGoal(null);
-                setCompletedSecretCodeImage(null); setBreakChoice(null);
+                handleFinishBreakAndStartNextGoal();
             }
         }, 1000);
         return () => clearInterval(interval);
-    }, [appState, breakEndTime, nextGoal, startNextGoal]);
+    }, [appState, breakEndTime, handleFinishBreakAndStartNextGoal]);
 
-    useEffect(() => {
-        let intervalId;
-        if (appState === AppState.AWAITING_BREAK) {
-            setBreakChoiceCountdown(10);
-            intervalId = window.setInterval(() => {
-                setBreakChoiceCountdown(prev => {
-                    if (prev === null || prev <= 1) {
-                        clearInterval(intervalId);
-                        handleStartBreak(); return 0;
-                    }
-                    return prev - 1;
-                });
-            }, 1000);
-        } else if (breakChoiceCountdown !== null) { setBreakChoiceCountdown(null); }
-        return () => { if (intervalId) clearInterval(intervalId); };
-    }, [appState, handleStartBreak]);
 
   const renderContent = () => {
     if (isLoading) return React.createElement('div', { className: 'flex justify-center items-center p-8' }, React.createElement(Spinner));
@@ -518,39 +519,22 @@ const App = () => {
       case AppState.HISTORY_VIEW: return React.createElement(GoalHistory, { onBack: handleHistoryBack, history: history, onDeleteHistoryItem: handleDeleteHistoryItem });
       case AppState.GOAL_COMPLETED: return React.createElement(VerificationResult, { isSuccess: true, secretCodeImage: secretCodeImage || completedSecretCodeImage, feedback: verificationFeedback, onRetry: handleRetry, onReset: () => resetToStart(false), completionDuration: completionDuration, completionReason: completionReason });
       
-      case AppState.AWAITING_BREAK:
-            return React.createElement('div', { className: "bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full max-w-md text-center animate-fade-in" },
-                React.createElement('h2', { className: "text-3xl font-bold mb-4 text-green-400" }, "Goal Completed!"),
-                React.createElement('p', { className: "text-slate-300 mb-6" }, verificationFeedback?.summary),
-                React.createElement('p', { className: "text-slate-300 mb-6" }, "You've earned a break of ", React.createElement('strong', { className: "text-cyan-300" }, formatDuration(availableBreakTime ?? 0)), "."),
-                React.createElement('div', { className: "space-y-4" },
-                     React.createElement('button', { onClick: handleStartBreak, className: "w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400 transition-all" }, `Start Break & Reveal Code ${breakChoiceCountdown !== null ? ` (${breakChoiceCountdown})` : ''}`),
-                    React.createElement('button', { onClick: handleSkipBreak, className: "w-full bg-slate-700 text-white font-semibold py-2 px-3 rounded-lg hover:bg-slate-600 transition-colors" }, "Skip Break & Finish")
-                )
-            );
-      case AppState.BREAK_ACTIVE:
-            const timeLeft = breakEndTime ? breakEndTime - currentTime : 0;
+      case AppState.AWAITING_BREAK: {
             const uncompletedGoals = (todaysPlan?.goals.filter(g => !g.completed) ?? []).sort((a, b) => a.startTime.localeCompare(b.startTime));
-            const readyForNextGoal = nextGoal?.goal && nextGoal?.secretCode;
-            let breakContent;
-            if (readyForNextGoal) {
-                breakContent = React.createElement('div', { className: "bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full text-center" },
-                    React.createElement('h2', { className: "text-2xl font-semibold text-green-400 flex items-center justify-center gap-2" }, React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", className: "h-8 w-8", viewBox: "0 0 20 20", fill: "currentColor" }, React.createElement('path', { fillRule: "evenodd", d: "M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z", clipRule: "evenodd" })), "Next Goal is Ready!"),
-                    React.createElement('p', { className: "text-slate-300 mt-2 mb-6" }, "Your new goal will begin automatically when the break is over."),
-                    React.createElement('button', { onClick: startNextGoal, className: "w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400" }, "Skip Break & Start Now")
-                );
-            } else if (!breakChoice) {
-                breakContent = React.createElement('div', { className: "bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full text-center" },
+            let choiceContent;
+            if (!breakChoice) {
+                choiceContent = React.createElement('div', { className: "bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full text-center" },
                     React.createElement('h2', { className: "text-xl font-semibold mb-4 text-slate-200" }, "Prepare Your Next Goal"),
                     React.createElement('div', { className: "flex flex-col sm:flex-row gap-4" },
                         React.createElement('button', { onClick: () => setBreakChoice('plan'), className: "flex-1 bg-slate-700 text-white font-bold py-3 px-4 rounded-lg hover:bg-slate-600 transition-colors", disabled: uncompletedGoals.length === 0 }, `Choose from Plan ${uncompletedGoals.length === 0 ? "(None Left)" : ""}`),
                         React.createElement('button', { onClick: () => setBreakChoice('new'), className: "flex-1 bg-slate-700 text-white font-bold py-3 px-4 rounded-lg hover:bg-slate-600 transition-colors" }, "Set a New Goal")
-                    )
+                    ),
+                    React.createElement('button', { onClick: handleSkipBreak, className: "mt-6 text-sm text-slate-500 hover:text-white" }, "Skip Break & Finish")
                 );
-            } else if (breakChoice === 'new' && !nextGoal?.secretCode) { breakContent = React.createElement(CodeUploader, { onCodeImageSubmit: handleNextCodeImageSubmit, isLoading: isLoading, onShowHistory: ()=>{}, onLogout: ()=>{}, currentUser: null, streakData: null, onSetCommitment: ()=>{}, onCompleteCommitment: ()=>{} });
-            } else if (breakChoice === 'new' && !nextGoal?.goal) { breakContent = React.createElement(GoalSetter, { onGoalSubmit: handleNextGoalSubmit, isLoading: false, submitButtonText: "Set Next Goal", onCancel: () => setNextGoal(null) });
-            } else if (breakChoice === 'plan' && !nextGoal?.goal) {
-                breakContent = React.createElement('div', { className: "bg-slate-800/50 border border-slate-700 p-6 rounded-lg shadow-2xl w-full text-center" },
+            } else if (breakChoice === 'new') {
+                choiceContent = React.createElement(GoalSetter, { onGoalSubmit: handleNextGoalSubmit, isLoading: false, submitButtonText: "Confirm & Start Break", onCancel: () => setBreakChoice(null) });
+            } else if (breakChoice === 'plan') {
+                choiceContent = React.createElement('div', { className: "bg-slate-800/50 border border-slate-700 p-6 rounded-lg shadow-2xl w-full text-center" },
                     React.createElement('h2', { className: "text-xl font-semibold mb-4 text-slate-200" }, "Select Next Goal from Plan"),
                     React.createElement('div', { className: "space-y-3 max-h-64 overflow-y-auto pr-2" }, uncompletedGoals.map(g => React.createElement('div', { key: g.id, className: "p-3 bg-slate-900/50 border border-slate-700 rounded-lg text-left flex items-center justify-between gap-4" },
                         React.createElement('div', null, React.createElement('p', { className: "font-mono text-sm text-cyan-300" }, `${g.startTime} - ${g.endTime}`), React.createElement('p', { className: "font-bold text-white mt-1" }, g.subject), React.createElement('p', { className: "text-xs text-slate-400" }, `${g.goal.substring(0, 70)}...`)),
@@ -558,23 +542,49 @@ const App = () => {
                     ))),
                     React.createElement('button', { onClick: () => setBreakChoice(null), className: "mt-4 text-slate-400 hover:text-white text-sm" }, "Back")
                 );
-            } else if (breakChoice === 'plan' && !nextGoal?.secretCode) { breakContent = React.createElement(CodeUploader, { onCodeImageSubmit: handleNextCodeImageSubmit, isLoading: isLoading, onShowHistory: ()=>{}, onLogout: ()=>{}, currentUser: null, streakData: null, onSetCommitment: ()=>{}, onCompleteCommitment: ()=>{} });
-            } else { breakContent = null; }
+            } else {
+                choiceContent = null;
+            }
+
+            return React.createElement('div', { className: "w-full max-w-2xl flex flex-col items-center gap-6" },
+                React.createElement('div', { className: "w-full text-center bg-slate-800/80 backdrop-blur-sm p-3 rounded-lg border border-slate-700" },
+                    React.createElement('p', { className: "text-sm text-slate-400 uppercase tracking-wider" }, "Prepare Next Goal In"),
+                    React.createElement('p', { className: `text-3xl font-mono ${nextGoalSelectionCountdown !== null && nextGoalSelectionCountdown < 30000 ? 'text-red-400' : 'text-cyan-300'}` }, formatCountdown(nextGoalSelectionCountdown ?? 0))
+                ),
+                React.createElement('div', { className: "w-full max-w-lg flex justify-center" }, choiceContent)
+            );
+        }
+    
+      case AppState.BREAK_ACTIVE: {
+            const timeLeft = breakEndTime ? breakEndTime - currentTime : 0;
+            const codeSubmitted = !!nextGoal?.secretCode;
+            const unlockedCodeEl = completedSecretCodeImage && React.createElement('div', { className: "text-center flex-1 min-w-[280px]" },
+                React.createElement('p', { className: "text-slate-400 text-sm mb-2" }, "Unlocked Code:"),
+                React.createElement('img', { src: completedSecretCodeImage, alt: "Sequestered code", className: "rounded-lg w-full border-2 border-green-500" })
+            );
+            const nextCodeEl = React.createElement('div', { className: "flex-1 min-w-[320px]" }, 
+                codeSubmitted ? React.createElement('div', { className: "bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full h-full flex flex-col justify-center items-center text-center" },
+                    React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", className: "h-16 w-16 text-green-400", viewBox: "0 0 20 20", fill: "currentColor" }, React.createElement('path', { fillRule: "evenodd", d: "M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z", clipRule: "evenodd" })),
+                    React.createElement('h3', { className: "text-xl font-semibold text-green-400 mt-4" }, "Next Code Accepted!"),
+                    React.createElement('p', { className: "text-slate-300 mt-2" }, "Enjoy your break. Your next goal is ready to start.")
+                ) : React.createElement(CodeUploader, { onCodeImageSubmit: handleNextCodeImageSubmit, isLoading: isLoading, onShowHistory: () => {}, onLogout: () => {}, currentUser: null, streakData: null, onSetCommitment: () => {}, onCompleteCommitment: () => {} })
+            );
 
             return React.createElement('div', { className: "w-full max-w-2xl flex flex-col items-center gap-6" },
                 React.createElement('div', { className: "w-full text-center bg-slate-800/80 backdrop-blur-sm p-3 rounded-lg border border-slate-700" },
                     React.createElement('p', { className: "text-sm text-slate-400 uppercase tracking-wider" }, "Break Ends In"),
                     React.createElement('p', { className: `text-3xl font-mono ${timeLeft < 60000 ? 'text-red-400' : 'text-cyan-300'}` }, formatCountdown(timeLeft > 0 ? timeLeft : 0))
                 ),
-                completedSecretCodeImage && React.createElement('div', { className: "text-center" },
-                    React.createElement('p', { className: "text-slate-400 text-sm mb-2" }, "Your previous unlock code:"),
-                    React.createElement('img', { src: completedSecretCodeImage, alt: "Sequestered code", className: "rounded-lg max-w-xs mx-auto border-2 border-green-500" })
-                ),
-                React.createElement('div', { className: "w-full max-w-lg flex justify-center" }, breakContent)
+                React.createElement('div', { className: "w-full flex flex-wrap justify-center items-start gap-6" }, unlockedCodeEl, nextCodeEl),
+                nextGoal?.goal && React.createElement('div', { className: "w-full max-w-lg bg-slate-800/50 border border-slate-700 p-4 rounded-lg shadow-2xl text-center" },
+                    React.createElement('h3', { className: "text-md font-semibold text-slate-300 mb-1" }, "Up Next: ", React.createElement('span', { className: "font-bold text-white" }, nextGoal.subject))
+                )
             );
+        }
+
        case AppState.BREAK_FAILED:
             return React.createElement('div', { className: "bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full max-w-md text-center animate-fade-in" },
-                React.createElement(Alert, { message: "Break finished. You failed to set a new goal in time.", type: "error" }),
+                React.createElement(Alert, { message: "Break failed. You either ran out of time to prepare the next goal or did not submit the new code in time.", type: "error" }),
                 React.createElement('button', { onClick: () => resetToStart(false), className: "w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400" }, "Back to Plan")
             );
       default: return React.createElement('div', { className: 'flex justify-center items-center p-8' }, React.createElement(Spinner));

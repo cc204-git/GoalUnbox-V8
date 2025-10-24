@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useEffect } from 'react';
 import { User, onAuthStateChanged } from 'firebase/auth';
 import { Unsubscribe } from 'firebase/firestore';
@@ -28,7 +27,6 @@ import EmergencyTest from './components/EmergencyTest';
 import GoalHistory from './components/GoalHistory';
 import Auth from './components/Auth';
 import ApiKeyPrompt from './components/ApiKeyPrompt';
-// FIX: Added missing import for Spinner component.
 import Spinner from './components/Spinner';
 import { Chat } from '@google/genai';
 
@@ -70,7 +68,7 @@ const App: React.FC = () => {
   } | null>(null);
   const [currentTime, setCurrentTime] = useState(Date.now());
   const [breakChoice, setBreakChoice] = useState<'new' | 'plan' | null>(null);
-  const [breakChoiceCountdown, setBreakChoiceCountdown] = useState<number | null>(null);
+  const [nextGoalSelectionCountdown, setNextGoalSelectionCountdown] = useState<number | null>(null);
 
 
   const [chat, setChat] = useState<Chat | null>(null);
@@ -121,7 +119,9 @@ const App: React.FC = () => {
         } else if (
             appState !== AppState.GOAL_COMPLETED &&
             appState !== AppState.AWAITING_BREAK &&
-            appState !== AppState.AWAITING_CODE
+            appState !== AppState.AWAITING_CODE &&
+            appState !== AppState.BREAK_ACTIVE &&
+            appState !== AppState.BREAK_FAILED
         ) {
             setAppState(AppState.TODAYS_PLAN);
         }
@@ -357,7 +357,6 @@ const App: React.FC = () => {
     setChatMessages(prev => [...prev, { role: 'user', text: message }]);
 
     try {
-        // FIX: chat.sendMessage expects an object, not a string.
         const response = await chat.sendMessage({ message });
         const jsonResponse = JSON.parse(response.text);
         const newResult = jsonResponse as VerificationResultType;
@@ -431,13 +430,6 @@ const App: React.FC = () => {
         setActivePlannedGoal(goalToStart); setAppState(AppState.AWAITING_CODE);
     };
 
-    const handleStartBreak = useCallback(() => {
-        if (availableBreakTime) {
-            setBreakEndTime(Date.now() + availableBreakTime);
-            setAppState(AppState.BREAK_ACTIVE);
-        }
-    }, [availableBreakTime]);
-
     const handleSkipBreak = () => {
         setCompletionReason('verified'); setAppState(AppState.GOAL_COMPLETED);
     };
@@ -461,7 +453,14 @@ const App: React.FC = () => {
     const handleNextGoalSubmit = (payload: GoalPayload) => {
         let totalMs = (payload.timeLimit.hours * 3600 + payload.timeLimit.minutes * 60) * 1000;
         const newTimeLimitInMs = totalMs > 0 ? totalMs : null;
-        setNextGoal(prev => ({ ...prev, goal: payload.goal, subject: payload.subject, timeLimitInMs: newTimeLimitInMs, consequence: payload.consequence }));
+        setNextGoal({ 
+            goal: payload.goal, 
+            subject: payload.subject, 
+            timeLimitInMs: newTimeLimitInMs, 
+            consequence: payload.consequence 
+        });
+        if(availableBreakTime) setBreakEndTime(Date.now() + availableBreakTime);
+        setAppState(AppState.BREAK_ACTIVE);
     };
     
     const handleSelectPlannedGoalForNext = (goalToSelect: PlannedGoal) => {
@@ -469,9 +468,11 @@ const App: React.FC = () => {
             goal: goalToSelect.goal, subject: goalToSelect.subject, timeLimitInMs: goalToSelect.timeLimitInMs,
             consequence: goalToSelect.consequence, plannedGoalId: goalToSelect.id,
         });
+        if(availableBreakTime) setBreakEndTime(Date.now() + availableBreakTime);
+        setAppState(AppState.BREAK_ACTIVE);
     };
 
-    const startNextGoal = useCallback(async () => {
+    const handleFinishBreakAndStartNextGoal = useCallback(async () => {
         if (!currentUser || !nextGoal?.goal || !nextGoal?.secretCode || !nextGoal.secretCodeImage) {
             setAppState(AppState.BREAK_FAILED); return;
         }
@@ -492,7 +493,27 @@ const App: React.FC = () => {
         setVerificationFeedback(null); setChat(null); setChatMessages([]);
         // The listener on activeGoal will transition the state
     }, [nextGoal, currentUser, todaysPlan]);
-    
+
+    useEffect(() => {
+        let intervalId: number | undefined;
+        if (appState === AppState.AWAITING_BREAK) {
+            setNextGoalSelectionCountdown(120000); // 2 minutes
+            intervalId = window.setInterval(() => {
+                setNextGoalSelectionCountdown(prev => {
+                    if (prev === null || prev <= 1000) {
+                        clearInterval(intervalId as number);
+                        setAppState(AppState.BREAK_FAILED);
+                        return 0;
+                    }
+                    return prev - 1000;
+                });
+            }, 1000);
+        } else if (nextGoalSelectionCountdown !== null) {
+            setNextGoalSelectionCountdown(null);
+        }
+        return () => { if (intervalId) clearInterval(intervalId); };
+    }, [appState]);
+
     useEffect(() => {
         if (appState !== AppState.BREAK_ACTIVE || !breakEndTime) return;
         const interval = setInterval(() => {
@@ -500,32 +521,12 @@ const App: React.FC = () => {
             setCurrentTime(now);
             if (breakEndTime - now <= 0) {
                 clearInterval(interval);
-                if (nextGoal?.goal && nextGoal?.secretCode) {
-                    startNextGoal();
-                } else { setAppState(AppState.BREAK_FAILED); }
-                setBreakEndTime(null); setAvailableBreakTime(null); setNextGoal(null);
-                setCompletedSecretCodeImage(null); setBreakChoice(null);
+                handleFinishBreakAndStartNextGoal();
             }
         }, 1000);
         return () => clearInterval(interval);
-    }, [appState, breakEndTime, nextGoal, startNextGoal]);
+    }, [appState, breakEndTime, handleFinishBreakAndStartNextGoal]);
 
-    useEffect(() => {
-        let intervalId: number | undefined;
-        if (appState === AppState.AWAITING_BREAK) {
-            setBreakChoiceCountdown(10);
-            intervalId = window.setInterval(() => {
-                setBreakChoiceCountdown(prev => {
-                    if (prev === null || prev <= 1) {
-                        clearInterval(intervalId);
-                        handleStartBreak(); return 0;
-                    }
-                    return prev - 1;
-                });
-            }, 1000);
-        } else if (breakChoiceCountdown !== null) { setBreakChoiceCountdown(null); }
-        return () => { if (intervalId) clearInterval(intervalId); };
-    }, [appState, handleStartBreak]);
 
   const renderContent = () => {
     if (isLoading) return <div className="flex justify-center items-center p-8"><Spinner /></div>;
@@ -541,43 +542,19 @@ const App: React.FC = () => {
       case AppState.HISTORY_VIEW: return <GoalHistory onBack={handleHistoryBack} history={history} onDeleteHistoryItem={handleDeleteHistoryItem} />;
       case AppState.GOAL_COMPLETED: return <VerificationResult isSuccess={true} secretCodeImage={secretCodeImage || completedSecretCodeImage} feedback={verificationFeedback} onRetry={handleRetry} onReset={() => resetToStart(false)} completionDuration={completionDuration} completionReason={completionReason} />;
       
-      case AppState.AWAITING_BREAK:
-        return ( <div className="bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full max-w-md text-center animate-fade-in">
-                <h2 className="text-3xl font-bold mb-4 text-green-400">Goal Completed!</h2>
-                <p className="text-slate-300 mb-6">{verificationFeedback?.summary}</p>
-                 <p className="text-slate-300 mb-6">You've earned a break of <strong className="text-cyan-300">{formatDuration(availableBreakTime ?? 0)}</strong>.</p>
-                <div className="space-y-4">
-                     <button onClick={handleStartBreak} className="w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400 transition-all">
-                        Start Break & Reveal Code {breakChoiceCountdown !== null && ` (${breakChoiceCountdown})`}
-                    </button>
-                    <button onClick={handleSkipBreak} className="w-full bg-slate-700 text-white font-semibold py-2 px-3 rounded-lg hover:bg-slate-600 transition-colors">Skip Break & Finish</button>
-                </div>
-            </div> );
-      case AppState.BREAK_ACTIVE:
-            const timeLeft = breakEndTime ? breakEndTime - currentTime : 0;
+      case AppState.AWAITING_BREAK: {
             const uncompletedGoals = (todaysPlan?.goals.filter(g => !g.completed) ?? []).sort((a, b) => a.startTime.localeCompare(b.startTime));
-            const readyForNextGoal = nextGoal?.goal && nextGoal?.secretCode;
-            return ( <div className="w-full max-w-2xl flex flex-col items-center gap-6">
+            return (
+                 <div className="w-full max-w-2xl flex flex-col items-center gap-6">
                     <div className="w-full text-center bg-slate-800/80 backdrop-blur-sm p-3 rounded-lg border border-slate-700">
-                        <p className="text-sm text-slate-400 uppercase tracking-wider">Break Ends In</p>
-                        <p className={`text-3xl font-mono ${timeLeft < 60000 ? 'text-red-400' : 'text-cyan-300'}`}>{formatCountdown(timeLeft > 0 ? timeLeft : 0)}</p>
+                        <p className="text-sm text-slate-400 uppercase tracking-wider">Prepare Next Goal In</p>
+                        <p className={`text-3xl font-mono ${nextGoalSelectionCountdown !== null && nextGoalSelectionCountdown < 30000 ? 'text-red-400' : 'text-cyan-300'}`}>
+                           {formatCountdown(nextGoalSelectionCountdown ?? 0)}
+                        </p>
                     </div>
-                    {completedSecretCodeImage && ( <div className="text-center">
-                            <p className="text-slate-400 text-sm mb-2">Your previous unlock code:</p>
-                            <img src={completedSecretCodeImage} alt="Sequestered code" className="rounded-lg max-w-xs mx-auto border-2 border-green-500" />
-                        </div> )}
+
                     <div className="w-full max-w-lg flex justify-center">
-                        {readyForNextGoal ? ( <div className="bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full text-center">
-                                <h2 className="text-2xl font-semibold text-green-400 flex items-center justify-center gap-2">
-                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>
-                                    Next Goal is Ready!
-                                </h2>
-                                <p className="text-slate-300 mt-2 mb-6">Your new goal will begin automatically when the break is over.</p>
-                                <button onClick={startNextGoal} className="w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400">
-                                    Skip Break & Start Now
-                                </button>
-                            </div>
-                        ) : !breakChoice ? ( <div className="bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full text-center">
+                        {!breakChoice ? ( <div className="bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full text-center">
                                 <h2 className="text-xl font-semibold mb-4 text-slate-200">Prepare Your Next Goal</h2>
                                 <div className="flex flex-col sm:flex-row gap-4">
                                     <button onClick={() => setBreakChoice('plan')} className="flex-1 bg-slate-700 text-white font-bold py-3 px-4 rounded-lg hover:bg-slate-600 transition-colors" disabled={uncompletedGoals.length === 0}>
@@ -587,10 +564,10 @@ const App: React.FC = () => {
                                         Set a New Goal
                                     </button>
                                 </div>
+                                <button onClick={handleSkipBreak} className="mt-6 text-sm text-slate-500 hover:text-white">Skip Break & Finish</button>
                             </div>
-                        ) : breakChoice === 'new' && !nextGoal?.secretCode ? ( <CodeUploader onCodeImageSubmit={handleNextCodeImageSubmit} isLoading={isLoading} onShowHistory={()=>{}} onLogout={()=>{}} currentUser={null} streakData={null} onSetCommitment={()=>{}} onCompleteCommitment={()=>{}}/>
-                        ) : breakChoice === 'new' && !nextGoal?.goal ? ( <GoalSetter onGoalSubmit={handleNextGoalSubmit} isLoading={false} submitButtonText="Set Next Goal" onCancel={() => setNextGoal(null)} />
-                        ) : breakChoice === 'plan' && !nextGoal?.goal ? ( <div className="bg-slate-800/50 border border-slate-700 p-6 rounded-lg shadow-2xl w-full text-center">
+                        ) : breakChoice === 'new' ? ( <GoalSetter onGoalSubmit={handleNextGoalSubmit} isLoading={false} submitButtonText="Confirm & Start Break" onCancel={() => setBreakChoice(null)} />
+                        ) : breakChoice === 'plan' ? ( <div className="bg-slate-800/50 border border-slate-700 p-6 rounded-lg shadow-2xl w-full text-center">
                                 <h2 className="text-xl font-semibold mb-4 text-slate-200">Select Next Goal from Plan</h2>
                                 <div className="space-y-3 max-h-64 overflow-y-auto pr-2">
                                     {uncompletedGoals.map(g => ( <div key={g.id} className="p-3 bg-slate-900/50 border border-slate-700 rounded-lg text-left flex items-center justify-between gap-4">
@@ -604,13 +581,51 @@ const App: React.FC = () => {
                                 </div>
                                 <button onClick={() => setBreakChoice(null)} className="mt-4 text-slate-400 hover:text-white text-sm">Back</button>
                              </div>
-                        ) : breakChoice === 'plan' && !nextGoal?.secretCode ? ( <CodeUploader onCodeImageSubmit={handleNextCodeImageSubmit} isLoading={isLoading} onShowHistory={()=>{}} onLogout={()=>{}} currentUser={null} streakData={null} onSetCommitment={()=>{}} onCompleteCommitment={()=>{}}/>
                         ) : null}
                     </div>
-                </div> );
+                </div> 
+            );
+        }
+    
+      case AppState.BREAK_ACTIVE: {
+            const timeLeft = breakEndTime ? breakEndTime - currentTime : 0;
+            const codeSubmitted = !!nextGoal?.secretCode;
+            return ( <div className="w-full max-w-2xl flex flex-col items-center gap-6">
+                <div className="w-full text-center bg-slate-800/80 backdrop-blur-sm p-3 rounded-lg border border-slate-700">
+                    <p className="text-sm text-slate-400 uppercase tracking-wider">Break Ends In</p>
+                    <p className={`text-3xl font-mono ${timeLeft < 60000 ? 'text-red-400' : 'text-cyan-300'}`}>{formatCountdown(timeLeft > 0 ? timeLeft : 0)}</p>
+                </div>
+                
+                <div className="w-full flex flex-wrap justify-center items-start gap-6">
+                    {completedSecretCodeImage && ( <div className="text-center flex-1 min-w-[280px]">
+                            <p className="text-slate-400 text-sm mb-2">Unlocked Code:</p>
+                            <img src={completedSecretCodeImage} alt="Sequestered code" className="rounded-lg w-full border-2 border-green-500" />
+                        </div> )}
+                    
+                    <div className="flex-1 min-w-[320px]">
+                        {codeSubmitted ? (
+                             <div className="bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full h-full flex flex-col justify-center items-center text-center">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-green-400" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>
+                                <h3 className="text-xl font-semibold text-green-400 mt-4">Next Code Accepted!</h3>
+                                <p className="text-slate-300 mt-2">Enjoy your break. Your next goal is ready to start.</p>
+                            </div>
+                        ) : (
+                            <CodeUploader onCodeImageSubmit={handleNextCodeImageSubmit} isLoading={isLoading} onShowHistory={()=>{}} onLogout={()=>{}} currentUser={null} streakData={null} onSetCommitment={()=>{}} onCompleteCommitment={()=>{}}/>
+                        )}
+                    </div>
+                </div>
+
+                {nextGoal?.goal && (
+                    <div className="w-full max-w-lg bg-slate-800/50 border border-slate-700 p-4 rounded-lg shadow-2xl text-center">
+                        <h3 className="text-md font-semibold text-slate-300 mb-1">Up Next: <span className="font-bold text-white">{nextGoal.subject}</span></h3>
+                    </div>
+                )}
+            </div> );
+        }
+
        case AppState.BREAK_FAILED:
             return ( <div className="bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full max-w-md text-center animate-fade-in">
-                    <Alert message="Break finished. You failed to set a new goal in time." type="error" />
+                    <Alert message="Break failed. You either ran out of time to prepare the next goal or did not submit the new code in time." type="error" />
                     <button onClick={() => resetToStart(false)} className="w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400">Back to Plan</button>
                 </div> );
       default: return <div className="flex justify-center items-center p-8"><Spinner /></div>;
