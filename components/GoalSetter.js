@@ -3,15 +3,15 @@ import React, { useState, useCallback, useEffect } from 'react';
 import Spinner from './Spinner.js';
 import Alert from './Alert.js';
 
-const GoalSetter = ({ onGoalSubmit, isLoading, submitButtonText = 'Set My Goal', onCancel }) => {
+const GoalSetter = ({ onGoalSubmit, isLoading, submitButtonText = 'Set My Goal', onCancel, initialData }) => {
   const [goal, setGoal] = useState('');
-  const [subject, setSubject] = useState('');
+  const [subject, setSubject] = useState(initialData?.subject || '');
   const [hours, setHours] = useState('');
   const [minutes, setMinutes] = useState('');
   const [consequence, setConsequence] = useState('');
   const [subQuestions, setSubQuestions] = useState('');
-  const [startTime, setStartTime] = useState('');
-  const [endTime, setEndTime] = useState('');
+  const [startTime, setStartTime] = useState(initialData?.startTime || '');
+  const [endTime, setEndTime] = useState(initialData?.endTime || '');
   const [timeError, setTimeError] = useState(null);
 
   const consequenceTemplates = [
@@ -27,6 +27,14 @@ const GoalSetter = ({ onGoalSubmit, isLoading, submitButtonText = 'Set My Goal',
       setConsequence(consequenceTemplates[consequenceTemplateIndex]);
       setConsequenceTemplateIndex(nextIndex);
   };
+
+  useEffect(() => {
+    if (initialData) {
+        setSubject(initialData.subject || '');
+        setStartTime(initialData.startTime || '');
+        setEndTime(initialData.endTime || '');
+    }
+  }, [initialData]);
 
   useEffect(() => {
     const userMinutes = (Number(hours) || 0) * 60 + (Number(minutes) || 0);

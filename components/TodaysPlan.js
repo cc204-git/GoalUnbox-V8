@@ -1,17 +1,27 @@
-import React, { useState, useMemo } from 'react';
+
+import React, { useState, useMemo, useRef } from 'react';
 import GoalSetter from './GoalSetter.js';
 import { formatDuration, getISODateString } from '../utils/timeUtils.js';
 import { savePlan, loadPlan } from '../services/planService.js';
+import { extractScheduleFromImage } from '../services/geminiService.js';
+import Spinner from './Spinner.js';
+import Alert from './Alert.js';
+import { fileToBase64 } from '../utils/fileUtils.js';
+
 
 const TodaysPlan = ({ initialPlan, onSavePlan, onStartGoal, currentUser, onShowHistory }) => {
     const [plan, setPlan] = useState(initialPlan);
     const [showForm, setShowForm] = useState(false);
     const [expandedGoalId, setExpandedGoalId] = useState(null);
-
-    // State for scheduling tomorrow
     const [isSchedulingTomorrow, setIsSchedulingTomorrow] = useState(false);
     const [tomorrowsPlan, setTomorrowsPlan] = useState(null);
     const [showTomorrowForm, setShowTomorrowForm] = useState(false);
+
+    const fileInputRef = useRef(null);
+    const [isLoadingImport, setIsLoadingImport] = useState(false);
+    const [importError, setImportError] = useState(null);
+    const [importedGoals, setImportedGoals] = useState([]);
+    const [editingImportedGoal, setEditingImportedGoal] = useState(null);
 
     const handleToggleExpand = (goalId) => {
         setExpandedGoalId(prevId => (prevId === goalId ? null : goalId));
@@ -35,7 +45,6 @@ const TodaysPlan = ({ initialPlan, onSavePlan, onStartGoal, currentUser, onShowH
         setShowForm(false);
     };
 
-    // Handlers for scheduling tomorrow
     const handleStartSchedulingTomorrow = () => {
         const tomorrow = new Date();
         tomorrow.setDate(tomorrow.getDate() + 1);
@@ -64,6 +73,53 @@ const TodaysPlan = ({ initialPlan, onSavePlan, onStartGoal, currentUser, onShowH
         }
     };
     
+    const handleImportClick = () => {
+        fileInputRef.current?.click();
+    };
+
+    const handleFileChange = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setIsLoadingImport(true);
+        setImportError(null);
+        setImportedGoals([]);
+
+        try {
+            const base64 = await fileToBase64(file);
+            const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+            const dayOfWeek = dayNames[new Date().getDay()];
+            
+            const events = await extractScheduleFromImage(base64, file.type, dayOfWeek);
+            if (events.length === 0) {
+                setImportError(`No events found for ${dayOfWeek} in the provided image.`);
+            } else {
+                setImportedGoals(events);
+            }
+        } catch (err) {
+            setImportError(err.message);
+        } finally {
+            setIsLoadingImport(false);
+            e.target.value = '';
+        }
+    };
+    
+    const handleEditImportedGoal = (goal) => {
+        setEditingImportedGoal(goal);
+    };
+
+    const handleConfirmImportedGoal = (payload) => {
+        handleAddGoal(payload);
+        setImportedGoals(prev => prev.filter(g => g.startTime !== editingImportedGoal?.startTime || g.subject !== editingImportedGoal?.subject));
+        setEditingImportedGoal(null);
+    };
+
+    const handleCancelImport = () => {
+        setImportedGoals([]);
+        setEditingImportedGoal(null);
+        setImportError(null);
+    };
+
     const sortGoals = (goals) => {
         return [...goals].sort((a, b) => {
             const aHasTime = a.startTime && a.endTime;
@@ -78,7 +134,6 @@ const TodaysPlan = ({ initialPlan, onSavePlan, onStartGoal, currentUser, onShowH
     const sortedGoals = useMemo(() => sortGoals(plan.goals), [plan.goals]);
     const sortedTomorrowsGoals = useMemo(() => tomorrowsPlan ? sortGoals(tomorrowsPlan.goals) : [], [tomorrowsPlan]);
     const allGoalsCompleted = useMemo(() => plan.goals.length > 0 && plan.goals.every(g => g.status !== 'pending'), [plan.goals]);
-
     const today = new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
     const renderGoal = (goal, isTomorrow = false) => {
@@ -124,6 +179,47 @@ const TodaysPlan = ({ initialPlan, onSavePlan, onStartGoal, currentUser, onShowH
             React.createElement('div', { className: 'flex-shrink-0' }, statusBadge)
         );
     };
+
+    if (isLoadingImport) {
+        return React.createElement('div', { className: "w-full max-w-3xl bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl text-center animate-fade-in" },
+            React.createElement('div', { className: 'flex flex-col items-center gap-4' },
+                React.createElement(Spinner, null),
+                React.createElement('p', null, 'Analyzing your schedule...')
+            )
+        );
+    }
+    
+    if (editingImportedGoal) {
+        return React.createElement('div', { className: 'w-full max-w-3xl flex justify-center mt-6' },
+            React.createElement(GoalSetter, {
+                initialData: editingImportedGoal,
+                onGoalSubmit: handleConfirmImportedGoal,
+                isLoading: false,
+                submitButtonText: "Add Imported Goal to Plan",
+                onCancel: () => setEditingImportedGoal(null)
+            })
+        );
+    }
+
+    if (importedGoals.length > 0) {
+        return React.createElement('div', { className: 'w-full max-w-3xl bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl text-center animate-fade-in' },
+            React.createElement('h2', { className: 'text-2xl font-semibold mb-2 text-cyan-300' }, 'Review Imported Goals'),
+            React.createElement('p', { className: 'text-slate-400 mb-6' }, 'These events were found for today. Add them to your plan.'),
+            React.createElement('div', { className: 'space-y-3' },
+                importedGoals.map((goal, index) => React.createElement('div', { key: index, className: 'p-3 bg-slate-900/50 border border-slate-700 rounded-lg text-left flex items-center justify-between gap-4' },
+                    React.createElement('div', null,
+                        React.createElement('p', { className: 'font-mono text-sm text-cyan-300' }, `${goal.startTime} - ${goal.endTime}`),
+                        React.createElement('p', { className: 'font-bold text-white mt-1' }, goal.subject)
+                    ),
+                    React.createElement('button', {
+                        onClick: () => handleEditImportedGoal(goal),
+                        className: 'bg-cyan-500 text-slate-900 font-bold py-2 px-3 rounded-lg hover:bg-cyan-400 text-sm flex-shrink-0'
+                    }, 'Edit & Add')
+                ))
+            ),
+            React.createElement('button', { onClick: handleCancelImport, className: 'mt-6 text-slate-400 hover:text-white text-sm' }, 'Cancel Import')
+        );
+    }
 
     const tomorrowSchedulingUI = isSchedulingTomorrow && tomorrowsPlan && React.createElement('div', { className: 'mt-8 bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full text-center animate-fade-in' },
         React.createElement('h2', { className: 'text-3xl font-bold tracking-tighter text-cyan-300' }, "Scheduling for Tomorrow"),
@@ -174,13 +270,24 @@ const TodaysPlan = ({ initialPlan, onSavePlan, onStartGoal, currentUser, onShowH
                 sortedGoals.length === 0 && !showForm && React.createElement('div', { className: 'text-center py-12' }, React.createElement('p', { className: 'text-slate-500' }, 'Your plan is empty. Add a goal to get started!')),
                 sortedGoals.map(goal => renderGoal(goal))
             ),
-            !showForm && React.createElement('button', {
-                onClick: () => setShowForm(true),
-                className: 'w-full bg-slate-700/80 border border-slate-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-slate-700 transition-colors flex items-center justify-center gap-2'
-            },
-                React.createElement('svg', { xmlns: 'http://www.w3.org/2000/svg', className: 'h-5 w-5', viewBox: '0 0 20 20', fill: 'currentColor' }, React.createElement('path', { fillRule: 'evenodd', d: 'M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z', clipRule: 'evenodd' })),
-                'Add New Goal'
+            !showForm && React.createElement('div', { className: 'flex flex-col sm:flex-row gap-4' },
+                React.createElement('input', { type: 'file', ref: fileInputRef, onChange: handleFileChange, accept: 'image/*', className: 'hidden' }),
+                React.createElement('button', {
+                    onClick: () => setShowForm(true),
+                    className: 'flex-1 bg-slate-700/80 border border-slate-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-slate-700 transition-colors flex items-center justify-center gap-2'
+                },
+                    React.createElement('svg', { xmlns: 'http://www.w3.org/2000/svg', className: 'h-5 w-5', viewBox: '0 0 20 20', fill: 'currentColor' }, React.createElement('path', { fillRule: 'evenodd', d: 'M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z', clipRule: 'evenodd' })),
+                    'Add New Goal'
+                ),
+                React.createElement('button', {
+                    onClick: handleImportClick,
+                    className: 'flex-1 bg-sky-600/50 border border-sky-500/50 text-sky-300 font-semibold py-3 px-4 rounded-lg hover:bg-sky-600/70 transition-colors flex items-center justify-center gap-2'
+                },
+                    React.createElement('svg', { xmlns: 'http://www.w3.org/2000/svg', className: 'h-5 w-5', viewBox: '0 0 20 20', fill: 'currentColor' }, React.createElement('path', { fillRule: 'evenodd', d: 'M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z', clipRule: 'evenodd' })),
+                    'Import Schedule'
+                )
             ),
+            importError && React.createElement('div', { className: 'mt-4' }, React.createElement(Alert, { message: importError, type: 'error' })),
             allGoalsCompleted && !isSchedulingTomorrow && React.createElement('div', { className: 'mt-8 pt-6 border-t border-slate-700 text-center' },
                 React.createElement('p', { className: 'text-lg text-green-400 mb-4' }, 'Great job finishing your plan for today!'),
                 React.createElement('button', { onClick: handleStartSchedulingTomorrow, className: 'bg-sky-500 text-white font-bold py-3 px-6 rounded-lg hover:bg-sky-400 transition-colors' }, 'Schedule for Tomorrow')

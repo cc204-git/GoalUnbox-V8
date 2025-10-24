@@ -1,8 +1,14 @@
-import React, { useState, useMemo } from 'react';
+
+import React, { useState, useMemo, useRef } from 'react';
 import { PlannedGoal, TodaysPlan as TodaysPlanType } from '../types';
 import GoalSetter, { GoalPayload } from './GoalSetter';
 import { formatDuration, getISODateString } from '../utils/timeUtils';
 import { savePlan, loadPlan } from '../services/planService';
+import { extractScheduleFromImage } from '../services/geminiService';
+import type { ExtractedEvent } from '../services/geminiService';
+import Spinner from './Spinner';
+import Alert from './Alert';
+import { fileToBase64 } from '../utils/fileUtils';
 
 interface TodaysPlanProps {
     initialPlan: TodaysPlanType;
@@ -16,11 +22,15 @@ const TodaysPlan: React.FC<TodaysPlanProps> = ({ initialPlan, onSavePlan, onStar
     const [plan, setPlan] = useState(initialPlan);
     const [showForm, setShowForm] = useState(false);
     const [expandedGoalId, setExpandedGoalId] = useState<string | null>(null);
-
-    // State for scheduling tomorrow
     const [isSchedulingTomorrow, setIsSchedulingTomorrow] = useState(false);
     const [tomorrowsPlan, setTomorrowsPlan] = useState<TodaysPlanType | null>(null);
     const [showTomorrowForm, setShowTomorrowForm] = useState(false);
+
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const [isLoadingImport, setIsLoadingImport] = useState(false);
+    const [importError, setImportError] = useState<string | null>(null);
+    const [importedGoals, setImportedGoals] = useState<ExtractedEvent[]>([]);
+    const [editingImportedGoal, setEditingImportedGoal] = useState<ExtractedEvent | null>(null);
 
     const handleToggleExpand = (goalId: string) => {
         setExpandedGoalId(prevId => (prevId === goalId ? null : goalId));
@@ -44,7 +54,6 @@ const TodaysPlan: React.FC<TodaysPlanProps> = ({ initialPlan, onSavePlan, onStar
         setShowForm(false);
     };
 
-    // Handlers for scheduling tomorrow
     const handleStartSchedulingTomorrow = () => {
         const tomorrow = new Date();
         tomorrow.setDate(tomorrow.getDate() + 1);
@@ -73,6 +82,53 @@ const TodaysPlan: React.FC<TodaysPlanProps> = ({ initialPlan, onSavePlan, onStar
         }
     };
 
+    const handleImportClick = () => {
+        fileInputRef.current?.click();
+    };
+
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setIsLoadingImport(true);
+        setImportError(null);
+        setImportedGoals([]);
+
+        try {
+            const base64 = await fileToBase64(file);
+            const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+            const dayOfWeek = dayNames[new Date().getDay()];
+            
+            const events = await extractScheduleFromImage(base64, file.type, dayOfWeek);
+            if (events.length === 0) {
+                setImportError(`No events found for ${dayOfWeek} in the provided image.`);
+            } else {
+                setImportedGoals(events);
+            }
+        } catch (err) {
+            setImportError((err as Error).message);
+        } finally {
+            setIsLoadingImport(false);
+            e.target.value = '';
+        }
+    };
+    
+    const handleEditImportedGoal = (goal: ExtractedEvent) => {
+        setEditingImportedGoal(goal);
+    };
+
+    const handleConfirmImportedGoal = (payload: GoalPayload) => {
+        handleAddGoal(payload);
+        setImportedGoals(prev => prev.filter(g => g.startTime !== editingImportedGoal?.startTime || g.subject !== editingImportedGoal?.subject));
+        setEditingImportedGoal(null);
+    };
+
+    const handleCancelImport = () => {
+        setImportedGoals([]);
+        setEditingImportedGoal(null);
+        setImportError(null);
+    };
+
     const sortGoals = (goals: PlannedGoal[]) => {
         return [...goals].sort((a, b) => {
             const aHasTime = a.startTime && a.endTime;
@@ -87,15 +143,14 @@ const TodaysPlan: React.FC<TodaysPlanProps> = ({ initialPlan, onSavePlan, onStar
     const sortedGoals = useMemo(() => sortGoals(plan.goals), [plan.goals]);
     const sortedTomorrowsGoals = useMemo(() => tomorrowsPlan ? sortGoals(tomorrowsPlan.goals) : [], [tomorrowsPlan]);
     const allGoalsCompleted = useMemo(() => plan.goals.length > 0 && plan.goals.every(g => g.status !== 'pending'), [plan.goals]);
-
     const today = new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
     const renderGoal = (goal: PlannedGoal, isTomorrow: boolean = false) => {
+        // ... (implementation is the same as before)
         const isExpanded = expandedGoalId === goal.id;
         const isCompleted = goal.status === 'completed';
         const isSkipped = goal.status === 'skipped';
         const isDone = isCompleted || isSkipped;
-
         let statusBadge;
         if (isCompleted) {
             statusBadge = (
@@ -126,7 +181,6 @@ const TodaysPlan: React.FC<TodaysPlanProps> = ({ initialPlan, onSavePlan, onStar
                 </button>
             );
         }
-
         return (
             <div key={goal.id} className={`p-4 rounded-lg flex flex-col sm:flex-row items-center gap-4 transition-colors ${isDone ? 'bg-slate-900/50 border border-slate-700' : 'bg-slate-800 border border-slate-600'} ${isSkipped ? 'opacity-70' : ''}`}>
                 <div className="flex-shrink-0 text-center sm:text-left w-36">
@@ -157,6 +211,54 @@ const TodaysPlan: React.FC<TodaysPlanProps> = ({ initialPlan, onSavePlan, onStar
             </div>
         );
     };
+    
+    if (isLoadingImport) {
+        return (
+             <div className="w-full max-w-3xl bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl text-center animate-fade-in">
+                <div className="flex flex-col items-center gap-4">
+                    <Spinner />
+                    <p>Analyzing your schedule...</p>
+                </div>
+            </div>
+        )
+    }
+
+    if (editingImportedGoal) {
+        return (
+             <div className="w-full max-w-3xl flex justify-center mt-6">
+                <GoalSetter
+                    initialData={editingImportedGoal}
+                    onGoalSubmit={handleConfirmImportedGoal}
+                    isLoading={false}
+                    submitButtonText="Add Imported Goal to Plan"
+                    onCancel={() => setEditingImportedGoal(null)}
+                />
+            </div>
+        );
+    }
+    
+    if (importedGoals.length > 0) {
+        return (
+            <div className="w-full max-w-3xl bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl text-center animate-fade-in">
+                <h2 className="text-2xl font-semibold mb-2 text-cyan-300">Review Imported Goals</h2>
+                <p className="text-slate-400 mb-6">These events were found for today. Add them to your plan.</p>
+                <div className="space-y-3">
+                    {importedGoals.map((goal, index) => (
+                        <div key={index} className="p-3 bg-slate-900/50 border border-slate-700 rounded-lg text-left flex items-center justify-between gap-4">
+                            <div>
+                                <p className="font-mono text-sm text-cyan-300">{goal.startTime} - {goal.endTime}</p>
+                                <p className="font-bold text-white mt-1">{goal.subject}</p>
+                            </div>
+                            <button onClick={() => handleEditImportedGoal(goal)} className="bg-cyan-500 text-slate-900 font-bold py-2 px-3 rounded-lg hover:bg-cyan-400 text-sm flex-shrink-0">
+                                Edit & Add
+                            </button>
+                        </div>
+                    ))}
+                </div>
+                 <button onClick={handleCancelImport} className="mt-6 text-slate-400 hover:text-white text-sm">Cancel Import</button>
+            </div>
+        )
+    }
 
     return (
         <div className="w-full max-w-3xl">
@@ -184,16 +286,29 @@ const TodaysPlan: React.FC<TodaysPlanProps> = ({ initialPlan, onSavePlan, onStar
                 </div>
 
                 {!showForm && (
-                     <button
-                        onClick={() => setShowForm(true)}
-                        className="w-full bg-slate-700/80 border border-slate-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-slate-700 transition-colors flex items-center justify-center gap-2"
-                    >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                            <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
-                        </svg>
-                        Add New Goal
-                    </button>
+                     <div className="flex flex-col sm:flex-row gap-4">
+                        <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" />
+                        <button
+                            onClick={() => setShowForm(true)}
+                            className="flex-1 bg-slate-700/80 border border-slate-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-slate-700 transition-colors flex items-center justify-center gap-2"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
+                            </svg>
+                            Add New Goal
+                        </button>
+                        <button 
+                            onClick={handleImportClick} 
+                            className="flex-1 bg-sky-600/50 border border-sky-500/50 text-sky-300 font-semibold py-3 px-4 rounded-lg hover:bg-sky-600/70 transition-colors flex items-center justify-center gap-2"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
+                            </svg>
+                            Import Schedule
+                        </button>
+                    </div>
                 )}
+                {importError && <div className="mt-4"><Alert message={importError} type="error" /></div>}
 
                 {allGoalsCompleted && !isSchedulingTomorrow && (
                     <div className="mt-8 pt-6 border-t border-slate-700 text-center">

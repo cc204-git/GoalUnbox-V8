@@ -115,11 +115,11 @@ const App = () => {
         if (!plan) {
             const defaultGoal1 = {
                 id: `default-${new Date().getTime()}-1`, subject: "Anki Review", goal: "Upload a verification of finishing all anki flash cards. I must upload a screenshot from my Windows computer. One half of the screen must show the Anki 'Congratulations!' screen (or similar proof of completion), and the other half must show the current date. The date in the screenshot must match today's date.",
-                timeLimitInMs: 3600000, consequence: null, startTime: "", endTime: "", status: 'pending',
+                timeLimitInMs: 3600000, consequence: null, startTime: "10:00", endTime: "11:00", status: 'pending',
             };
             const defaultGoal2 = {
                 id: `default-${new Date().getTime()}-2`, subject: "Anki Creation", goal: "I must send verification of me uploading flashcards to anki. I must upload a screenshot from my Windows computer. One half of the screen must show the Anki interface after adding new cards, and the other half must show the current date. The date in the screenshot must match today's date.",
-                timeLimitInMs: null, consequence: null, startTime: "", endTime: "", status: 'pending',
+                timeLimitInMs: null, consequence: null, startTime: "12:00", endTime: "13:00", status: 'pending',
             };
             const newPlan = { date: getISODateString(new Date()), goals: [defaultGoal1, defaultGoal2] };
             dataService.savePlan(uid, newPlan);
@@ -172,6 +172,20 @@ const App = () => {
         if (!data || !data.weekStartDate) { // Save back if it was newly created or needed updating
             dataService.saveStreakData(uid, streak);
         }
+    }).catch(err => {
+        console.error("Failed to load streak data:", err);
+        setError("Could not load your streak data. Please try again or continue with limited functionality.");
+        // Initialize with default streak data so the app doesn't crash
+        const today = new Date();
+        const currentWeekStart = getStartOfWeekISOString(today);
+        const defaultStreak = { 
+            currentStreak: 0, 
+            lastCompletionDate: '', 
+            commitment: null,
+            skipsThisWeek: 0,
+            weekStartDate: currentWeekStart
+        };
+        setStreakData(defaultStreak);
     }).finally(() => {
         if (isInitialLoad) {
             setIsLoading(false);
@@ -307,6 +321,7 @@ const App = () => {
             setCompletionDuration(formatDuration(duration));
             setCompletedSecretCodeImage(secretCodeImage);
             setVerificationFeedback(feedback);
+            setCompletionReason('verified');
             setAppState(AppState.AWAITING_BREAK);
             setIsLoading(false);
             return;
@@ -446,6 +461,7 @@ const App = () => {
             setCompletionDuration(formatDuration(duration));
             setCompletedSecretCodeImage(secretCodeImage);
             setVerificationFeedback(null);
+            setCompletionReason('skipped');
             setAppState(AppState.AWAITING_BREAK);
         } else {
             setCompletionDuration(formatDuration(duration));
@@ -503,7 +519,7 @@ const App = () => {
     };
 
     const handleSkipBreak = () => {
-        setCompletionReason('verified'); setAppState(AppState.GOAL_COMPLETED);
+        setAppState(AppState.GOAL_COMPLETED);
     };
 
     const handleNextCodeImageSubmit = async (file) => {

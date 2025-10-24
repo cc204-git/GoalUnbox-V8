@@ -201,3 +201,65 @@ export const generateHistoryInsights = async (history: CompletedGoal[]): Promise
         throw handleApiError(error);
     }
 };
+
+export interface ExtractedEvent {
+    subject: string;
+    startTime: string; // "HH:mm"
+    endTime: string; // "HH:mm"
+}
+
+const scheduleExtractionSchema = {
+    type: Type.ARRAY,
+    items: {
+        type: Type.OBJECT,
+        properties: {
+            subject: {
+                type: Type.STRING,
+                description: "The full subject or title of the event (e.g., 'Self-Study: Physique')."
+            },
+            startTime: {
+                type: Type.STRING,
+                description: "The start time of the event in HH:mm format."
+            },
+            endTime: {
+                type: Type.STRING,
+                description: "The end time of the event in HH:mm format."
+            },
+        },
+        required: ["subject", "startTime", "endTime"],
+    },
+};
+
+export const extractScheduleFromImage = async (base64Image: string, mimeType: string, dayOfWeek: string): Promise<ExtractedEvent[]> => {
+  try {
+    const ai = getAiClient();
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-pro', // Using a more powerful model for complex image parsing
+      contents: {
+        parts: [
+          {
+            text: `Analyze the provided image, which is a weekly schedule. Extract all scheduled events ONLY for ${dayOfWeek}. The days of the week (Mon, Tue, etc.) are at the top. The times are on the left vertical axis. For each event on the specified day, extract its subject/title, start time, and end time. Respond with a JSON array matching the provided schema. If there are no events for that day, return an empty array.`
+          },
+          {
+            inlineData: {
+              data: base64Image,
+              mimeType: mimeType,
+            },
+          },
+        ],
+      },
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: scheduleExtractionSchema,
+      }
+    });
+
+    const result = JSON.parse(response.text);
+    if (Array.isArray(result)) {
+        return result as ExtractedEvent[];
+    }
+    throw new Error("The AI returned an unexpected data format.");
+  } catch (error) {
+    throw handleApiError(error);
+  }
+};
