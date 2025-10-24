@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { VerificationFeedback } from '../services/geminiService';
 import ChatBox from './ChatBox';
@@ -37,11 +36,40 @@ const VerificationResult: React.FC<VerificationResultProps> = ({ isSuccess, secr
   const [isImageModalOpen, setIsImageModalOpen] = useState(false);
 
   if (isSuccess) {
-    const title = completionReason === 'emergency' ? "Emergency Access" : "Goal Completed!";
-    const titleColor = completionReason === 'emergency' ? 'text-red-400' : 'text-green-400';
-    const successMessage = completionReason === 'emergency'
-        ? "You passed the test. Your code is now available."
-        : "Congratulations on achieving your goal!";
+    let title: string;
+    let titleColor: string;
+    let successMessage: string;
+    let achievementText: string;
+    let iconColor: string;
+    let borderColor: string;
+
+    switch (completionReason) {
+        case 'emergency':
+            title = "Emergency Access";
+            titleColor = "text-red-400";
+            successMessage = "You passed the test. Your code is now available.";
+            achievementText = "Your emergency access has been logged to your goal history.";
+            iconColor = "text-red-500";
+            borderColor = "border-red-500";
+            break;
+        case 'skipped':
+            title = "Goal Skipped";
+            titleColor = "text-amber-400";
+            successMessage = "You have used a weekly skip. Your code is now available.";
+            achievementText = "This skipped goal has been saved to your goal history.";
+            iconColor = "text-amber-500";
+            borderColor = "border-amber-500";
+            break;
+        case 'verified':
+        default:
+            title = "Goal Completed!";
+            titleColor = "text-green-400";
+            successMessage = "Congratulations on achieving your goal!";
+            achievementText = "Your achievement has been saved to your goal history.";
+            iconColor = "text-green-500";
+            borderColor = "border-green-500";
+            break;
+    }
 
     return (
       <>
@@ -71,7 +99,7 @@ const VerificationResult: React.FC<VerificationResultProps> = ({ isSuccess, secr
                 <img 
                   src={secretCodeImage} 
                   alt="Sequestered code" 
-                  className="rounded-lg max-w-xs mx-auto border-2 border-green-500 group-hover:border-cyan-400 transition-colors" 
+                  className={`rounded-lg max-w-xs mx-auto border-2 ${borderColor} group-hover:border-cyan-400 transition-colors`} 
                 />
               </button>
             </div>
@@ -84,10 +112,10 @@ const VerificationResult: React.FC<VerificationResultProps> = ({ isSuccess, secr
             Start a New Goal
           </button>
           <p className="text-xs text-slate-500 mt-4 flex items-center justify-center gap-2">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-green-500" viewBox="0 0 20 20" fill="currentColor">
+            <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 ${iconColor}`} viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
             </svg>
-            Your achievement has been saved to your goal history.
+            {achievementText}
           </p>
         </div>
         

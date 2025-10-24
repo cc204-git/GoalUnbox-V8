@@ -431,19 +431,34 @@ const App = () => {
 
         const updatedStreakData = {
             ...streakData,
-            skipsThisWeek: (streakData.skipsThisWeek ?? 0) + 1
+            skipsThisWeek: (streakData.skipsThisWeek ?? 0) + 1,
+            lastCompletedCodeImage: secretCodeImage || undefined,
         };
         await dataService.saveStreakData(currentUser.uid, updatedStreakData);
         setStreakData(updatedStreakData);
 
         await dataService.clearActiveGoal(currentUser.uid);
-        resetToStart(false);
+        
+        const breakDurationMs = (duration < 7200000) ? 600000 : (duration / 7200000) * 900000;
+        
+        if (breakDurationMs > 0) {
+            setAvailableBreakTime(breakDurationMs);
+            setCompletionDuration(formatDuration(duration));
+            setCompletedSecretCodeImage(secretCodeImage);
+            setVerificationFeedback(null);
+            setAppState(AppState.AWAITING_BREAK);
+        } else {
+            setCompletionDuration(formatDuration(duration));
+            setCompletionReason('skipped');
+            setVerificationFeedback(null);
+            setAppState(AppState.GOAL_COMPLETED);
+        }
     } catch (err) {
         handleApiError(err);
     } finally {
         setIsLoading(false);
     }
-  }, [currentUser, activeGoal, goalSetTime, goal, subject, handleApiError, activePlannedGoal, todaysPlan, streakData]);
+  }, [currentUser, activeGoal, goalSetTime, goal, subject, handleApiError, activePlannedGoal, todaysPlan, streakData, secretCodeImage]);
 
   const handleShowHistory = () => setAppState(AppState.HISTORY_VIEW);
   const handleHistoryBack = () => setAppState(AppState.TODAYS_PLAN);
