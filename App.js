@@ -1,4 +1,5 @@
 
+
 import React, { useState, useCallback, useEffect } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { AppState } from './types.js';
@@ -101,7 +102,11 @@ const App = () => {
             setTimeLimitInMs(goalState.timeLimitInMs);
             setConsequence(goalState.consequence);
             setAppState(AppState.GOAL_SET);
-        } else if (appState !== AppState.GOAL_COMPLETED && appState !== AppState.AWAITING_BREAK) {
+        } else if (
+            appState !== AppState.GOAL_COMPLETED &&
+            appState !== AppState.AWAITING_BREAK &&
+            appState !== AppState.AWAITING_CODE
+        ) {
             setAppState(AppState.TODAYS_PLAN);
         }
     }));
@@ -576,7 +581,7 @@ const App = () => {
     React.createElement(Header, null),
     React.createElement(
       'main', { className: 'w-full flex flex-col items-center justify-center' },
-      error && React.createElement(Alert, { message: error, type: 'error' }),
+      error && React.createElement(Alert, { message: error, type: "error" }),
       appState === AppState.GOAL_SET && verificationFeedback &&
         React.createElement( 'div', { className: 'w-full max-w-lg mb-4 flex justify-center' },
           React.createElement(VerificationResult, { isSuccess: false, secretCodeImage: null, feedback: verificationFeedback, onRetry: handleRetry, onReset: () => resetToStart(false), chatMessages: chatMessages, onSendChatMessage: handleSendChatMessage, isChatLoading: isChatLoading })

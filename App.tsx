@@ -117,7 +117,11 @@ const App: React.FC = () => {
             setTimeLimitInMs(goalState.timeLimitInMs);
             setConsequence(goalState.consequence);
             setAppState(AppState.GOAL_SET);
-        } else if (appState !== AppState.GOAL_COMPLETED && appState !== AppState.AWAITING_BREAK) {
+        } else if (
+            appState !== AppState.GOAL_COMPLETED &&
+            appState !== AppState.AWAITING_BREAK &&
+            appState !== AppState.AWAITING_CODE
+        ) {
             setAppState(AppState.TODAYS_PLAN);
         }
     }));
