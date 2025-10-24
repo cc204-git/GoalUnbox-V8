@@ -21,7 +21,7 @@ export interface CompletedGoal {
   startTime: number;
   endTime: number;
   duration: number;
-  completionReason: 'verified' | 'emergency';
+  completionReason: 'verified' | 'emergency' | 'skipped';
 }
 
 export interface ActiveGoalState {

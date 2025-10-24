@@ -30,7 +30,7 @@ import ApiKeyPrompt from './components/ApiKeyPrompt';
 import Spinner from './components/Spinner';
 import { Chat } from '@google/genai';
 
-type CompletionReason = 'verified' | 'emergency';
+type CompletionReason = 'verified' | 'emergency' | 'skipped';
 
 const App: React.FC = () => {
   const [apiKey, setApiKey] = useState<string | null>(() => localStorage.getItem('GEMINI_API_KEY'));
@@ -272,7 +272,7 @@ const App: React.FC = () => {
     return goal;
   }, [goal, timeLimitInMs, goalSetTime, consequence]);
 
-  const handleGoalSuccess = useCallback(async (feedback: VerificationFeedback | null, reason: CompletionReason) => {
+  const handleGoalSuccess = useCallback(async (feedback: VerificationFeedback | null, reason: 'verified' | 'emergency') => {
     if (!currentUser) return;
     setIsLoading(true);
     const endTime = Date.now();
@@ -388,6 +388,41 @@ const App: React.FC = () => {
   const handleEmergencySuccess = useCallback(() => { handleGoalSuccess(null, 'emergency'); }, [handleGoalSuccess]);
   const handleEmergencyCancel = () => { setAppState(AppState.GOAL_SET); };
   
+  const handleSkipGoal = useCallback(async () => {
+    if (!currentUser || !activeGoal) return;
+    if (!window.confirm("Are you sure you want to skip this goal? This will be recorded in your history as skipped.")) {
+        return;
+    }
+    
+    setIsLoading(true);
+    setError(null);
+    
+    const endTime = Date.now();
+    const duration = goalSetTime ? endTime - goalSetTime : 0;
+    
+    try {
+        const goalSummary = await summarizeGoal(goal);
+        const newEntry: CompletedGoal = {
+            id: endTime,
+            goalSummary,
+            fullGoal: goal,
+            subject: subject,
+            startTime: goalSetTime!,
+            endTime,
+            duration,
+            completionReason: 'skipped'
+        };
+        await dataService.addHistoryItem(currentUser.uid, newEntry);
+        await dataService.clearActiveGoal(currentUser.uid);
+        resetToStart(false);
+    } catch (err) {
+        handleApiError(err);
+    } finally {
+        setIsLoading(false);
+    }
+  }, [currentUser, activeGoal, goalSetTime, goal, subject, handleApiError]);
+
+
   const handleShowHistory = () => setAppState(AppState.HISTORY_VIEW);
   const handleHistoryBack = () => setAppState(AppState.TODAYS_PLAN);
 
@@ -537,7 +572,7 @@ const App: React.FC = () => {
       case AppState.TODAYS_PLAN:
         return todaysPlan ? <TodaysPlanComponent initialPlan={todaysPlan} onSavePlan={handleSavePlan} onStartGoal={handleStartPlannedGoal} currentUser={currentUser.uid} /> : <div className="flex justify-center items-center p-8"><Spinner /></div>;
       case AppState.AWAITING_CODE: return <CodeUploader onCodeImageSubmit={handleCodeImageSubmit} isLoading={isLoading} onShowHistory={handleShowHistory} onLogout={handleLogout} currentUser={currentUser} streakData={streakData} onSetCommitment={handleSetDailyCommitment} onCompleteCommitment={handleCompleteDailyCommitment} />;
-      case AppState.GOAL_SET: return <ProofUploader goal={goal} onProofImageSubmit={handleProofImageSubmit} isLoading={isLoading} goalSetTime={goalSetTime} timeLimitInMs={timeLimitInMs} consequence={consequence} onStartEmergency={handleStartEmergency} lastCompletedCodeImage={streakData?.lastCompletedCodeImage} />;
+      case AppState.GOAL_SET: return <ProofUploader goal={goal} onProofImageSubmit={handleProofImageSubmit} isLoading={isLoading} goalSetTime={goalSetTime} timeLimitInMs={timeLimitInMs} consequence={consequence} onStartEmergency={handleStartEmergency} onSkipGoal={handleSkipGoal} lastCompletedCodeImage={streakData?.lastCompletedCodeImage} />;
       case AppState.EMERGENCY_TEST: return <EmergencyTest onSuccess={handleEmergencySuccess} onCancel={handleEmergencyCancel} />;
       case AppState.HISTORY_VIEW: return <GoalHistory onBack={handleHistoryBack} history={history} onDeleteHistoryItem={handleDeleteHistoryItem} />;
       case AppState.GOAL_COMPLETED: return <VerificationResult isSuccess={true} secretCodeImage={secretCodeImage || completedSecretCodeImage} feedback={verificationFeedback} onRetry={handleRetry} onReset={() => resetToStart(false)} completionDuration={completionDuration} completionReason={completionReason} />;

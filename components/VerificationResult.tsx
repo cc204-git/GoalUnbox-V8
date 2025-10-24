@@ -13,7 +13,8 @@ interface VerificationResultProps {
   onSendChatMessage?: (message: string) => void;
   isChatLoading?: boolean;
   completionDuration?: string | null;
-  completionReason?: 'verified' | 'emergency' | null;
+  // FIX: Added 'skipped' to the type to match the possible values from App.tsx state.
+  completionReason?: 'verified' | 'emergency' | 'skipped' | null;
 }
 
 const FeedbackSection: React.FC<{title: string; items: string[]; color: 'green' | 'red'}> = ({ title, items, color }) => {

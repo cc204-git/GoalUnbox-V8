@@ -366,6 +366,40 @@ const App = () => {
   const handleEmergencySuccess = useCallback(() => { handleGoalSuccess(null, 'emergency'); }, [handleGoalSuccess]);
   const handleEmergencyCancel = () => { setAppState(AppState.GOAL_SET); };
   
+  const handleSkipGoal = useCallback(async () => {
+    if (!currentUser || !activeGoal) return;
+    if (!window.confirm("Are you sure you want to skip this goal? This will be recorded in your history as skipped.")) {
+        return;
+    }
+    
+    setIsLoading(true);
+    setError(null);
+    
+    const endTime = Date.now();
+    const duration = goalSetTime ? endTime - goalSetTime : 0;
+    
+    try {
+        const goalSummary = await summarizeGoal(goal);
+        const newEntry = {
+            id: endTime,
+            goalSummary,
+            fullGoal: goal,
+            subject: subject,
+            startTime: goalSetTime,
+            endTime,
+            duration,
+            completionReason: 'skipped'
+        };
+        await dataService.addHistoryItem(currentUser.uid, newEntry);
+        await dataService.clearActiveGoal(currentUser.uid);
+        resetToStart(false);
+    } catch (err) {
+        handleApiError(err);
+    } finally {
+        setIsLoading(false);
+    }
+  }, [currentUser, activeGoal, goalSetTime, goal, subject, handleApiError]);
+
   const handleShowHistory = () => setAppState(AppState.HISTORY_VIEW);
   const handleHistoryBack = () => setAppState(AppState.TODAYS_PLAN);
 
@@ -514,7 +548,7 @@ const App = () => {
       case AppState.TODAYS_PLAN:
         return todaysPlan ? React.createElement(TodaysPlanComponent, { initialPlan: todaysPlan, onSavePlan: handleSavePlan, onStartGoal: handleStartPlannedGoal, currentUser: currentUser.uid }) : React.createElement('div', { className: 'flex justify-center items-center p-8' }, React.createElement(Spinner));
       case AppState.AWAITING_CODE: return React.createElement(CodeUploader, { onCodeImageSubmit: handleCodeImageSubmit, isLoading: isLoading, onShowHistory: handleShowHistory, onLogout: handleLogout, currentUser: currentUser, streakData: streakData, onSetCommitment: handleSetDailyCommitment, onCompleteCommitment: handleCompleteDailyCommitment });
-      case AppState.GOAL_SET: return React.createElement(ProofUploader, { goal: goal, onProofImageSubmit: handleProofImageSubmit, isLoading: isLoading, goalSetTime: goalSetTime, timeLimitInMs: timeLimitInMs, consequence: consequence, onStartEmergency: handleStartEmergency, lastCompletedCodeImage: streakData?.lastCompletedCodeImage });
+      case AppState.GOAL_SET: return React.createElement(ProofUploader, { goal: goal, onProofImageSubmit: handleProofImageSubmit, isLoading: isLoading, goalSetTime: goalSetTime, timeLimitInMs: timeLimitInMs, consequence: consequence, onStartEmergency: handleStartEmergency, onSkipGoal: handleSkipGoal, lastCompletedCodeImage: streakData?.lastCompletedCodeImage });
       case AppState.EMERGENCY_TEST: return React.createElement(EmergencyTest, { onSuccess: handleEmergencySuccess, onCancel: handleEmergencyCancel });
       case AppState.HISTORY_VIEW: return React.createElement(GoalHistory, { onBack: handleHistoryBack, history: history, onDeleteHistoryItem: handleDeleteHistoryItem });
       case AppState.GOAL_COMPLETED: return React.createElement(VerificationResult, { isSuccess: true, secretCodeImage: secretCodeImage || completedSecretCodeImage, feedback: verificationFeedback, onRetry: handleRetry, onReset: () => resetToStart(false), completionDuration: completionDuration, completionReason: completionReason });

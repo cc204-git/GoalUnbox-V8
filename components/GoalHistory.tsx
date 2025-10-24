@@ -22,19 +22,21 @@ const GoalHistory: React.FC<GoalHistoryProps> = ({ onBack, history, onDeleteHist
     const [insightsError, setInsightsError] = useState<string | null>(null);
 
     const { totalDuration, timeBySubject } = useMemo(() => {
-        const subjectTimes: { [key: string]: number } = {};
-        let totalMs = 0;
-
-        history.forEach(item => {
-            totalMs += item.duration;
-            const subject = item.subject || 'Uncategorized';
-            subjectTimes[subject] = (subjectTimes[subject] || 0) + item.duration;
-        });
+        const subjectTimesFocused: { [key: string]: number } = {};
+        let totalFocusedMs = 0;
         
-        const sortedSubjects = Object.entries(subjectTimes).sort(([, a], [, b]) => b - a);
+        history.forEach(item => {
+            if (item.completionReason !== 'skipped') {
+                 totalFocusedMs += item.duration;
+                 const subject = item.subject || 'Uncategorized';
+                 subjectTimesFocused[subject] = (subjectTimesFocused[subject] || 0) + item.duration;
+            }
+        });
+
+        const sortedSubjects = Object.entries(subjectTimesFocused).sort(([, a], [, b]) => b - a);
 
         return {
-            totalDuration: formatDuration(totalMs),
+            totalDuration: formatDuration(totalFocusedMs),
             timeBySubject: sortedSubjects,
         };
     }, [history]);
@@ -107,14 +109,14 @@ const GoalHistory: React.FC<GoalHistoryProps> = ({ onBack, history, onDeleteHist
                 {history.length < 3 && !insights && <p className="text-xs text-slate-500 mt-2">Complete at least 3 goals to unlock AI Insights.</p>}
             </div>
 
-            {sortedHistory.length > 0 && (
+            {sortedHistory.length > 0 && timeBySubject.length > 0 && (
                  <div className="my-6 border-b border-t border-slate-700 py-4">
                     <h3 className="text-xl font-semibold text-slate-300 mb-3">Time by Subject</h3>
                     <div className="flex flex-wrap justify-center gap-x-6 gap-y-2">
                          {timeBySubject.map(([subject, duration]) => (
                             <div key={subject} className="text-center">
                                 <p className="text-slate-400 text-sm">{subject}</p>
-                                <p className="text-cyan-300 font-mono text-lg">{formatDuration(duration)}</p>
+                                <p className="text-cyan-300 font-mono text-lg">{formatDuration(duration as number)}</p>
                             </div>
                         ))}
                     </div>
@@ -138,8 +140,19 @@ const GoalHistory: React.FC<GoalHistoryProps> = ({ onBack, history, onDeleteHist
                         </thead>
                         <tbody className="divide-y divide-slate-700">
                             {sortedHistory.map((item: CompletedGoal) => (
-                                <tr key={item.id} className="hover:bg-slate-800/40">
-                                    <td className="p-3 font-medium">{item.goalSummary}</td>
+                                <tr key={item.id} className={`hover:bg-slate-800/40 ${item.completionReason === 'skipped' ? 'opacity-60' : ''}`}>
+                                    <td className="p-3 font-medium">
+                                        <div className="flex items-center gap-2">
+                                            {item.completionReason === 'skipped' && (
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-amber-400 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
+                                                    {/* FIX: Replaced invalid `title` attribute with a `<title>` element for accessibility. */}
+                                                    <title>Skipped</title>
+                                                    <path d="M4.555 5.168A1 1 0 003 6v8a1 1 0 001.555.832L10 11.202V14a1 1 0 001.555.832l6-4a1 1 0 000-1.664l-6-4A1 1 0 0010 6v2.798L4.555 5.168z" />
+                                                </svg>
+                                            )}
+                                            <span>{item.goalSummary}</span>
+                                        </div>
+                                    </td>
                                     <td className="p-3 text-slate-300">{item.subject}</td>
                                     <td className="p-3 text-slate-400">{formatDateTime(item.startTime)}</td>
                                     <td className="p-3 text-slate-400">{formatDateTime(item.endTime)}</td>
@@ -159,13 +172,15 @@ const GoalHistory: React.FC<GoalHistoryProps> = ({ onBack, history, onDeleteHist
                                 </tr>
                             ))}
                         </tbody>
-                        <tfoot className="border-t-2 border-slate-500 font-bold">
-                            <tr>
-                                <td colSpan={4} className="p-3 text-right text-slate-300">Total Focused Time</td>
-                                <td className="p-3 text-right text-cyan-300 font-mono text-lg">{totalDuration}</td>
-                                <td></td>
-                            </tr>
-                        </tfoot>
+                        {totalDuration !== '0s' && (
+                            <tfoot className="border-t-2 border-slate-500 font-bold">
+                                <tr>
+                                    <td colSpan={4} className="p-3 text-right text-slate-300">Total Focused Time</td>
+                                    <td className="p-3 text-right text-cyan-300 font-mono text-lg">{totalDuration}</td>
+                                    <td></td>
+                                </tr>
+                            </tfoot>
+                        )}
                     </table>
                 </div>
             )}
