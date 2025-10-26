@@ -1,6 +1,7 @@
 
 
-const CACHE_NAME = 'goal-unbox-v8';
+
+const CACHE_NAME = 'goal-unbox-v9';
 const URLS_TO_CACHE = [
   './',
   './index.html',
@@ -20,6 +21,7 @@ const URLS_TO_CACHE = [
   './components/ChatBox.js',
   './components/CodeUploader.js',
   './components/DailyCommitment.js',
+  './components/DistractionGatekeeper.js',
   './components/GoalHistory.js',
   './components/GoalSetter.js',
   './components/TodaysPlan.js',

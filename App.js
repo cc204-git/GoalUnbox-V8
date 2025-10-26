@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useEffect } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { AppState } from './types.js';
@@ -25,6 +24,22 @@ import GoalHistory from './components/GoalHistory.js';
 import Auth from './components/Auth.js';
 import ApiKeyPrompt from './components/ApiKeyPrompt.js';
 import Spinner from './components/Spinner.js';
+
+const getPenaltyGoalString = () => {
+    const today = new Date();
+    const dd = String(today.getDate()).padStart(2, '0');
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const yy = today.getFullYear().toString().slice(-2);
+    const formattedDate = `${dd}/${mm}/${yy}`;
+
+    return `I must submit proof of my handwritten homework on separate, numbered papers.
+Each paper must have the date ${formattedDate} written at the top.
+My homework consists of a single paragraph in French, which must be at least 150 words long.
+This French paragraph must be written out by hand 5 times in total.
+Each of the 5 repetitions must be clearly labeled with a highlighted heading: "Repetition 1", "Repetition 2", "Repetition 3", "Repetition 4", and "Repetition 5".
+The highlighting on the "Repetition X" headings must be clearly visible in the proof images.`;
+};
+
 
 const App = () => {
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('GEMINI_API_KEY'));
@@ -105,7 +120,8 @@ const App = () => {
             appState !== AppState.AWAITING_BREAK &&
             appState !== AppState.AWAITING_CODE &&
             appState !== AppState.BREAK_ACTIVE &&
-            appState !== AppState.BREAK_FAILED
+            appState !== AppState.BREAK_FAILED &&
+            appState !== AppState.HISTORY_VIEW
         ) {
             setAppState(AppState.TODAYS_PLAN);
         }
@@ -197,6 +213,61 @@ const App = () => {
         listeners.forEach(unsubscribe => unsubscribe());
     };
 }, [currentUser, appState]);
+
+  const handleSavePlan = (plan) => {
+      if (!currentUser) return;
+      setTodaysPlan(plan);
+      dataService.savePlan(currentUser.uid, plan);
+  };
+  
+  const createEndOfDayPenaltyGoal = (id) => {
+    return {
+        id: id,
+        subject: 'Penalty: Incomplete Day',
+        goal: getPenaltyGoalString(),
+        timeLimitInMs: null,
+        consequence: "Complete this penalty to unlock today's other goals.",
+        startTime: "00:00",
+        endTime: "00:01", // Ensures it's at the top
+        status: 'pending',
+    };
+  };
+
+  useEffect(() => {
+    const checkPenaltyAndApply = async () => {
+        if (!currentUser || activeGoal !== null || !todaysPlan) {
+            return;
+        }
+        const todayStr = getISODateString(new Date());
+        const penaltyCheckKey = `penalty_check_for_${currentUser.uid}`;
+        if (sessionStorage.getItem(penaltyCheckKey) === todayStr) {
+            return;
+        }
+
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdaysPlan = await dataService.loadPlan(currentUser.uid, yesterday);
+
+        if (yesterdaysPlan && yesterdaysPlan.goals.length > 0 && yesterdaysPlan.goals.some(g => g.status === 'pending')) {
+            const penaltyId = `PENALTY-${getISODateString(yesterday)}`;
+            
+            if (todaysPlan.goals.some(g => g.id === penaltyId)) {
+                sessionStorage.setItem(penaltyCheckKey, todayStr);
+                return;
+            }
+
+            const penaltyGoal = createEndOfDayPenaltyGoal(penaltyId);
+            const updatedPlan = {
+                ...todaysPlan,
+                goals: [penaltyGoal, ...todaysPlan.goals],
+            };
+            handleSavePlan(updatedPlan);
+        }
+        sessionStorage.setItem(penaltyCheckKey, todayStr);
+    };
+    checkPenaltyAndApply();
+  }, [currentUser, todaysPlan, activeGoal]);
+
 
   const clearApiKey = useCallback(() => {
     localStorage.removeItem('GEMINI_API_KEY');
@@ -502,19 +573,13 @@ const App = () => {
       dataService.saveStreakData(currentUser.uid, newData);
   };
 
-    const handleSavePlan = (plan) => {
-        if (!currentUser) return;
-        setTodaysPlan(plan);
-        dataService.savePlan(currentUser.uid, plan);
-    };
-
     const handleStartPlannedGoal = (goalToStart) => {
         setGoal(goalToStart.goal); setSubject(goalToStart.subject);
         setTimeLimitInMs(goalToStart.timeLimitInMs); setConsequence(goalToStart.consequence);
         setActivePlannedGoal(goalToStart); setAppState(AppState.AWAITING_CODE);
     };
 
-    const handleSkipBreak = () => {
+    const handleFinishDay = () => {
         setAppState(AppState.GOAL_COMPLETED);
     };
 
@@ -576,6 +641,54 @@ const App = () => {
         setCompletedSecretCodeImage(null); setBreakChoice(null);
         setVerificationFeedback(null); setChat(null); setChatMessages([]);
     }, [nextGoal, currentUser, todaysPlan]);
+    
+    const handlePenaltyCodeSubmit = useCallback(async (file) => {
+        if (!currentUser) return;
+        setIsLoading(true);
+        setError(null);
+        
+        let tempSecretCodeImage = null;
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        const imagePromise = new Promise(resolve => {
+            reader.onload = () => {
+                tempSecretCodeImage = reader.result;
+                resolve();
+            };
+        });
+
+        try {
+            const base64 = await fileToBase64(file);
+            await imagePromise;
+
+            const code = await extractCodeFromImage(base64, file.type);
+            const penaltyGoal = getPenaltyGoalString();
+            const goalStartTime = Date.now();
+            
+            const activeState = { 
+                secretCode: code, 
+                secretCodeImage: tempSecretCodeImage, 
+                goal: penaltyGoal, 
+                subject: 'Penalty Task', 
+                goalSetTime: goalStartTime, 
+                timeLimitInMs: null, 
+                consequence: "Regain access to the app's normal functions."
+            };
+            
+            setBreakEndTime(null);
+            setAvailableBreakTime(null);
+            setNextGoal(null);
+            setCompletedSecretCodeImage(null);
+            setBreakChoice(null);
+            
+            await dataService.saveActiveGoal(currentUser.uid, activeState);
+        } catch (err) {
+            handleApiError(err);
+        } finally {
+            setIsLoading(false);
+        }
+    }, [currentUser, handleApiError]);
+
 
     useEffect(() => {
         let intervalId;
@@ -628,22 +741,49 @@ const App = () => {
       case AppState.GOAL_COMPLETED: return React.createElement(VerificationResult, { isSuccess: true, secretCodeImage: secretCodeImage || completedSecretCodeImage, feedback: verificationFeedback, onRetry: handleRetry, onReset: () => resetToStart(false), completionDuration, completionReason });
       
       case AppState.AWAITING_BREAK: {
+            const isLastGoal = todaysPlan?.goals.length > 0 && todaysPlan.goals.every(g => g.status !== 'pending');
+
+            if (isLastGoal) {
+                return React.createElement('div', { className: 'bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full max-w-md text-center animate-fade-in' },
+                    React.createElement('h2', { className: 'text-3xl font-bold mb-4 text-green-400' }, 'All Goals Completed!'),
+                    React.createElement('p', { className: 'text-slate-300 mb-6' }, "Excellent work! You've finished everything for today. Your final unlock code is available."),
+                    React.createElement('button', {
+                        onClick: handleFinishDay,
+                        className: 'w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400 transition-all duration-300'
+                    }, 'View Code & Finish Day')
+                );
+            }
+
             const uncompletedGoals = (todaysPlan?.goals.filter(g => g.status === 'pending') ?? []).sort((a, b) => a.startTime.localeCompare(b.startTime));
-            return React.createElement('div', { className: 'w-full max-w-2xl flex flex-col items-center gap-6' },
-                React.createElement('div', { className: 'w-full text-center bg-slate-800/80 backdrop-blur-sm p-3 rounded-lg border border-slate-700' },
-                    React.createElement('p', { className: 'text-sm text-slate-400 uppercase tracking-wider' }, 'Prepare Next Goal In'),
-                    React.createElement('p', { className: `text-3xl font-mono ${nextGoalSelectionCountdown !== null && nextGoalSelectionCountdown < 30000 ? 'text-red-400' : 'text-cyan-300'}` }, formatCountdown(nextGoalSelectionCountdown ?? 0))
-                ),
-                React.createElement('div', { className: 'w-full max-w-lg flex justify-center' },
-                    !breakChoice ? React.createElement('div', { className: 'bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full text-center' },
-                        React.createElement('h2', { className: 'text-xl font-semibold mb-4 text-slate-200' }, 'Prepare Your Next Goal'),
-                        React.createElement('div', { className: 'flex flex-col sm:flex-row gap-4' },
-                            React.createElement('button', { onClick: () => setBreakChoice('plan'), className: 'flex-1 bg-slate-700 text-white font-bold py-3 px-4 rounded-lg hover:bg-slate-600 transition-colors', disabled: uncompletedGoals.length === 0 }, `Choose from Plan ${uncompletedGoals.length === 0 ? "(None Left)" : ""}`),
-                            React.createElement('button', { onClick: () => setBreakChoice('new'), className: 'flex-1 bg-slate-700 text-white font-bold py-3 px-4 rounded-lg hover:bg-slate-600 transition-colors' }, 'Set a New Goal')
-                        ),
-                        React.createElement('button', { onClick: handleSkipBreak, className: 'mt-6 text-sm text-slate-500 hover:text-white' }, 'Skip Break & Finish')
-                    ) : breakChoice === 'new' ? React.createElement(GoalSetter, { onGoalSubmit: handleNextGoalSubmit, isLoading: false, submitButtonText: 'Confirm & Start Break', onCancel: () => setBreakChoice(null) })
-                    : breakChoice === 'plan' ? React.createElement('div', { className: 'bg-slate-800/50 border border-slate-700 p-6 rounded-lg shadow-2xl w-full text-center' },
+            const now = new Date();
+            const hour = now.getHours();
+            const minute = now.getMinutes();
+            const showLunchButton = (hour === 12 && minute >= 30) || hour === 13;
+            const showDinnerButton = hour === 20;
+            const FORTY_FIVE_MINS_MS = 45 * 60 * 1000;
+
+            const mealBreakSection = (!breakChoice && (showLunchButton || showDinnerButton)) ? React.createElement('div', { className: 'bg-slate-800/50 border border-slate-700 p-6 rounded-lg shadow-2xl w-full text-center' },
+                React.createElement('h3', { className: 'text-lg font-semibold text-slate-200 mb-3' }, 'Or Take a Meal Break?'),
+                React.createElement('div', { className: 'flex flex-col sm:flex-row gap-4' },
+                    showLunchButton && React.createElement('button', { onClick: () => setAvailableBreakTime(FORTY_FIVE_MINS_MS), className: 'flex-1 bg-amber-600/50 border border-amber-500/50 text-amber-300 font-semibold py-3 px-4 rounded-lg hover:bg-amber-600/70 transition-colors' }, 'Lunch Time (45 min)'),
+                    showDinnerButton && React.createElement('button', { onClick: () => setAvailableBreakTime(FORTY_FIVE_MINS_MS), className: 'flex-1 bg-indigo-600/50 border border-indigo-500/50 text-indigo-300 font-semibold py-3 px-4 rounded-lg hover:bg-indigo-600/70 transition-colors' }, 'Dinner Time (45 min)')
+                )
+            ) : null;
+
+            let mainContent;
+            if (!breakChoice) {
+                mainContent = React.createElement('div', { className: 'bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full text-center' },
+                    React.createElement('h2', { className: 'text-xl font-semibold mb-2 text-slate-200' }, 'Prepare Your Next Goal'),
+                    React.createElement('p', { className: 'text-slate-400 mb-4' }, 'You have a break of ', React.createElement('span', {className: 'text-cyan-300 font-bold'}, formatDuration(availableBreakTime ?? 0)), '.'),
+                    React.createElement('div', { className: 'flex flex-col sm:flex-row gap-4' },
+                        React.createElement('button', { onClick: () => setBreakChoice('plan'), className: 'flex-1 bg-slate-700 text-white font-bold py-3 px-4 rounded-lg hover:bg-slate-600 transition-colors', disabled: uncompletedGoals.length === 0 }, `Choose from Plan ${uncompletedGoals.length === 0 ? "(None Left)" : ""}`),
+                        React.createElement('button', { onClick: () => setBreakChoice('new'), className: 'flex-1 bg-slate-700 text-white font-bold py-3 px-4 rounded-lg hover:bg-slate-600 transition-colors' }, 'Set a New Goal')
+                    )
+                );
+            } else if (breakChoice === 'new') {
+                mainContent = React.createElement(GoalSetter, { onGoalSubmit: handleNextGoalSubmit, isLoading: false, submitButtonText: 'Confirm & Start Break', onCancel: () => setBreakChoice(null) });
+            } else if (breakChoice === 'plan') {
+                 mainContent = React.createElement('div', { className: 'bg-slate-800/50 border border-slate-700 p-6 rounded-lg shadow-2xl w-full text-center' },
                         React.createElement('h2', { className: 'text-xl font-semibold mb-4 text-slate-200' }, 'Select Next Goal from Plan'),
                         React.createElement('div', { className: 'space-y-3 max-h-64 overflow-y-auto pr-2' },
                             uncompletedGoals.map(g => React.createElement('div', { key: g.id, className: 'p-3 bg-slate-900/50 border border-slate-700 rounded-lg text-left flex items-center justify-between gap-4' },
@@ -656,7 +796,18 @@ const App = () => {
                             ))
                         ),
                         React.createElement('button', { onClick: () => setBreakChoice(null), className: 'mt-4 text-slate-400 hover:text-white text-sm' }, 'Back')
-                    ) : null
+                    );
+            }
+
+
+            return React.createElement('div', { className: 'w-full max-w-2xl flex flex-col items-center gap-6' },
+                React.createElement('div', { className: 'w-full text-center bg-slate-800/80 backdrop-blur-sm p-3 rounded-lg border border-slate-700' },
+                    React.createElement('p', { className: 'text-sm text-slate-400 uppercase tracking-wider' }, 'Prepare Next Goal In'),
+                    React.createElement('p', { className: `text-3xl font-mono ${nextGoalSelectionCountdown !== null && nextGoalSelectionCountdown < 30000 ? 'text-red-400' : 'text-cyan-300'}` }, formatCountdown(nextGoalSelectionCountdown ?? 0))
+                ),
+                React.createElement('div', { className: 'w-full max-w-lg flex flex-col justify-center gap-4' },
+                   mealBreakSection,
+                   mainContent
                 )
             );
         }
@@ -689,9 +840,25 @@ const App = () => {
         }
 
        case AppState.BREAK_FAILED:
-            return React.createElement('div', { className: 'bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full max-w-md text-center animate-fade-in' },
-                React.createElement(Alert, { message: 'Break failed. You either ran out of time to prepare the next goal or did not submit the new code in time.', type: 'error' }),
-                React.createElement('button', { onClick: () => resetToStart(false), className: 'w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400' }, 'Back to Plan')
+            const penaltyGoalDescription = getPenaltyGoalString();
+            return React.createElement('div', { className: 'w-full max-w-lg flex flex-col items-center gap-6' },
+                React.createElement(Alert, { message: "Break Failed. You did not prepare your next goal in time.", type: "error" }),
+                React.createElement('div', { className: "bg-slate-800/50 border border-amber-500/50 p-6 rounded-lg shadow-2xl w-full text-left animate-fade-in" },
+                    React.createElement('h3', { className: "text-xl font-semibold mb-2 text-amber-300" }, "Penalty Task Required"),
+                    React.createElement('p', { className: "text-slate-300 whitespace-pre-wrap" }, penaltyGoalDescription)
+                ),
+                React.createElement(CodeUploader, {
+                    onCodeImageSubmit: handlePenaltyCodeSubmit,
+                    isLoading: isLoading,
+                    title: "Sequester New Code",
+                    description: "To begin your penalty task, you must first lock your phone. Take a picture of the new 3-digit code on your lock box.",
+                    onShowHistory: handleShowHistory,
+                    onLogout: handleLogout,
+                    currentUser: currentUser,
+                    streakData: null,
+                    onSetCommitment: () => {},
+                    onCompleteCommitment: () => {}
+                })
             );
       default: return React.createElement('div', { className: 'flex justify-center items-center p-8' }, React.createElement(Spinner, null));
     }
@@ -703,7 +870,7 @@ const App = () => {
     React.createElement(Header, null),
     React.createElement(
       'main', { className: 'w-full flex flex-col items-center justify-center' },
-      error && React.createElement(Alert, { message: error, type: 'error' }),
+      error && React.createElement(Alert, { message: error, type: "error" }),
       appState === AppState.GOAL_SET && verificationFeedback && React.createElement(
         'div', { className: 'w-full max-w-lg mb-4 flex justify-center' },
         React.createElement(VerificationResult, { isSuccess: false, secretCodeImage: null, feedback: verificationFeedback, onRetry: handleRetry, onReset: () => resetToStart(false), chatMessages, onSendChatMessage: handleSendChatMessage, isChatLoading })

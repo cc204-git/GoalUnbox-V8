@@ -1,6 +1,7 @@
 
+
 import { GoogleGenAI, Type, Chat, Content } from "@google/genai";
-import { CompletedGoal } from "../types";
+import { CompletedGoal, PlannedGoal } from "../types";
 
 let ai: GoogleGenAI | null = null;
 let usedApiKey: string | null = null;
@@ -144,13 +145,13 @@ export const summarizeGoal = async (goal: string): Promise<string> => {
 
 export const generateHistoryInsights = async (history: CompletedGoal[]): Promise<string> => {
     const prompt = `
-        You are a productivity coach analyzing a user's goal history. Based on the following JSON data of their completed goals, provide actionable insights and encouraging feedback.
+        You are a productivity coach analyzing a user's goal history from the past week. Based on the following JSON data of their completed goals, provide a "Weekly Productivity Report" with actionable insights and encouraging feedback.
         Analyze their work patterns, subjects they focus on, goal completion times, and consistency.
-        Identify their strengths (e.g., "You're great at focusing on 'Work' goals in the morning").
-        Point out potential areas for improvement (e.g., "It seems you struggle with longer goals. Maybe try breaking them down?").
-        Keep the tone positive and motivational. Format the output as a concise, easy-to-read summary. Use markdown for formatting, like bullet points.
+        Identify their strengths (e.g., "You had great focus on 'Work' goals this week, especially in the morning").
+        Point out potential areas for improvement (e.g., "It seems longer goals are a challenge. Have you considered breaking them down into smaller steps?").
+        Keep the tone positive and motivational. Format the output as a concise, easy-to-read summary. Use markdown for formatting, like bullet points and bold text.
 
-        Here is the user's goal history:
+        Here is the user's goal history for the week:
         ${JSON.stringify(history, null, 2)}
     `;
     try {
@@ -223,125 +224,43 @@ export const extractScheduleFromImage = async (base64Image: string, mimeType: st
     throw handleApiError(error);
   }
 };
-// FIX: Add missing French test generation and grading functions and types.
-export interface FrenchTestQuestion {
-    question: string;
-    options: string[];
-    answer: string; // The correct option letter, e.g., "A"
+
+export interface SmartScheduleResult {
+    scheduled_goal_ids: string[];
 }
 
-export interface FrenchTestData {
-    paragraphB2: string;
-    paragraphC1: string;
-    questions: FrenchTestQuestion[];
-}
-
-export interface GradingResult {
-    passed: boolean;
-    scorePercentage: number;
-    corrections: {
-        questionNumber: number;
-        userAnswer: string;
-        correctAnswer: string;
-        explanation: string;
-    }[];
-}
-
-const frenchTestSchema = {
+const smartScheduleSchema = {
     type: Type.OBJECT,
     properties: {
-        paragraphB2: { type: Type.STRING, description: "A French paragraph of 4-5 sentences at a B2 CEFR level on a topic of general interest." },
-        paragraphC1: { type: Type.STRING, description: "An improved, more nuanced version of the B2 paragraph, elevated to a C1 CEFR level with more complex vocabulary and sentence structures." },
-        questions: {
+        scheduled_goal_ids: {
             type: Type.ARRAY,
-            description: "An array of 20 multiple-choice questions.",
-            items: {
-                type: Type.OBJECT,
-                properties: {
-                    question: { type: Type.STRING, description: "The question text in French." },
-                    options: { type: Type.ARRAY, items: { type: Type.STRING }, description: "An array of 4 possible answers (A, B, C, D)." },
-                    answer: { type: Type.STRING, description: "The letter of the correct option (e.g., 'A')." }
-                },
-                required: ["question", "options", "answer"]
-            }
+            description: "An array of goal IDs in the optimally scheduled order.",
+            items: { type: Type.STRING }
         }
     },
-    required: ["paragraphB2", "paragraphC1", "questions"]
+    required: ["scheduled_goal_ids"]
 };
 
-export const generateFrenchTest = async (level: 'B2' | 'C1'): Promise<FrenchTestData> => {
-    const prompt = `
-        Generate a French language test for a user at the ${level} CEFR level. The test must follow this structure:
-        1.  A short paragraph (4-5 sentences) in French at a B2 level on a topic like technology, environment, or culture.
-        2.  An "improved" version of the same paragraph, elevated to a C1 level with more sophisticated vocabulary and complex grammar.
-        3.  A total of 20 multiple-choice questions in French, with 4 options each (A, B, C, D).
-            - The first 10 questions should be based on the provided paragraphs (testing reading comprehension, vocabulary, and grammar from the texts).
-            - The next 10 questions should be general knowledge French questions appropriate for the ${level} level, covering grammar, idioms, and cultural nuances.
-        
-        Ensure all questions have exactly 4 options and a single correct answer specified by its letter.
-        Return the entire test as a single JSON object matching the provided schema.
-    `;
-    try {
-        const ai = getAiClient();
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-pro',
-            contents: prompt,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: frenchTestSchema,
-            }
-        });
-
-        const result = JSON.parse(response.text) as FrenchTestData;
-        if (!result.questions || result.questions.length !== 20 || !result.paragraphB2 || !result.paragraphC1) {
-            throw new Error("AI returned an incomplete or invalid test structure.");
-        }
-        return result;
-    } catch (error) {
-        console.error("Error generating French test:", error);
-        throw handleApiError(error);
-    }
-};
-
-const gradingSchema = {
-    type: Type.OBJECT,
-    properties: {
-        passed: { type: Type.BOOLEAN },
-        scorePercentage: { type: Type.NUMBER },
-        corrections: {
-            type: Type.ARRAY,
-            items: {
-                type: Type.OBJECT,
-                properties: {
-                    questionNumber: { type: Type.NUMBER },
-                    userAnswer: { type: Type.STRING },
-                    correctAnswer: { type: Type.STRING },
-                    explanation: { type: Type.STRING }
-                },
-                required: ["questionNumber", "userAnswer", "correctAnswer", "explanation"]
-            }
-        }
-    },
-    required: ["passed", "scorePercentage", "corrections"]
-};
-
-export const gradeFrenchTest = async (questions: FrenchTestQuestion[], userAnswers: { [key: number]: string }): Promise<GradingResult> => {
-    const answersForGrading = questions.map((q, index) => ({
-        question: q.question,
-        options: q.options,
-        correctAnswerLetter: q.answer,
-        userAnswerLetter: userAnswers[index] || "Not answered"
+export const generateSmartSchedule = async (goals: PlannedGoal[]): Promise<SmartScheduleResult> => {
+    const goalDataForAI = goals.map(g => ({
+        id: g.id,
+        subject: g.subject,
+        description: g.goal,
+        duration_minutes: g.timeLimitInMs ? g.timeLimitInMs / 60000 : 60, // Assume 60 mins if not set
+        start_time: g.startTime,
     }));
 
     const prompt = `
-        You are a French language test grader. Grade the following test based on the user's answers. The pass mark is 80%.
-        For each incorrect answer, provide a concise, helpful explanation in English about why the user's choice was wrong and the correct answer was right.
-        Respond ONLY with a JSON object matching the provided schema.
+        You are a productivity expert. Below is a list of tasks for the day.
+        Analyze the tasks, their subjects, and estimated durations.
+        Some tasks may be mentally draining (e.g., 'Analyse', 'Algebre'), while others might be lighter (e.g., 'Anki Review').
+        Create an optimal schedule by ordering the goal IDs to maximize focus and prevent burnout.
+        Consider starting with a medium-difficulty task to warm up, tackling the most demanding tasks when focus is highest (usually mid-morning), and placing lighter tasks towards the end of the day or after difficult ones.
+        Respond ONLY with a JSON object containing the ordered list of goal IDs.
 
-        Test data:
-        ${JSON.stringify(answersForGrading, null, 2)}
+        Today's Tasks:
+        ${JSON.stringify(goalDataForAI, null, 2)}
     `;
-
     try {
         const ai = getAiClient();
         const response = await ai.models.generateContent({
@@ -349,13 +268,66 @@ export const gradeFrenchTest = async (questions: FrenchTestQuestion[], userAnswe
             contents: prompt,
             config: {
                 responseMimeType: "application/json",
-                responseSchema: gradingSchema,
+                responseSchema: smartScheduleSchema,
             }
         });
-
-        return JSON.parse(response.text) as GradingResult;
+        return JSON.parse(response.text) as SmartScheduleResult;
     } catch (error) {
-        console.error("Error grading French test:", error);
         throw handleApiError(error);
     }
+};
+
+export interface GatekeeperResponse {
+  response_text: string;
+  allow_skip: boolean;
+}
+
+const gatekeeperSchema = {
+    type: Type.OBJECT,
+    properties: {
+        response_text: {
+            type: Type.STRING,
+            description: "Your conversational reply to the user."
+        },
+        allow_skip: {
+            type: Type.BOOLEAN,
+            description: "Set to true only if the user provides a valid, urgent reason."
+        }
+    },
+    required: ["response_text", "allow_skip"]
+};
+
+const gatekeeperSystemInstruction = `You are a distraction gatekeeper, a firm but fair productivity coach. The user wants to skip their current goal. Your job is to challenge them and keep them on track.
+
+1.  Start by asking for their reason for wanting to skip.
+2.  Analyze their reason.
+    -   If the reason is weak (e.g., "I'm bored," "I'm tired," "It's too hard"), offer encouragement. Suggest a 5-minute break, remind them of why they set the goal, or mention the consequence they set for themselves. DO NOT allow the skip.
+    -   If the reason is a genuine emergency or an unavoidable, urgent interruption (e.g., "power outage," "family emergency," "unexpected important appointment"), be understanding and allow the skip.
+3.  You MUST respond ONLY with a JSON object matching the provided schema.
+4.  Set "allow_skip" to true ONLY for valid, urgent reasons. Otherwise, it MUST be false.
+5.  Keep your responses concise and conversational.`;
+
+
+export const createGatekeeperChat = (goal: string, consequence: string | null): Chat => {
+    const ai = getAiClient();
+    const history: Content[] = [
+        {
+            role: 'user',
+            parts: [{ text: `My goal is: "${goal}". ${consequence ? `My consequence for failure is: "${consequence}".` : ''} I want to skip it.` }]
+        },
+        {
+            role: 'model',
+            parts: [{ text: JSON.stringify({ response_text: "I see. Before you do that, can you tell me why you need to skip this goal?", allow_skip: false }) }]
+        }
+    ];
+
+    return ai.chats.create({
+        model: 'gemini-2.5-flash',
+        history: history,
+        config: {
+            systemInstruction: gatekeeperSystemInstruction,
+            responseMimeType: "application/json",
+            responseSchema: gatekeeperSchema
+        },
+    });
 };

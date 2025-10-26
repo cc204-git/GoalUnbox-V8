@@ -1,8 +1,10 @@
 
+
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import Spinner from './Spinner.js';
 import CameraCapture from './CameraCapture.js';
 import { formatCountdown } from '../utils/timeUtils.js';
+import DistractionGatekeeper from './DistractionGatekeeper.js';
 
 const PDFIcon = () => React.createElement(
     'svg', { xmlns: 'http://www.w3.org/2000/svg', className: 'h-8 w-8 text-red-400', viewBox: '0 0 20 20', fill: 'currentColor' },
@@ -18,6 +20,7 @@ const ProofUploader = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeL
   const [isTimeUp, setIsTimeUp] = useState(false);
   const [elapsedTime, setElapsedTime] = useState(null);
   const [showPreviousCodeModal, setShowPreviousCodeModal] = useState(false);
+  const [showGatekeeper, setShowGatekeeper] = useState(false);
 
   useEffect(() => {
     if (!goalSetTime || isLoading) return;
@@ -155,7 +158,7 @@ const ProofUploader = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeL
             React.createElement(
                 'button',
                 {
-                    onClick: onSkipGoal,
+                    onClick: () => setShowGatekeeper(true),
                     disabled: isLoading || skipsLeftThisWeek <= 0,
                     className: 'text-sm text-slate-500 hover:text-amber-400 transition-colors duration-300 flex items-center justify-center gap-2 disabled:text-slate-600 disabled:hover:text-slate-600 disabled:cursor-not-allowed',
                     title: skipsLeftThisWeek > 0 ? `Skip this goal. You have ${skipsLeftThisWeek} skips left this week.` : 'You have no skips left for this week.'
@@ -226,6 +229,15 @@ const ProofUploader = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeL
     React.Fragment,
     null,
     showCamera && React.createElement(CameraCapture, { onCapture: handleCapture, onCancel: () => setShowCamera(false) }),
+    showGatekeeper && React.createElement(DistractionGatekeeper, {
+        goal,
+        consequence,
+        onConfirmSkip: () => {
+            setShowGatekeeper(false);
+            onSkipGoal();
+        },
+        onCancel: () => setShowGatekeeper(false)
+    }),
     React.createElement(
       'div',
       { className: 'relative bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full max-w-2xl text-center animate-fade-in' },

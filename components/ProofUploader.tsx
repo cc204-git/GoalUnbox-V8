@@ -1,8 +1,10 @@
 
+
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import Spinner from './Spinner';
 import CameraCapture from './CameraCapture';
 import { formatCountdown } from '../utils/timeUtils';
+import DistractionGatekeeper from './DistractionGatekeeper';
 
 interface ProofUploaderProps {
   goal: string;
@@ -39,6 +41,7 @@ const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit,
   const [isTimeUp, setIsTimeUp] = useState(false);
   const [elapsedTime, setElapsedTime] = useState<string | null>(null);
   const [showPreviousCodeModal, setShowPreviousCodeModal] = useState(false);
+  const [showGatekeeper, setShowGatekeeper] = useState(false);
 
   // Effect for the elapsed time count-up timer
   useEffect(() => {
@@ -161,6 +164,17 @@ const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit,
   return (
     <>
       {showCamera && <CameraCapture onCapture={handleCapture} onCancel={() => setShowCamera(false)} />}
+      {showGatekeeper && (
+        <DistractionGatekeeper
+          goal={goal}
+          consequence={consequence}
+          onConfirmSkip={() => {
+            setShowGatekeeper(false);
+            onSkipGoal();
+          }}
+          onCancel={() => setShowGatekeeper(false)}
+        />
+      )}
       <div className="relative bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full max-w-2xl text-center animate-fade-in">
         <button
             onClick={() => setShowPreviousCodeModal(true)}
@@ -266,7 +280,7 @@ const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit,
         <div className="mt-8 text-center flex items-center justify-center gap-6">
             <div className="flex flex-col items-center">
                 <button
-                    onClick={onSkipGoal}
+                    onClick={() => setShowGatekeeper(true)}
                     disabled={isLoading || skipsLeftThisWeek <= 0}
                     className="text-sm text-slate-500 hover:text-amber-400 transition-colors duration-300 flex items-center justify-center gap-2 disabled:text-slate-600 disabled:hover:text-slate-600 disabled:cursor-not-allowed"
                     title={skipsLeftThisWeek > 0 ? `Skip this goal. You have ${skipsLeftThisWeek} skips left this week.` : 'You have no skips left for this week.'}

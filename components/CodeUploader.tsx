@@ -13,6 +13,8 @@ interface CodeUploaderProps {
   streakData: StreakData | null;
   onSetCommitment: (text: string) => void;
   onCompleteCommitment: () => void;
+  title?: string;
+  description?: string;
 }
 
 const CodeUploader: React.FC<CodeUploaderProps> = ({ 
@@ -24,6 +26,8 @@ const CodeUploader: React.FC<CodeUploaderProps> = ({
     streakData,
     onSetCommitment,
     onCompleteCommitment,
+    title = "Step 1: Sequester Your Code",
+    description = "Take a picture of the 3-digit code on your lock box. The code will be hidden until your goal is complete."
 }) => {
   const [file, setFile] = useState<File | null>(null);
   const [showCamera, setShowCamera] = useState(false);
@@ -69,6 +73,7 @@ const CodeUploader: React.FC<CodeUploaderProps> = ({
                     </svg>
                 </button>
             )}
+            { currentUser && 
             <button
                 onClick={onShowHistory}
                 className="text-slate-500 hover:text-cyan-400 transition-colors p-2"
@@ -79,13 +84,14 @@ const CodeUploader: React.FC<CodeUploaderProps> = ({
                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
             </button>
+            }
         </div>
 
         {currentUser && !currentUser.isAnonymous && <p className="text-sm text-slate-500 mb-6 -mt-2 text-left">Logged in as: <strong>{currentUser.email}</strong></p>}
         {currentUser && currentUser.isAnonymous && <p className="text-sm text-slate-500 mb-6 -mt-2 text-left">Logged in as: <strong>Guest</strong></p>}
 
-        <h2 className="text-2xl font-semibold mb-2 text-cyan-300">Step 1: Sequester Your Code</h2>
-        <p className="text-slate-400 mb-6">Take a picture of the 3-digit code on your lock box. The code will be hidden until your goal is complete.</p>
+        <h2 className="text-2xl font-semibold mb-2 text-cyan-300">{title}</h2>
+        <p className="text-slate-400 mb-6">{description}</p>
         
         <input
           type="file"

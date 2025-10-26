@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useEffect } from 'react';
 import { User, onAuthStateChanged } from 'firebase/auth';
 import { Unsubscribe } from 'firebase/firestore';
@@ -31,6 +30,22 @@ import Spinner from './components/Spinner';
 import { Chat } from '@google/genai';
 
 type CompletionReason = 'verified' | 'skipped';
+
+const getPenaltyGoalString = (): string => {
+    const today = new Date();
+    const dd = String(today.getDate()).padStart(2, '0');
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const yy = today.getFullYear().toString().slice(-2);
+    const formattedDate = `${dd}/${mm}/${yy}`;
+
+    return `I must submit proof of my handwritten homework on separate, numbered papers.
+Each paper must have the date ${formattedDate} written at the top.
+My homework consists of a single paragraph in French, which must be at least 150 words long.
+This French paragraph must be written out by hand 5 times in total.
+Each of the 5 repetitions must be clearly labeled with a highlighted heading: "Repetition 1", "Repetition 2", "Repetition 3", "Repetition 4", and "Repetition 5".
+The highlighting on the "Repetition X" headings must be clearly visible in the proof images.`;
+};
+
 
 const App: React.FC = () => {
   const [apiKey, setApiKey] = useState<string | null>(() => localStorage.getItem('GEMINI_API_KEY'));
@@ -121,7 +136,8 @@ const App: React.FC = () => {
             appState !== AppState.AWAITING_BREAK &&
             appState !== AppState.AWAITING_CODE &&
             appState !== AppState.BREAK_ACTIVE &&
-            appState !== AppState.BREAK_FAILED
+            appState !== AppState.BREAK_FAILED &&
+            appState !== AppState.HISTORY_VIEW
         ) {
             setAppState(AppState.TODAYS_PLAN);
         }
@@ -217,6 +233,62 @@ const App: React.FC = () => {
         listeners.forEach(unsubscribe => unsubscribe());
     };
 }, [currentUser, appState]);
+
+  const handleSavePlan = (plan: TodaysPlan) => {
+      if (!currentUser) return;
+      setTodaysPlan(plan);
+      dataService.savePlan(currentUser.uid, plan);
+  };
+
+  const createEndOfDayPenaltyGoal = (id: string): PlannedGoal => {
+    return {
+        id: id,
+        subject: 'Penalty: Incomplete Day',
+        goal: getPenaltyGoalString(),
+        timeLimitInMs: null,
+        consequence: "Complete this penalty to unlock today's other goals.",
+        startTime: "00:00",
+        endTime: "00:01", // Ensures it's at the top
+        status: 'pending',
+    };
+};
+  
+  // Effect to check for end-of-day penalty
+  useEffect(() => {
+    const checkPenaltyAndApply = async () => {
+        if (!currentUser || activeGoal !== null || !todaysPlan) {
+            return;
+        }
+        const todayStr = getISODateString(new Date());
+        const penaltyCheckKey = `penalty_check_for_${currentUser.uid}`;
+        if (sessionStorage.getItem(penaltyCheckKey) === todayStr) {
+            return;
+        }
+
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdaysPlan = await dataService.loadPlan(currentUser.uid, yesterday);
+
+        if (yesterdaysPlan && yesterdaysPlan.goals.length > 0 && yesterdaysPlan.goals.some(g => g.status === 'pending')) {
+            const penaltyId = `PENALTY-${getISODateString(yesterday)}`;
+            
+            if (todaysPlan.goals.some(g => g.id === penaltyId)) {
+                sessionStorage.setItem(penaltyCheckKey, todayStr);
+                return;
+            }
+
+            const penaltyGoal = createEndOfDayPenaltyGoal(penaltyId);
+            const updatedPlan = {
+                ...todaysPlan,
+                goals: [penaltyGoal, ...todaysPlan.goals],
+            };
+            handleSavePlan(updatedPlan);
+        }
+        sessionStorage.setItem(penaltyCheckKey, todayStr);
+    };
+    checkPenaltyAndApply();
+  }, [currentUser, todaysPlan, activeGoal]);
+
 
   const clearApiKey = useCallback(() => {
     localStorage.removeItem('GEMINI_API_KEY');
@@ -525,19 +597,13 @@ const App: React.FC = () => {
       dataService.saveStreakData(currentUser.uid, newData);
   };
 
-    const handleSavePlan = (plan: TodaysPlan) => {
-        if (!currentUser) return;
-        setTodaysPlan(plan);
-        dataService.savePlan(currentUser.uid, plan);
-    };
-
     const handleStartPlannedGoal = (goalToStart: PlannedGoal) => {
         setGoal(goalToStart.goal); setSubject(goalToStart.subject);
         setTimeLimitInMs(goalToStart.timeLimitInMs); setConsequence(goalToStart.consequence);
         setActivePlannedGoal(goalToStart); setAppState(AppState.AWAITING_CODE);
     };
 
-    const handleSkipBreak = () => {
+    const handleFinishDay = () => {
         setAppState(AppState.GOAL_COMPLETED);
     };
 
@@ -600,6 +666,56 @@ const App: React.FC = () => {
         setVerificationFeedback(null); setChat(null); setChatMessages([]);
         // The listener on activeGoal will transition the state
     }, [nextGoal, currentUser, todaysPlan]);
+    
+    const handlePenaltyCodeSubmit = useCallback(async (file: File) => {
+        if (!currentUser) return;
+        setIsLoading(true);
+        setError(null);
+        
+        let tempSecretCodeImage: string | null = null;
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        const imagePromise = new Promise<void>(resolve => {
+            reader.onload = () => {
+                tempSecretCodeImage = reader.result as string;
+                resolve();
+            };
+        });
+
+        try {
+            const base64 = await fileToBase64(file);
+            await imagePromise;
+
+            const code = await extractCodeFromImage(base64, file.type);
+            const penaltyGoal = getPenaltyGoalString();
+            const goalStartTime = Date.now();
+            
+            const activeState: ActiveGoalState = { 
+                secretCode: code, 
+                secretCodeImage: tempSecretCodeImage!, 
+                goal: penaltyGoal, 
+                subject: 'Penalty Task', 
+                goalSetTime: goalStartTime, 
+                timeLimitInMs: null, 
+                consequence: "Regain access to the app's normal functions."
+            };
+            
+            // Reset break-related state before setting the new goal
+            setBreakEndTime(null);
+            setAvailableBreakTime(null);
+            setNextGoal(null);
+            setCompletedSecretCodeImage(null);
+            setBreakChoice(null);
+            
+            await dataService.saveActiveGoal(currentUser.uid, activeState);
+            // The listener will handle setting the app state to GOAL_SET
+        } catch (err) {
+            handleApiError(err);
+        } finally {
+            setIsLoading(false);
+        }
+    }, [currentUser, handleApiError]);
+
 
     useEffect(() => {
         let intervalId: number | undefined;
@@ -652,7 +768,31 @@ const App: React.FC = () => {
       case AppState.GOAL_COMPLETED: return <VerificationResult isSuccess={true} secretCodeImage={secretCodeImage || completedSecretCodeImage} feedback={verificationFeedback} onRetry={handleRetry} onReset={() => resetToStart(false)} completionDuration={completionDuration} completionReason={completionReason} />;
       
       case AppState.AWAITING_BREAK: {
+            const isLastGoal = todaysPlan?.goals.length > 0 && todaysPlan.goals.every(g => g.status !== 'pending');
+
+            if (isLastGoal) {
+                return (
+                    <div className="bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full max-w-md text-center animate-fade-in">
+                        <h2 className="text-3xl font-bold mb-4 text-green-400">All Goals Completed!</h2>
+                        <p className="text-slate-300 mb-6">Excellent work! You've finished everything for today. Your final unlock code is available.</p>
+                        <button
+                            onClick={handleFinishDay}
+                            className="w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400 transition-all duration-300"
+                        >
+                            View Code & Finish Day
+                        </button>
+                    </div>
+                );
+            }
+
             const uncompletedGoals = (todaysPlan?.goals.filter(g => g.status === 'pending') ?? []).sort((a, b) => a.startTime.localeCompare(b.startTime));
+            const now = new Date();
+            const hour = now.getHours();
+            const minute = now.getMinutes();
+            const showLunchButton = (hour === 12 && minute >= 30) || hour === 13;
+            const showDinnerButton = hour === 20;
+            const FORTY_FIVE_MINS_MS = 45 * 60 * 1000;
+
             return (
                  <div className="w-full max-w-2xl flex flex-col items-center gap-6">
                     <div className="w-full text-center bg-slate-800/80 backdrop-blur-sm p-3 rounded-lg border border-slate-700">
@@ -662,9 +802,19 @@ const App: React.FC = () => {
                         </p>
                     </div>
 
-                    <div className="w-full max-w-lg flex justify-center">
+                    <div className="w-full max-w-lg flex flex-col justify-center gap-4">
+                         {!breakChoice && (showLunchButton || showDinnerButton) && (
+                            <div className="bg-slate-800/50 border border-slate-700 p-6 rounded-lg shadow-2xl w-full text-center">
+                                <h3 className="text-lg font-semibold text-slate-200 mb-3">Or Take a Meal Break?</h3>
+                                <div className="flex flex-col sm:flex-row gap-4">
+                                    {showLunchButton && <button onClick={() => setAvailableBreakTime(FORTY_FIVE_MINS_MS)} className="flex-1 bg-amber-600/50 border border-amber-500/50 text-amber-300 font-semibold py-3 px-4 rounded-lg hover:bg-amber-600/70 transition-colors">Lunch Time (45 min)</button>}
+                                    {showDinnerButton && <button onClick={() => setAvailableBreakTime(FORTY_FIVE_MINS_MS)} className="flex-1 bg-indigo-600/50 border border-indigo-500/50 text-indigo-300 font-semibold py-3 px-4 rounded-lg hover:bg-indigo-600/70 transition-colors">Dinner Time (45 min)</button>}
+                                </div>
+                            </div>
+                        )}
                         {!breakChoice ? ( <div className="bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full text-center">
-                                <h2 className="text-xl font-semibold mb-4 text-slate-200">Prepare Your Next Goal</h2>
+                                <h2 className="text-xl font-semibold mb-2 text-slate-200">Prepare Your Next Goal</h2>
+                                <p className="text-slate-400 mb-4">You have a break of <span className="text-cyan-300 font-bold">{formatDuration(availableBreakTime ?? 0)}</span>.</p>
                                 <div className="flex flex-col sm:flex-row gap-4">
                                     <button onClick={() => setBreakChoice('plan')} className="flex-1 bg-slate-700 text-white font-bold py-3 px-4 rounded-lg hover:bg-slate-600 transition-colors" disabled={uncompletedGoals.length === 0}>
                                         Choose from Plan {uncompletedGoals.length === 0 && "(None Left)"}
@@ -673,7 +823,6 @@ const App: React.FC = () => {
                                         Set a New Goal
                                     </button>
                                 </div>
-                                <button onClick={handleSkipBreak} className="mt-6 text-sm text-slate-500 hover:text-white">Skip Break & Finish</button>
                             </div>
                         ) : breakChoice === 'new' ? ( <GoalSetter onGoalSubmit={handleNextGoalSubmit} isLoading={false} submitButtonText="Confirm & Start Break" onCancel={() => setBreakChoice(null)} />
                         ) : breakChoice === 'plan' ? ( <div className="bg-slate-800/50 border border-slate-700 p-6 rounded-lg shadow-2xl w-full text-center">
@@ -733,10 +882,30 @@ const App: React.FC = () => {
         }
 
        case AppState.BREAK_FAILED:
-            return ( <div className="bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full max-w-md text-center animate-fade-in">
-                    <Alert message="Break failed. You either ran out of time to prepare the next goal or did not submit the new code in time." type="error" />
-                    <button onClick={() => resetToStart(false)} className="w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400">Back to Plan</button>
-                </div> );
+            const penaltyGoalDescription = getPenaltyGoalString();
+            return (
+                <div className="w-full max-w-lg flex flex-col items-center gap-6">
+                    <Alert message="Break Failed. You did not prepare your next goal in time." type="error" />
+                    <div className="bg-slate-800/50 border border-amber-500/50 p-6 rounded-lg shadow-2xl w-full text-left animate-fade-in">
+                        <h3 className="text-xl font-semibold mb-2 text-amber-300">Penalty Task Required</h3>
+                        <p className="text-slate-300 whitespace-pre-wrap">
+                            {penaltyGoalDescription}
+                        </p>
+                    </div>
+                    <CodeUploader
+                        onCodeImageSubmit={handlePenaltyCodeSubmit}
+                        isLoading={isLoading}
+                        title="Sequester New Code"
+                        description="To begin your penalty task, you must first lock your phone. Take a picture of the new 3-digit code on your lock box."
+                        onShowHistory={handleShowHistory}
+                        onLogout={handleLogout}
+                        currentUser={currentUser}
+                        streakData={null}
+                        onSetCommitment={() => {}}
+                        onCompleteCommitment={() => {}}
+                    />
+                </div>
+            );
       default: return <div className="flex justify-center items-center p-8"><Spinner /></div>;
     }
   };

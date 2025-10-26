@@ -1,3 +1,4 @@
+
 import React, { useMemo, useState } from 'react';
 import { CompletedGoal } from '../types';
 import { formatDuration } from '../utils/timeUtils';
@@ -40,12 +41,22 @@ const GoalHistory: React.FC<GoalHistoryProps> = ({ onBack, history, onDeleteHist
         };
     }, [history]);
 
-    const handleGetInsights = async () => {
+    const handleGenerateReport = async () => {
         setIsInsightsLoading(true);
         setInsights(null);
         setInsightsError(null);
         try {
-            const result = await generateHistoryInsights(history);
+            const oneWeekAgo = new Date();
+            oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+            const weeklyHistory = history.filter(goal => goal.endTime > oneWeekAgo.getTime());
+
+            if (weeklyHistory.length < 3) {
+                setInsightsError("You need at least 3 completed goals in the last 7 days to generate a report.");
+                setIsInsightsLoading(false);
+                return;
+            }
+            
+            const result = await generateHistoryInsights(weeklyHistory);
             setInsights(result);
         } catch (err) {
             setInsightsError((err as Error).message);
@@ -84,7 +95,7 @@ const GoalHistory: React.FC<GoalHistoryProps> = ({ onBack, history, onDeleteHist
                 {insightsError && <Alert message={insightsError} type="error" />}
                 {insights ? (
                     <div className="p-4 bg-slate-900/50 rounded-lg border border-slate-700 text-left relative animate-fade-in">
-                        <h3 className="text-xl font-semibold text-cyan-300 mb-2">AI Productivity Insights</h3>
+                        <h3 className="text-xl font-semibold text-cyan-300 mb-2">Weekly Productivity Report</h3>
                         <button 
                             onClick={() => setInsights(null)} 
                             className="absolute top-2 right-2 text-slate-500 hover:text-white p-1"
@@ -98,14 +109,14 @@ const GoalHistory: React.FC<GoalHistoryProps> = ({ onBack, history, onDeleteHist
                     </div>
                 ) : (
                     <button 
-                        onClick={handleGetInsights}
+                        onClick={handleGenerateReport}
                         disabled={isInsightsLoading || history.length < 3}
                         className="w-full sm:w-auto bg-slate-700 text-white font-bold py-2 px-4 rounded-lg hover:bg-slate-600 transition-all duration-300 flex items-center justify-center gap-2 mx-auto disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed"
                     >
-                        {isInsightsLoading ? <><Spinner /> Analyzing...</> : "Get AI Insights"}
+                        {isInsightsLoading ? <><Spinner /> Analyzing...</> : "Generate Weekly Report"}
                     </button>
                 )}
-                {history.length < 3 && !insights && <p className="text-xs text-slate-500 mt-2">Complete at least 3 goals to unlock AI Insights.</p>}
+                {history.filter(g => { const d = new Date(); d.setDate(d.getDate() - 7); return g.endTime > d.getTime() }).length < 3 && !insights && <p className="text-xs text-slate-500 mt-2">Complete at least 3 goals in the last week to unlock the Weekly Report.</p>}
             </div>
 
             {sortedHistory.length > 0 && timeBySubject.length > 0 && (
