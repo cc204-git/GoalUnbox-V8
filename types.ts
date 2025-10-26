@@ -10,7 +10,6 @@ export enum AppState {
   HISTORY_VIEW,
   AWAITING_BREAK,
   BREAK_ACTIVE,
-  BREAK_FAILED,
 }
 
 export interface CompletedGoal {

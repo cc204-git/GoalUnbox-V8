@@ -65,6 +65,7 @@ const App = () => {
 
   const [availableBreakTime, setAvailableBreakTime] = useState(null);
   const [breakEndTime, setBreakEndTime] = useState(null);
+  const [completedSecretCode, setCompletedSecretCode] = useState(null);
   const [completedSecretCodeImage, setCompletedSecretCodeImage] = useState(null);
   const [nextGoal, setNextGoal] = useState(null);
   const [currentTime, setCurrentTime] = useState(Date.now());
@@ -120,7 +121,6 @@ const App = () => {
             appState !== AppState.AWAITING_BREAK &&
             appState !== AppState.AWAITING_CODE &&
             appState !== AppState.BREAK_ACTIVE &&
-            appState !== AppState.BREAK_FAILED &&
             appState !== AppState.HISTORY_VIEW
         ) {
             setAppState(AppState.TODAYS_PLAN);
@@ -296,7 +296,7 @@ const App = () => {
     setChat(null); setChatMessages([]); setIsChatLoading(false);
     setGoalSetTime(null); setCompletionDuration(null); setTimeLimitInMs(null);
     setConsequence(null); setCompletionReason(null); setActivePlannedGoal(null);
-    setAvailableBreakTime(null); setBreakEndTime(null); setCompletedSecretCodeImage(null);
+    setAvailableBreakTime(null); setBreakEndTime(null); setCompletedSecretCode(null); setCompletedSecretCodeImage(null);
     setNextGoal(null); setBreakChoice(null);
   };
 
@@ -371,6 +371,8 @@ const App = () => {
     } catch (e) { console.error("Failed to save goal:", e); }
 
     if (reason === 'verified' && secretCodeImage && streakData) {
+        setCompletedSecretCode(secretCode);
+        setCompletedSecretCodeImage(secretCodeImage);
         const newData = { ...streakData, lastCompletedCodeImage: secretCodeImage };
         setStreakData(newData); // Optimistic update
         await dataService.saveStreakData(currentUser.uid, newData);
@@ -390,7 +392,6 @@ const App = () => {
         if (breakDurationMs > 0) {
             setAvailableBreakTime(breakDurationMs);
             setCompletionDuration(formatDuration(duration));
-            setCompletedSecretCodeImage(secretCodeImage);
             setVerificationFeedback(feedback);
             setCompletionReason('verified');
             setAppState(AppState.AWAITING_BREAK);
@@ -404,7 +405,7 @@ const App = () => {
     setVerificationFeedback(feedback);
     setAppState(AppState.GOAL_COMPLETED);
     setIsLoading(false);
-}, [currentUser, goalSetTime, getEffectiveGoal, secretCodeImage, subject, activePlannedGoal, todaysPlan, streakData]);
+}, [currentUser, goalSetTime, getEffectiveGoal, secretCode, secretCodeImage, subject, activePlannedGoal, todaysPlan, streakData]);
 
   const handleProofImageSubmit = useCallback(async (files) => {
     const pauseStartTime = Date.now();
@@ -526,6 +527,7 @@ const App = () => {
         if (breakDurationMs > 0) {
             setAvailableBreakTime(breakDurationMs);
             setCompletionDuration(formatDuration(duration));
+            setCompletedSecretCode(secretCode);
             setCompletedSecretCodeImage(secretCodeImage);
             setVerificationFeedback(null);
             setCompletionReason('skipped');
@@ -541,7 +543,7 @@ const App = () => {
     } finally {
         setIsLoading(false);
     }
-  }, [currentUser, activeGoal, goalSetTime, goal, subject, handleApiError, activePlannedGoal, todaysPlan, streakData, secretCodeImage]);
+  }, [currentUser, activeGoal, goalSetTime, goal, subject, handleApiError, activePlannedGoal, todaysPlan, streakData, secretCode, secretCodeImage]);
 
   const handleShowHistory = () => setAppState(AppState.HISTORY_VIEW);
   const handleHistoryBack = () => setAppState(AppState.TODAYS_PLAN);
@@ -623,7 +625,9 @@ const App = () => {
 
     const handleFinishBreakAndStartNextGoal = useCallback(async () => {
         if (!currentUser || !nextGoal?.goal || !nextGoal?.secretCode || !nextGoal.secretCodeImage) {
-            setAppState(AppState.BREAK_FAILED); return;
+            setError("Could not start next goal. Information was missing.");
+            resetToStart();
+            return;
         }
         const nextGoalTime = Date.now();
         const activeState = {
@@ -638,56 +642,82 @@ const App = () => {
         } else { setActivePlannedGoal(null); }
         
         setBreakEndTime(null); setAvailableBreakTime(null); setNextGoal(null);
-        setCompletedSecretCodeImage(null); setBreakChoice(null);
+        setBreakChoice(null);
         setVerificationFeedback(null); setChat(null); setChatMessages([]);
     }, [nextGoal, currentUser, todaysPlan]);
     
-    const handlePenaltyCodeSubmit = useCallback(async (file) => {
-        if (!currentUser) return;
-        setIsLoading(true);
-        setError(null);
+    const handleAutoStartNextGoal = useCallback(async () => {
+        if (!currentUser || !todaysPlan) return;
         
-        let tempSecretCodeImage = null;
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        const imagePromise = new Promise(resolve => {
-            reader.onload = () => {
-                tempSecretCodeImage = reader.result;
-                resolve();
-            };
+        const nextPendingGoal = todaysPlan.goals
+            .filter(g => g.status === 'pending' && !g.id.startsWith('PENALTY-'))
+            .sort((a, b) => a.startTime.localeCompare(b.startTime))[0];
+
+        if (!nextPendingGoal) {
+            handleFinishDay();
+            return;
+        }
+
+        if (!completedSecretCode || !completedSecretCodeImage) {
+            setError("Cannot auto-start next goal: previous code not found. Please start the next goal manually.");
+            resetToStart();
+            return;
+        }
+
+        const nextGoalTime = Date.now();
+        const activeState = {
+            secretCode: completedSecretCode,
+            secretCodeImage: completedSecretCodeImage,
+            goal: nextPendingGoal.goal,
+            subject: nextPendingGoal.subject,
+            goalSetTime: nextGoalTime,
+            timeLimitInMs: nextPendingGoal.timeLimitInMs,
+            consequence: nextPendingGoal.consequence,
+        };
+        await dataService.saveActiveGoal(currentUser.uid, activeState);
+        
+        setActivePlannedGoal(nextPendingGoal);
+        
+        setBreakEndTime(null); 
+        setAvailableBreakTime(null); 
+        setNextGoal(null);
+        setBreakChoice(null);
+        setVerificationFeedback(null); 
+        setChat(null); 
+        setChatMessages([]);
+    }, [currentUser, todaysPlan, completedSecretCode, completedSecretCodeImage]);
+
+
+    const handleStartMealBreak = useCallback(() => {
+        if (!todaysPlan || !completedSecretCode || !completedSecretCodeImage) {
+            setError("Cannot start a meal break without a next planned goal or previous code.");
+            return;
+        }
+
+        const nextPendingGoal = todaysPlan.goals
+            .filter(g => g.status === 'pending' && !g.id.startsWith('PENALTY-'))
+            .sort((a, b) => a.startTime.localeCompare(b.startTime))[0];
+
+        if (!nextPendingGoal) {
+            setError("No more goals for today to start after a break.");
+            return;
+        }
+        
+        const FORTY_FIVE_MINS_MS = 45 * 60 * 1000;
+
+        setNextGoal({
+            goal: nextPendingGoal.goal,
+            subject: nextPendingGoal.subject,
+            timeLimitInMs: nextPendingGoal.timeLimitInMs,
+            consequence: nextPendingGoal.consequence,
+            plannedGoalId: nextPendingGoal.id,
+            secretCode: completedSecretCode,
+            secretCodeImage: completedSecretCodeImage
         });
 
-        try {
-            const base64 = await fileToBase64(file);
-            await imagePromise;
-
-            const code = await extractCodeFromImage(base64, file.type);
-            const penaltyGoal = getPenaltyGoalString();
-            const goalStartTime = Date.now();
-            
-            const activeState = { 
-                secretCode: code, 
-                secretCodeImage: tempSecretCodeImage, 
-                goal: penaltyGoal, 
-                subject: 'Penalty Task', 
-                goalSetTime: goalStartTime, 
-                timeLimitInMs: null, 
-                consequence: "Regain access to the app's normal functions."
-            };
-            
-            setBreakEndTime(null);
-            setAvailableBreakTime(null);
-            setNextGoal(null);
-            setCompletedSecretCodeImage(null);
-            setBreakChoice(null);
-            
-            await dataService.saveActiveGoal(currentUser.uid, activeState);
-        } catch (err) {
-            handleApiError(err);
-        } finally {
-            setIsLoading(false);
-        }
-    }, [currentUser, handleApiError]);
+        setBreakEndTime(Date.now() + FORTY_FIVE_MINS_MS);
+        setAppState(AppState.BREAK_ACTIVE);
+    }, [todaysPlan, completedSecretCode, completedSecretCodeImage]);
 
 
     useEffect(() => {
@@ -698,7 +728,7 @@ const App = () => {
                 setNextGoalSelectionCountdown(prev => {
                     if (prev === null || prev <= 1000) {
                         clearInterval(intervalId);
-                        setAppState(AppState.BREAK_FAILED);
+                        handleAutoStartNextGoal();
                         return 0;
                     }
                     return prev - 1000;
@@ -708,7 +738,7 @@ const App = () => {
             setNextGoalSelectionCountdown(null);
         }
         return () => { if (intervalId) clearInterval(intervalId); };
-    }, [appState]);
+    }, [appState, handleAutoStartNextGoal]);
 
     useEffect(() => {
         if (appState !== AppState.BREAK_ACTIVE || !breakEndTime) return;
@@ -760,13 +790,12 @@ const App = () => {
             const minute = now.getMinutes();
             const showLunchButton = (hour === 12 && minute >= 30) || hour === 13;
             const showDinnerButton = hour === 20;
-            const FORTY_FIVE_MINS_MS = 45 * 60 * 1000;
 
             const mealBreakSection = (!breakChoice && (showLunchButton || showDinnerButton)) ? React.createElement('div', { className: 'bg-slate-800/50 border border-slate-700 p-6 rounded-lg shadow-2xl w-full text-center' },
                 React.createElement('h3', { className: 'text-lg font-semibold text-slate-200 mb-3' }, 'Or Take a Meal Break?'),
                 React.createElement('div', { className: 'flex flex-col sm:flex-row gap-4' },
-                    showLunchButton && React.createElement('button', { onClick: () => setAvailableBreakTime(FORTY_FIVE_MINS_MS), className: 'flex-1 bg-amber-600/50 border border-amber-500/50 text-amber-300 font-semibold py-3 px-4 rounded-lg hover:bg-amber-600/70 transition-colors' }, 'Lunch Time (45 min)'),
-                    showDinnerButton && React.createElement('button', { onClick: () => setAvailableBreakTime(FORTY_FIVE_MINS_MS), className: 'flex-1 bg-indigo-600/50 border border-indigo-500/50 text-indigo-300 font-semibold py-3 px-4 rounded-lg hover:bg-indigo-600/70 transition-colors' }, 'Dinner Time (45 min)')
+                    showLunchButton && React.createElement('button', { onClick: handleStartMealBreak, className: 'flex-1 bg-amber-600/50 border border-amber-500/50 text-amber-300 font-semibold py-3 px-4 rounded-lg hover:bg-amber-600/70 transition-colors' }, 'Lunch Time (45 min)'),
+                    showDinnerButton && React.createElement('button', { onClick: handleStartMealBreak, className: 'flex-1 bg-indigo-600/50 border border-indigo-500/50 text-indigo-300 font-semibold py-3 px-4 rounded-lg hover:bg-indigo-600/70 transition-colors' }, 'Dinner Time (45 min)')
                 )
             ) : null;
 
@@ -838,28 +867,6 @@ const App = () => {
                 )
             );
         }
-
-       case AppState.BREAK_FAILED:
-            const penaltyGoalDescription = getPenaltyGoalString();
-            return React.createElement('div', { className: 'w-full max-w-lg flex flex-col items-center gap-6' },
-                React.createElement(Alert, { message: "Break Failed. You did not prepare your next goal in time.", type: "error" }),
-                React.createElement('div', { className: "bg-slate-800/50 border border-amber-500/50 p-6 rounded-lg shadow-2xl w-full text-left animate-fade-in" },
-                    React.createElement('h3', { className: "text-xl font-semibold mb-2 text-amber-300" }, "Penalty Task Required"),
-                    React.createElement('p', { className: "text-slate-300 whitespace-pre-wrap" }, penaltyGoalDescription)
-                ),
-                React.createElement(CodeUploader, {
-                    onCodeImageSubmit: handlePenaltyCodeSubmit,
-                    isLoading: isLoading,
-                    title: "Sequester New Code",
-                    description: "To begin your penalty task, you must first lock your phone. Take a picture of the new 3-digit code on your lock box.",
-                    onShowHistory: handleShowHistory,
-                    onLogout: handleLogout,
-                    currentUser: currentUser,
-                    streakData: null,
-                    onSetCommitment: () => {},
-                    onCompleteCommitment: () => {}
-                })
-            );
       default: return React.createElement('div', { className: 'flex justify-center items-center p-8' }, React.createElement(Spinner, null));
     }
   };

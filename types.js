@@ -8,6 +8,5 @@ export const AppState = {
   HISTORY_VIEW: 6,
   AWAITING_BREAK: 7,
   BREAK_ACTIVE: 8,
-  BREAK_FAILED: 9,
 };
 Object.freeze(AppState);
