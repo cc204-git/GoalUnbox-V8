@@ -130,11 +130,11 @@ const App = () => {
     listeners.push(dataService.listenToPlan(uid, new Date(), (plan) => {
         if (!plan) {
             const defaultGoal1 = {
-                id: `default-${new Date().getTime()}-1`, subject: "Anki Review", goal: "Upload a verification of finishing all anki flash cards. I must upload a screenshot from my Windows computer. One half of the screen must show the Anki 'Congratulations!' screen (or similar proof of completion), and the other half must show the current date. The date in the screenshot must match today's date.",
+                id: `default-${new Date().getTime()}-1`, subject: "Anki Review", goal: "Upload a verification of finishing all anki flash cards. I must upload a screenshot from my Windows computer. One half of the screen must show the Anki dashboard with 0 cards to do, and the other half must show the current date (Day, Month DD, YYYY). The date in the screenshot must match today's date.",
                 timeLimitInMs: 3600000, consequence: null, startTime: "11:00", endTime: "12:00", status: 'pending',
             };
             const defaultGoal2 = {
-                id: `default-${new Date().getTime()}-2`, subject: "Anki Creation", goal: "I must send verification of me uploading flashcards to anki. I must upload a screenshot from my Windows computer. One half of the screen must show the Anki interface after adding new cards, and the other half must show the current date. The date in the screenshot must match today's date.",
+                id: `default-${new Date().getTime()}-2`, subject: "Anki Creation", goal: "I must send verification of me uploading flashcards to anki. I must upload a screenshot from my Windows computer. One half of the screen must show the Anki interface after adding new cards, and the other half must show the current date (Day, Month DD, YYYY). The date in the screenshot must match today's date.",
                 timeLimitInMs: null, consequence: null, startTime: "12:00", endTime: "13:00", status: 'pending',
             };
             const newPlan = { date: getISODateString(new Date()), goals: [defaultGoal1, defaultGoal2] };
@@ -624,15 +624,20 @@ const App = () => {
     };
 
     const handleFinishBreakAndStartNextGoal = useCallback(async () => {
-        if (!currentUser || !nextGoal?.goal || !nextGoal?.secretCode || !nextGoal.secretCodeImage) {
+        if (!currentUser || !nextGoal?.goal || !nextGoal?.subject || !nextGoal?.secretCode || !nextGoal.secretCodeImage) {
             setError("Could not start next goal. Information was missing.");
             resetToStart();
             return;
         }
         const nextGoalTime = Date.now();
         const activeState = {
-            secretCode: nextGoal.secretCode, secretCodeImage: nextGoal.secretCodeImage, goal: nextGoal.goal,
-            subject: nextGoal.subject, goalSetTime: nextGoalTime, timeLimitInMs: nextGoal.timeLimitInMs, consequence: nextGoal.consequence,
+            secretCode: nextGoal.secretCode,
+            secretCodeImage: nextGoal.secretCodeImage,
+            goal: nextGoal.goal,
+            subject: nextGoal.subject,
+            goalSetTime: nextGoalTime,
+            timeLimitInMs: nextGoal.timeLimitInMs || null,
+            consequence: nextGoal.consequence || null,
         };
         await dataService.saveActiveGoal(currentUser.uid, activeState);
         
