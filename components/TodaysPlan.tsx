@@ -287,7 +287,7 @@ const TodaysPlan: React.FC<TodaysPlanProps> = ({ initialPlan, onSavePlan, onStar
                     <div className="my-4">
                         <Alert 
                             type="error" 
-                            message="INCOMPLETE DAY PENALTY: You must complete the first goal before starting any others for today." 
+                            message="INCOMPLETE DAY PENALTY: You didn't complete all goals yesterday. You must complete this penalty task before starting any others for today." 
                         />
                     </div>
                 )}

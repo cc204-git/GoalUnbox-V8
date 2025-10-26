@@ -277,7 +277,7 @@ const TodaysPlan = ({ initialPlan, onSavePlan, onStartGoal, currentUser, onShowH
             penaltyGoal && React.createElement('div', { className: 'my-4' }, 
                 React.createElement(Alert, {
                     type: 'error',
-                    message: "INCOMPLETE DAY PENALTY: You must complete the first goal before starting any others for today."
+                    message: "INCOMPLETE DAY PENALTY: You didn't complete all goals yesterday. You must complete this penalty task before starting any others for today."
                 })
             ),
             React.createElement('div', { className: 'space-y-4 my-6' },
