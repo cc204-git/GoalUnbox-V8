@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef } from 'react';
 import GoalSetter from './GoalSetter.js';
 import { formatDuration, getISODateString } from '../utils/timeUtils.js';
 import { savePlan, loadPlan } from '../services/planService.js';
-import { extractScheduleFromImage, generateSmartSchedule } from '../services/geminiService.js';
+import { extractScheduleFromImage } from '../services/geminiService.js';
 import Spinner from './Spinner.js';
 import Alert from './Alert.js';
 import { fileToBase64 } from '../utils/fileUtils.js';
@@ -21,7 +21,6 @@ const TodaysPlan = ({ initialPlan, onSavePlan, onStartGoal, currentUser, onShowH
     const [importError, setImportError] = useState(null);
     const [importedGoals, setImportedGoals] = useState([]);
     const [editingImportedGoal, setEditingImportedGoal] = useState(null);
-    const [isScheduling, setIsScheduling] = useState(false);
 
     const handleToggleExpand = (goalId) => {
         setExpandedGoalId(prevId => (prevId === goalId ? null : goalId));
@@ -118,40 +117,6 @@ const TodaysPlan = ({ initialPlan, onSavePlan, onStartGoal, currentUser, onShowH
         setImportedGoals([]);
         setEditingImportedGoal(null);
         setImportError(null);
-    };
-
-    const handleAutoSchedule = async () => {
-        setIsScheduling(true);
-        setImportError(null);
-        try {
-            const pendingGoals = plan.goals.filter(g => g.status === 'pending');
-            if (pendingGoals.length < 2) {
-                setImportError("You need at least two pending goals to generate a smart schedule.");
-                setIsScheduling(false);
-                return;
-            }
-            const result = await generateSmartSchedule(pendingGoals);
-            
-            const scheduledIdOrder = result.scheduled_goal_ids;
-            const completedOrSkippedGoals = plan.goals.filter(g => g.status !== 'pending');
-            
-            const scheduledGoals = scheduledIdOrder.map(id => 
-                pendingGoals.find(g => g.id === id)
-            ).filter(g => !!g);
-
-            const unscheduledPendingGoals = pendingGoals.filter(g => !scheduledIdOrder.includes(g.id));
-
-            const updatedGoals = [...scheduledGoals, ...unscheduledPendingGoals, ...completedOrSkippedGoals];
-            
-            const updatedPlan = { ...plan, goals: updatedGoals };
-            setPlan(updatedPlan);
-            onSavePlan(updatedPlan);
-
-        } catch (err) {
-            setImportError(err.message);
-        } finally {
-            setIsScheduling(false);
-        }
     };
 
     const sortGoals = (goals) => {
@@ -334,15 +299,6 @@ const TodaysPlan = ({ initialPlan, onSavePlan, onStartGoal, currentUser, onShowH
                 },
                     React.createElement('svg', { xmlns: 'http://www.w3.org/2000/svg', className: 'h-5 w-5', viewBox: '0 0 20 20', fill: 'currentColor' }, React.createElement('path', { fillRule: 'evenodd', d: 'M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z', clipRule: 'evenodd' })),
                     'Import Schedule'
-                ),
-                React.createElement('button', {
-                    onClick: handleAutoSchedule,
-                    disabled: isScheduling || plan.goals.filter(g => g.status === 'pending').length < 2,
-                    className: 'flex-1 bg-purple-600/50 border border-purple-500/50 text-purple-300 font-semibold py-3 px-4 rounded-lg hover:bg-purple-600/70 transition-colors flex items-center justify-center gap-2 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed',
-                    title: plan.goals.filter(g => g.status === 'pending').length < 2 ? "Need at least 2 pending goals" : "Optimize today's schedule"
-                },
-                    isScheduling ? React.createElement(Spinner, null) : React.createElement('svg', { xmlns: 'http://www.w3.org/2000/svg', className: 'h-5 w-5', viewBox: '0 0 20 20', fill: 'currentColor' }, React.createElement('path', { d: 'M5 4a1 1 0 00-2 0v7.268a2 2 0 000 3.464V16a1 1 0 102 0v-1.268a2 2 0 000-3.464V4zM11 4a1 1 0 10-2 0v1.268a2 2 0 000 3.464V16a1 1 0 102 0V8.732a2 2 0 000-3.464V4zM16 3a1 1 0 011 1v7.268a2 2 0 010 3.464V16a1 1 0 11-2 0v-1.268a2 2 0 010-3.464V4a1 1 0 011-1z' })),
-                    'Smart Schedule'
                 )
             ),
             importError && React.createElement('div', { className: 'mt-4' }, React.createElement(Alert, { message: importError, type: 'error' })),

@@ -3,7 +3,7 @@ import { PlannedGoal, TodaysPlan as TodaysPlanType } from '../types';
 import GoalSetter, { GoalPayload } from './GoalSetter';
 import { formatDuration, getISODateString } from '../utils/timeUtils';
 import { savePlan, loadPlan } from '../services/planService';
-import { extractScheduleFromImage, generateSmartSchedule } from '../services/geminiService';
+import { extractScheduleFromImage } from '../services/geminiService';
 import type { ExtractedEvent } from '../services/geminiService';
 import Spinner from './Spinner';
 import Alert from './Alert';
@@ -30,7 +30,6 @@ const TodaysPlan: React.FC<TodaysPlanProps> = ({ initialPlan, onSavePlan, onStar
     const [importError, setImportError] = useState<string | null>(null);
     const [importedGoals, setImportedGoals] = useState<ExtractedEvent[]>([]);
     const [editingImportedGoal, setEditingImportedGoal] = useState<ExtractedEvent | null>(null);
-    const [isScheduling, setIsScheduling] = useState(false);
 
     const handleToggleExpand = (goalId: string) => {
         setExpandedGoalId(prevId => (prevId === goalId ? null : goalId));
@@ -127,40 +126,6 @@ const TodaysPlan: React.FC<TodaysPlanProps> = ({ initialPlan, onSavePlan, onStar
         setImportedGoals([]);
         setEditingImportedGoal(null);
         setImportError(null);
-    };
-
-    const handleAutoSchedule = async () => {
-        setIsScheduling(true);
-        setImportError(null);
-        try {
-            const pendingGoals = plan.goals.filter(g => g.status === 'pending');
-            if (pendingGoals.length < 2) {
-                setImportError("You need at least two pending goals to generate a smart schedule.");
-                setIsScheduling(false);
-                return;
-            }
-            const result = await generateSmartSchedule(pendingGoals);
-            
-            const scheduledIdOrder = result.scheduled_goal_ids;
-            const completedOrSkippedGoals = plan.goals.filter(g => g.status !== 'pending');
-            
-            const scheduledGoals = scheduledIdOrder.map(id => 
-                pendingGoals.find(g => g.id === id)
-            ).filter((g): g is PlannedGoal => !!g);
-
-            const unscheduledPendingGoals = pendingGoals.filter(g => !scheduledIdOrder.includes(g.id));
-
-            const updatedGoals = [...scheduledGoals, ...unscheduledPendingGoals, ...completedOrSkippedGoals];
-            
-            const updatedPlan = { ...plan, goals: updatedGoals };
-            setPlan(updatedPlan);
-            onSavePlan(updatedPlan);
-
-        } catch (err) {
-            setImportError((err as Error).message);
-        } finally {
-            setIsScheduling(false);
-        }
     };
 
     const sortGoals = (goals: PlannedGoal[]) => {
@@ -356,15 +321,6 @@ const TodaysPlan: React.FC<TodaysPlanProps> = ({ initialPlan, onSavePlan, onStar
                                 <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
                             </svg>
                             Import Schedule
-                        </button>
-                        <button 
-                            onClick={handleAutoSchedule}
-                            disabled={isScheduling || plan.goals.filter(g => g.status === 'pending').length < 2}
-                            className="flex-1 bg-purple-600/50 border border-purple-500/50 text-purple-300 font-semibold py-3 px-4 rounded-lg hover:bg-purple-600/70 transition-colors flex items-center justify-center gap-2 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed"
-                            title={plan.goals.filter(g => g.status === 'pending').length < 2 ? "Need at least 2 pending goals" : "Optimize today's schedule"}
-                        >
-                            {isScheduling ? <Spinner /> : <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M5 4a1 1 0 00-2 0v7.268a2 2 0 000 3.464V16a1 1 0 102 0v-1.268a2 2 0 000-3.464V4zM11 4a1 1 0 10-2 0v1.268a2 2 0 000 3.464V16a1 1 0 102 0V8.732a2 2 0 000-3.464V4zM16 3a1 1 0 011 1v7.268a2 2 0 010 3.464V16a1 1 0 11-2 0v-1.268a2 2 0 010-3.464V4a1 1 0 011-1z" /></svg>}
-                            Smart Schedule
                         </button>
                     </div>
                 )}

@@ -186,54 +186,6 @@ export const extractScheduleFromImage = async (base64Image, mimeType, dayOfWeek)
   }
 };
 
-const smartScheduleSchema = {
-    type: Type.OBJECT,
-    properties: {
-        scheduled_goal_ids: {
-            type: Type.ARRAY,
-            description: "An array of goal IDs in the optimally scheduled order.",
-            items: { type: Type.STRING }
-        }
-    },
-    required: ["scheduled_goal_ids"]
-};
-
-export const generateSmartSchedule = async (goals) => {
-    const goalDataForAI = goals.map(g => ({
-        id: g.id,
-        subject: g.subject,
-        description: g.goal,
-        duration_minutes: g.timeLimitInMs ? g.timeLimitInMs / 60000 : 60, // Assume 60 mins if not set
-        start_time: g.startTime,
-    }));
-
-    const prompt = `
-        You are a productivity expert. Below is a list of tasks for the day.
-        Analyze the tasks, their subjects, and estimated durations.
-        Some tasks may be mentally draining (e.g., 'Analyse', 'Algebre'), while others might be lighter (e.g., 'Anki Review').
-        Create an optimal schedule by ordering the goal IDs to maximize focus and prevent burnout.
-        Consider starting with a medium-difficulty task to warm up, tackling the most demanding tasks when focus is highest (usually mid-morning), and placing lighter tasks towards the end of the day or after difficult ones.
-        Respond ONLY with a JSON object containing the ordered list of goal IDs.
-
-        Today's Tasks:
-        ${JSON.stringify(goalDataForAI, null, 2)}
-    `;
-    try {
-        const ai = getAiClient();
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: smartScheduleSchema,
-            }
-        });
-        return JSON.parse(response.text);
-    } catch (error) {
-        throw handleApiError(error);
-    }
-};
-
 const gatekeeperSchema = {
     type: Type.OBJECT,
     properties: {

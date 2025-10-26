@@ -15,10 +15,11 @@ const GoalSetter = ({ onGoalSubmit, isLoading, submitButtonText = 'Set My Goal',
   const [timeError, setTimeError] = useState(null);
 
   const consequenceTemplates = [
-    "I will not watch any TV or streaming services for 24 hours.",
-    "I must do 30 minutes of an exercise I dislike.",
-    "I will donate $5 to a charity.",
-    "I must clean the bathroom from top to bottom."
+    `I will submit my homework on separate, numbered papers.
+Each paper will have the date DD/MM/YY written at the top.
+My homework will include:
+Exercise X: Y Questions
+I will make sure that all exercises and questions are clearly highlighted on each paper.`
   ];
   const [consequenceTemplateIndex, setConsequenceTemplateIndex] = useState(0);
 
@@ -90,15 +91,13 @@ const GoalSetter = ({ onGoalSubmit, isLoading, submitButtonText = 'Set My Goal',
     const today = new Date();
     const dd = String(today.getDate()).padStart(2, '0');
     const mm = String(today.getMonth() + 1).padStart(2, '0');
-    const yy = today.getFullYear().toString().slice(-2);
-    const formattedDate = `${dd}/${mm}/${yy}`;
+    const formattedDate = `${dd}/${mm}/25`;
 
     const template = `I will submit my homework on separate, numbered papers.
 Each paper will have the date ${formattedDate} written at the top.
+I will also send a screenshot of timer in forest showing the time approximately equal to the time spent on goal (uncertainty 10 mins +- 10 mins)
 My homework will include:
-
-Exercise X: Y Questions (e.g., Q1, Q2a, Q2b...)
-
+Exercise X: Y Questions
 I will make sure that all exercises and questions are clearly highlighted on each paper.`;
     setGoal(template);
   };
