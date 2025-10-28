@@ -86,6 +86,9 @@ const App: React.FC = () => {
   const [breakChoice, setBreakChoice] = useState<'new' | 'plan' | null>(null);
   const [nextGoalSelectionCountdown, setNextGoalSelectionCountdown] = useState<number | null>(null);
 
+  const [productivityTimerEndTime, setProductivityTimerEndTime] = useState<number | null>(null);
+  const [productivityTimerFailed, setProductivityTimerFailed] = useState(false);
+
 
   const [chat, setChat] = useState<Chat | null>(null);
   const [chatMessages, setChatMessages] = useState<Array<{ text: string, role: 'user' | 'model' }>>([]);
@@ -109,6 +112,14 @@ const App: React.FC = () => {
       }
     });
     return () => unsubscribe();
+  }, []);
+  
+  useEffect(() => {
+    // General purpose timer for UI updates every second
+    const intervalId = setInterval(() => {
+        setCurrentTime(Date.now());
+    }, 1000);
+    return () => clearInterval(intervalId);
   }, []);
 
   useEffect(() => {
@@ -305,7 +316,7 @@ const App: React.FC = () => {
       }
   }, [clearApiKey]);
 
-  const resetToStart = (isLogout: boolean = false) => {
+  const resetToStart = useCallback((isLogout: boolean = false) => {
     if (currentUser) dataService.clearActiveGoal(currentUser.uid);
     if (isLogout) {
       authService.signOut();
@@ -319,7 +330,7 @@ const App: React.FC = () => {
     setConsequence(null); setCompletionReason(null); setActivePlannedGoal(null);
     setAvailableBreakTime(null); setBreakEndTime(null); setCompletedSecretCode(null); setCompletedSecretCodeImage(null);
     setNextGoal(null); setBreakChoice(null);
-  };
+  }, [currentUser]);
 
   const handleApiKeySubmit = (key: string) => {
     localStorage.setItem('GEMINI_API_KEY', key);
@@ -674,7 +685,7 @@ const App: React.FC = () => {
         setBreakChoice(null);
         setVerificationFeedback(null); setChat(null); setChatMessages([]);
         // The listener on activeGoal will transition the state
-    }, [nextGoal, currentUser, todaysPlan]);
+    }, [nextGoal, currentUser, todaysPlan, resetToStart]);
     
     const handleAutoStartNextGoal = useCallback(async () => {
         if (!currentUser || !todaysPlan) return;
@@ -715,7 +726,7 @@ const App: React.FC = () => {
         setVerificationFeedback(null); 
         setChat(null); 
         setChatMessages([]);
-    }, [currentUser, todaysPlan, completedSecretCode, completedSecretCodeImage]);
+    }, [currentUser, todaysPlan, completedSecretCode, completedSecretCodeImage, resetToStart]);
 
 
     const handleStartMealBreak = useCallback(() => {
@@ -741,8 +752,6 @@ const App: React.FC = () => {
             timeLimitInMs: nextPendingGoal.timeLimitInMs,
             consequence: nextPendingGoal.consequence,
             plannedGoalId: nextPendingGoal.id,
-            secretCode: completedSecretCode,
-            secretCodeImage: completedSecretCodeImage
         });
 
         setBreakEndTime(Date.now() + FORTY_FIVE_MINS_MS);
@@ -771,18 +780,42 @@ const App: React.FC = () => {
     }, [appState, handleAutoStartNextGoal]);
 
     useEffect(() => {
-        if (appState !== AppState.BREAK_ACTIVE || !breakEndTime) return;
-        const interval = setInterval(() => {
-            const now = Date.now();
-            setCurrentTime(now);
-            if (breakEndTime - now <= 0) {
-                clearInterval(interval);
+        if (appState === AppState.BREAK_ACTIVE && breakEndTime && breakEndTime - currentTime <= 0) {
+            if (nextGoal?.secretCode && nextGoal?.secretCodeImage) {
                 handleFinishBreakAndStartNextGoal();
+            } else {
+                setError("Break is over. A new lock code was not set in time. Please start your next goal from the plan.");
+                resetToStart();
             }
-        }, 1000);
-        return () => clearInterval(interval);
-    }, [appState, breakEndTime, handleFinishBreakAndStartNextGoal]);
+        }
+    }, [appState, breakEndTime, currentTime, handleFinishBreakAndStartNextGoal, nextGoal, resetToStart]);
 
+    // Productivity timer lifecycle effect
+    useEffect(() => {
+        if (appState === AppState.TODAYS_PLAN && !activeGoal && productivityTimerEndTime === null && !productivityTimerFailed) {
+            setProductivityTimerEndTime(Date.now() + 300000); // 5 minutes
+        } else if (appState !== AppState.TODAYS_PLAN || activeGoal) {
+            if (productivityTimerEndTime !== null || productivityTimerFailed) {
+                setProductivityTimerEndTime(null);
+                setProductivityTimerFailed(false);
+            }
+        }
+    }, [appState, activeGoal, productivityTimerEndTime, productivityTimerFailed]);
+
+    // Logic for checking if timer has failed (depends on currentTime)
+    useEffect(() => {
+        if (productivityTimerEndTime && currentTime >= productivityTimerEndTime) {
+            setProductivityTimerFailed(true);
+            setProductivityTimerEndTime(null);
+        }
+    }, [currentTime, productivityTimerEndTime]);
+
+    const resetProductivityChallenge = useCallback(() => {
+        setProductivityTimerFailed(false);
+        setProductivityTimerEndTime(Date.now() + 300000);
+    }, []);
+
+    const productivityTimer = productivityTimerEndTime ? Math.max(0, productivityTimerEndTime - currentTime) : null;
 
   const renderContent = () => {
     if (isLoading) return <div className="flex justify-center items-center p-8"><Spinner /></div>;
@@ -791,7 +824,16 @@ const App: React.FC = () => {
 
     switch (appState) {
       case AppState.TODAYS_PLAN:
-        return todaysPlan ? <TodaysPlanComponent initialPlan={todaysPlan} onSavePlan={handleSavePlan} onStartGoal={handleStartPlannedGoal} currentUser={currentUser.uid} onShowHistory={handleShowHistory} /> : <div className="flex justify-center items-center p-8"><Spinner /></div>;
+        return todaysPlan ? <TodaysPlanComponent 
+            initialPlan={todaysPlan} 
+            onSavePlan={handleSavePlan} 
+            onStartGoal={handleStartPlannedGoal} 
+            currentUser={currentUser.uid} 
+            onShowHistory={handleShowHistory}
+            productivityTimer={productivityTimer}
+            productivityTimerFailed={productivityTimerFailed}
+            onResetProductivityChallenge={resetProductivityChallenge}
+        /> : <div className="flex justify-center items-center p-8"><Spinner /></div>;
       case AppState.AWAITING_CODE: return <CodeUploader onCodeImageSubmit={handleCodeImageSubmit} isLoading={isLoading} onShowHistory={handleShowHistory} onLogout={handleLogout} currentUser={currentUser} streakData={streakData} onSetCommitment={handleSetDailyCommitment} onCompleteCommitment={handleCompleteDailyCommitment} />;
       case AppState.GOAL_SET: {
         const skipsLeft = 2 - (streakData?.skipsThisWeek ?? 0);
@@ -897,7 +939,13 @@ const App: React.FC = () => {
                              <div className="bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full h-full flex flex-col justify-center items-center text-center">
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-green-400" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>
                                 <h3 className="text-xl font-semibold text-green-400 mt-4">Next Code Accepted!</h3>
-                                <p className="text-slate-300 mt-2">Enjoy your break. Your next goal is ready to start.</p>
+                                <p className="text-slate-300 mt-2">Enjoy the rest of your break. The next goal will start automatically.</p>
+                                <button
+                                    onClick={handleFinishBreakAndStartNextGoal}
+                                    className="mt-6 w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400 transition-all"
+                                >
+                                    Start Next Goal Now
+                                </button>
                             </div>
                         ) : (
                             <CodeUploader onCodeImageSubmit={handleNextCodeImageSubmit} isLoading={isLoading} onShowHistory={()=>{}} onLogout={()=>{}} currentUser={null} streakData={null} onSetCommitment={()=>{}} onCompleteCommitment={()=>{}}/>

@@ -64,10 +64,22 @@ export const extractCodeFromImage = async (base64Image, mimeType) => {
   }
 };
 
-const verificationSystemInstruction = `You are a strict goal completion verifier...`;
+const verificationSystemInstruction = `You are a strict goal completion verifier. The user's goal and today's date are provided. The user has submitted images as proof. Analyze the images and conversation to determine if the goal has been fully met. Be critical. If the goal mentions "today's date", you must verify that the date visible in the proof matches the provided current date. Respond ONLY with a JSON object matching the provided schema. In the feedback, provide a summary, list the specific parts of the goal that were approved based on the images, and the specific parts that are still missing or not proven. If the user convinces you the goal is complete, set "completed" to true.`;
 const verificationSchema = {
     type: Type.OBJECT,
-    properties: { completed: { type: Type.BOOLEAN }, feedback: { type: Type.OBJECT, properties: { summary: { type: Type.STRING }, approved_aspects: { type: Type.ARRAY, items: { type: Type.STRING } }, missing_aspects: { type: Type.ARRAY, items: { type: Type.STRING } } }, required: ["summary", "approved_aspects", "missing_aspects"] } },
+    properties: {
+        completed: { type: Type.BOOLEAN, description: "True if the goal is verifiably completed based on the image, otherwise false." },
+        feedback: {
+            type: Type.OBJECT,
+            description: "Detailed feedback on goal completion.",
+            properties: {
+                summary: { type: Type.STRING, description: "A one-sentence summary of the verification result." },
+                approved_aspects: { type: Type.ARRAY, items: { type: Type.STRING } },
+                missing_aspects: { type: Type.ARRAY, items: { type: Type.STRING } }
+            },
+            required: ["summary", "approved_aspects", "missing_aspects"]
+        },
+    },
     required: ["completed", "feedback"],
 };
 
@@ -75,9 +87,13 @@ export const verifyGoalCompletion = async (goal, images) => {
     try {
         const ai = getAiClient();
         const imageParts = images.map(image => ({ inlineData: { data: image.base64, mimeType: image.mimeType } }));
+        
+        const today = new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+        const userPrompt = `Today's date is ${today}. The user's goal is: "${goal}". Here is my proof.`;
+        
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
-            contents: { parts: [{ text: `The user's goal is: "${goal}". Here is my proof.` }, ...imageParts] },
+            contents: { parts: [{ text: userPrompt }, ...imageParts] },
             config: { systemInstruction: verificationSystemInstruction, responseMimeType: "application/json", responseSchema: verificationSchema }
         });
         return JSON.parse(response.text);
@@ -89,7 +105,11 @@ export const verifyGoalCompletion = async (goal, images) => {
 export const createVerificationChat = (goal, images, initialVerification) => {
     const ai = getAiClient();
     const imageParts = images.map(image => ({ inlineData: { data: image.base64, mimeType: image.mimeType } }));
-    const initialUserContent = { role: 'user', parts: [{ text: `My goal is: "${goal}". Here is my proof.` }, ...imageParts] };
+    
+    const today = new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    const userPrompt = `Today's date is ${today}. My goal is: "${goal}". Here is my proof.`;
+
+    const initialUserContent = { role: 'user', parts: [{ text: userPrompt }, ...imageParts] };
     const initialModelContent = { role: 'model', parts: [{ text: JSON.stringify(initialVerification) }] };
     return ai.chats.create({
         model: 'gemini-2.5-flash',

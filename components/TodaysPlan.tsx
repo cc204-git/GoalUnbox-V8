@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { PlannedGoal, TodaysPlan as TodaysPlanType } from '../types';
 import GoalSetter, { GoalPayload } from './GoalSetter';
-import { formatDuration, getISODateString } from '../utils/timeUtils';
+import { formatDuration, getISODateString, formatCountdown } from '../utils/timeUtils';
 import { savePlan, loadPlan } from '../services/planService';
 import { extractScheduleFromImage } from '../services/geminiService';
 import type { ExtractedEvent } from '../services/geminiService';
@@ -15,9 +15,21 @@ interface TodaysPlanProps {
     onStartGoal: (goal: PlannedGoal) => void;
     currentUser: string | null;
     onShowHistory: () => void;
+    productivityTimer: number | null;
+    productivityTimerFailed: boolean;
+    onResetProductivityChallenge: () => void;
 }
 
-const TodaysPlan: React.FC<TodaysPlanProps> = ({ initialPlan, onSavePlan, onStartGoal, currentUser, onShowHistory }) => {
+const TodaysPlan: React.FC<TodaysPlanProps> = ({ 
+    initialPlan, 
+    onSavePlan, 
+    onStartGoal, 
+    currentUser, 
+    onShowHistory,
+    productivityTimer,
+    productivityTimerFailed,
+    onResetProductivityChallenge
+}) => {
     const [plan, setPlan] = useState(initialPlan);
     const [showForm, setShowForm] = useState(false);
     const [expandedGoalId, setExpandedGoalId] = useState<string | null>(null);
@@ -218,6 +230,26 @@ const TodaysPlan: React.FC<TodaysPlanProps> = ({ initialPlan, onSavePlan, onStar
             </div>
         );
     };
+
+    if (productivityTimerFailed) {
+        return (
+            <div className="fixed inset-0 bg-red-950/90 backdrop-blur-sm flex flex-col items-center justify-center z-50 animate-fade-in p-4">
+                <div className="text-center text-white">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-24 w-24 mx-auto text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                    </svg>
+                    <h1 className="text-5xl font-bold text-red-400 mt-4">CHALLENGE FAILED</h1>
+                    <p className="text-slate-300 mt-4 text-lg max-w-md">You did not start a goal within the 5-minute time limit. Stay focused and try again.</p>
+                    <button
+                        onClick={onResetProductivityChallenge}
+                        className="mt-8 bg-white text-red-900 font-bold py-3 px-8 rounded-lg text-lg hover:bg-red-100 transition-colors"
+                    >
+                        Restart Challenge
+                    </button>
+                </div>
+            </div>
+        );
+    }
     
     if (isLoadingImport) {
         return (
@@ -267,8 +299,18 @@ const TodaysPlan: React.FC<TodaysPlanProps> = ({ initialPlan, onSavePlan, onStar
         )
     }
 
+    const isTimerLow = productivityTimer !== null && productivityTimer < 60000;
+
     return (
         <div className="w-full max-w-3xl">
+            {productivityTimer !== null && (
+                 <div className={`w-full text-center p-3 rounded-lg border mb-6 transition-colors duration-500 ${isTimerLow ? 'bg-red-900/50 border-red-500/50 animate-pulse' : 'bg-slate-900/50 border-slate-700'}`}>
+                    <p className={`text-sm uppercase tracking-wider ${isTimerLow ? 'text-red-300' : 'text-slate-400'}`}>You must start a goal in:</p>
+                    <p className={`text-3xl font-mono ${isTimerLow ? 'text-red-300' : 'text-cyan-300'}`}>
+                        {formatCountdown(productivityTimer)}
+                    </p>
+                </div>
+            )}
             <div className="bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full text-center animate-fade-in relative">
                  <button
                     onClick={onShowHistory}

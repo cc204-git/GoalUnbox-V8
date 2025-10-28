@@ -76,7 +76,7 @@ export interface VerificationResult {
   feedback: VerificationFeedback;
 }
 
-const verificationSystemInstruction = `You are a strict goal completion verifier. The user's goal is provided. The user has submitted images as proof. Analyze the images and conversation to determine if the goal has been fully met. Be critical. Respond ONLY with a JSON object matching the provided schema. In the feedback, provide a summary, list the specific parts of the goal that were approved based on the images, and the specific parts that are still missing or not proven. If the user convinces you the goal is complete, set "completed" to true.`;
+const verificationSystemInstruction = `You are a strict goal completion verifier. The user's goal and today's date are provided. The user has submitted images as proof. Analyze the images and conversation to determine if the goal has been fully met. Be critical. If the goal mentions "today's date", you must verify that the date visible in the proof matches the provided current date. Respond ONLY with a JSON object matching the provided schema. In the feedback, provide a summary, list the specific parts of the goal that were approved based on the images, and the specific parts that are still missing or not proven. If the user convinces you the goal is complete, set "completed" to true.`;
 
 const verificationSchema = {
     type: Type.OBJECT,
@@ -101,9 +101,12 @@ export const verifyGoalCompletion = async (goal: string, images: { base64: strin
         const ai = getAiClient();
         const imageParts = images.map(image => ({ inlineData: { data: image.base64, mimeType: image.mimeType } }));
 
+        const today = new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+        const userPrompt = `Today's date is ${today}. The user's goal is: "${goal}". Here is my proof.`;
+
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
-            contents: { parts: [{ text: `The user's goal is: "${goal}". Here is my proof.` }, ...imageParts] },
+            contents: { parts: [{ text: userPrompt }, ...imageParts] },
             config: {
                 systemInstruction: verificationSystemInstruction,
                 responseMimeType: "application/json",
@@ -120,7 +123,11 @@ export const verifyGoalCompletion = async (goal: string, images: { base64: strin
 export const createVerificationChat = (goal: string, images: { base64: string, mimeType: string }[], initialVerification: VerificationResult): Chat => {
     const ai = getAiClient();
     const imageParts = images.map(image => ({ inlineData: { data: image.base64, mimeType: image.mimeType } }));
-    const initialUserContent: Content = { role: 'user', parts: [{ text: `My goal is: "${goal}". Here is my proof.` }, ...imageParts] };
+    
+    const today = new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    const userPrompt = `Today's date is ${today}. My goal is: "${goal}". Here is my proof.`;
+
+    const initialUserContent: Content = { role: 'user', parts: [{ text: userPrompt }, ...imageParts] };
     const initialModelContent: Content = { role: 'model', parts: [{ text: JSON.stringify(initialVerification) }] };
 
     return ai.chats.create({
