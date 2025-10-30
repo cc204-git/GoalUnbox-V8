@@ -25,22 +25,6 @@ import Auth from './components/Auth.js';
 import ApiKeyPrompt from './components/ApiKeyPrompt.js';
 import Spinner from './components/Spinner.js';
 
-const getPenaltyGoalString = () => {
-    const today = new Date();
-    const dd = String(today.getDate()).padStart(2, '0');
-    const mm = String(today.getMonth() + 1).padStart(2, '0');
-    const yy = today.getFullYear().toString().slice(-2);
-    const formattedDate = `${dd}/${mm}/${yy}`;
-
-    return `I must submit proof of my handwritten homework on separate, numbered papers.
-Each paper must have the date ${formattedDate} written at the top.
-My homework consists of a single paragraph in French, which must be at least 150 words long.
-This French paragraph must be written out by hand 5 times in total.
-Each of the 5 repetitions must be clearly labeled with a highlighted heading: "Repetition 1", "Repetition 2", "Repetition 3", "Repetition 4", and "Repetition 5".
-The highlighting on the "Repetition X" headings must be clearly visible in the proof images.`;
-};
-
-
 const App = () => {
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('GEMINI_API_KEY'));
   const [appState, setAppState] = useState(AppState.AUTH);
@@ -71,10 +55,6 @@ const App = () => {
   const [currentTime, setCurrentTime] = useState(Date.now());
   const [breakChoice, setBreakChoice] = useState(null);
   const [nextGoalSelectionCountdown, setNextGoalSelectionCountdown] = useState(null);
-
-  const [productivityTimerEndTime, setProductivityTimerEndTime] = useState(null);
-  const [productivityTimerFailed, setProductivityTimerFailed] = useState(false);
-
 
   const [chat, setChat] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
@@ -231,55 +211,6 @@ const App = () => {
       dataService.savePlan(currentUser.uid, plan);
   };
   
-  const createEndOfDayPenaltyGoal = (id) => {
-    return {
-        id: id,
-        subject: 'Penalty: Incomplete Day',
-        goal: getPenaltyGoalString(),
-        timeLimitInMs: null,
-        consequence: "Complete this penalty to unlock today's other goals.",
-        startTime: "00:00",
-        endTime: "00:01", // Ensures it's at the top
-        status: 'pending',
-    };
-  };
-
-  useEffect(() => {
-    const checkPenaltyAndApply = async () => {
-        if (!currentUser || activeGoal !== null || !todaysPlan) {
-            return;
-        }
-        const todayStr = getISODateString(new Date());
-        const penaltyCheckKey = `penalty_check_for_${currentUser.uid}`;
-        if (sessionStorage.getItem(penaltyCheckKey) === todayStr) {
-            return;
-        }
-
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        const yesterdaysPlan = await dataService.loadPlan(currentUser.uid, yesterday);
-
-        if (yesterdaysPlan && yesterdaysPlan.goals.length > 0 && yesterdaysPlan.goals.some(g => g.status === 'pending')) {
-            const penaltyId = `PENALTY-${getISODateString(yesterday)}`;
-            
-            if (todaysPlan.goals.some(g => g.id === penaltyId)) {
-                sessionStorage.setItem(penaltyCheckKey, todayStr);
-                return;
-            }
-
-            const penaltyGoal = createEndOfDayPenaltyGoal(penaltyId);
-            const updatedPlan = {
-                ...todaysPlan,
-                goals: [penaltyGoal, ...todaysPlan.goals],
-            };
-            handleSavePlan(updatedPlan);
-        }
-        sessionStorage.setItem(penaltyCheckKey, todayStr);
-    };
-    checkPenaltyAndApply();
-  }, [currentUser, todaysPlan, activeGoal]);
-
-
   const clearApiKey = useCallback(() => {
     localStorage.removeItem('GEMINI_API_KEY');
     setApiKey(null);
@@ -666,7 +597,7 @@ const App = () => {
         if (!currentUser || !todaysPlan) return;
         
         const nextPendingGoal = todaysPlan.goals
-            .filter(g => g.status === 'pending' && !g.id.startsWith('PENALTY-'))
+            .filter(g => g.status === 'pending')
             .sort((a, b) => a.startTime.localeCompare(b.startTime))[0];
 
         if (!nextPendingGoal) {
@@ -711,7 +642,7 @@ const App = () => {
         }
 
         const nextPendingGoal = todaysPlan.goals
-            .filter(g => g.status === 'pending' && !g.id.startsWith('PENALTY-'))
+            .filter(g => g.status === 'pending')
             .sort((a, b) => a.startTime.localeCompare(b.startTime))[0];
 
         if (!nextPendingGoal) {
@@ -765,31 +696,6 @@ const App = () => {
         }
     }, [appState, breakEndTime, currentTime, handleFinishBreakAndStartNextGoal, nextGoal, resetToStart]);
 
-    useEffect(() => {
-        if (appState === AppState.TODAYS_PLAN && !activeGoal && productivityTimerEndTime === null && !productivityTimerFailed) {
-            setProductivityTimerEndTime(Date.now() + 300000); // 5 minutes
-        } else if (appState !== AppState.TODAYS_PLAN || activeGoal) {
-            if (productivityTimerEndTime !== null || productivityTimerFailed) {
-                setProductivityTimerEndTime(null);
-                setProductivityTimerFailed(false);
-            }
-        }
-    }, [appState, activeGoal, productivityTimerEndTime, productivityTimerFailed]);
-
-    useEffect(() => {
-        if (productivityTimerEndTime && currentTime >= productivityTimerEndTime) {
-            setProductivityTimerFailed(true);
-            setProductivityTimerEndTime(null);
-        }
-    }, [currentTime, productivityTimerEndTime]);
-
-    const resetProductivityChallenge = useCallback(() => {
-        setProductivityTimerFailed(false);
-        setProductivityTimerEndTime(Date.now() + 300000);
-    }, []);
-
-    const productivityTimer = productivityTimerEndTime ? Math.max(0, productivityTimerEndTime - currentTime) : null;
-
   const renderContent = () => {
     if (isLoading) return React.createElement('div', { className: 'flex justify-center items-center p-8' }, React.createElement(Spinner, null));
     if (!apiKey) return React.createElement(ApiKeyPrompt, { onSubmit: handleApiKeySubmit, error });
@@ -803,9 +709,6 @@ const App = () => {
             onStartGoal: handleStartPlannedGoal, 
             currentUser: currentUser.uid, 
             onShowHistory: handleShowHistory,
-            productivityTimer: productivityTimer,
-            productivityTimerFailed: productivityTimerFailed,
-            onResetProductivityChallenge: resetProductivityChallenge,
         }) : React.createElement('div', { className: 'flex justify-center items-center p-8' }, React.createElement(Spinner, null));
       case AppState.AWAITING_CODE: return React.createElement(CodeUploader, { onCodeImageSubmit: handleCodeImageSubmit, isLoading, onShowHistory: handleShowHistory, onLogout: handleLogout, currentUser, streakData, onSetCommitment: handleSetDailyCommitment, onCompleteCommitment: handleCompleteDailyCommitment });
       case AppState.GOAL_SET: {

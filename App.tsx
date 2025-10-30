@@ -31,22 +31,6 @@ import { Chat } from '@google/genai';
 
 type CompletionReason = 'verified' | 'skipped';
 
-const getPenaltyGoalString = (): string => {
-    const today = new Date();
-    const dd = String(today.getDate()).padStart(2, '0');
-    const mm = String(today.getMonth() + 1).padStart(2, '0');
-    const yy = today.getFullYear().toString().slice(-2);
-    const formattedDate = `${dd}/${mm}/${yy}`;
-
-    return `I must submit proof of my handwritten homework on separate, numbered papers.
-Each paper must have the date ${formattedDate} written at the top.
-My homework consists of a single paragraph in French, which must be at least 150 words long.
-This French paragraph must be written out by hand 5 times in total.
-Each of the 5 repetitions must be clearly labeled with a highlighted heading: "Repetition 1", "Repetition 2", "Repetition 3", "Repetition 4", and "Repetition 5".
-The highlighting on the "Repetition X" headings must be clearly visible in the proof images.`;
-};
-
-
 const App: React.FC = () => {
   const [apiKey, setApiKey] = useState<string | null>(() => localStorage.getItem('GEMINI_API_KEY'));
   const [appState, setAppState] = useState<AppState>(AppState.AUTH);
@@ -85,10 +69,6 @@ const App: React.FC = () => {
   const [currentTime, setCurrentTime] = useState(Date.now());
   const [breakChoice, setBreakChoice] = useState<'new' | 'plan' | null>(null);
   const [nextGoalSelectionCountdown, setNextGoalSelectionCountdown] = useState<number | null>(null);
-
-  const [productivityTimerEndTime, setProductivityTimerEndTime] = useState<number | null>(null);
-  const [productivityTimerFailed, setProductivityTimerFailed] = useState(false);
-
 
   const [chat, setChat] = useState<Chat | null>(null);
   const [chatMessages, setChatMessages] = useState<Array<{ text: string, role: 'user' | 'model' }>>([]);
@@ -250,56 +230,6 @@ const App: React.FC = () => {
       setTodaysPlan(plan);
       dataService.savePlan(currentUser.uid, plan);
   };
-
-  const createEndOfDayPenaltyGoal = (id: string): PlannedGoal => {
-    return {
-        id: id,
-        subject: 'Penalty: Incomplete Day',
-        goal: getPenaltyGoalString(),
-        timeLimitInMs: null,
-        consequence: "Complete this penalty to unlock today's other goals.",
-        startTime: "00:00",
-        endTime: "00:01", // Ensures it's at the top
-        status: 'pending',
-    };
-};
-  
-  // Effect to check for end-of-day penalty
-  useEffect(() => {
-    const checkPenaltyAndApply = async () => {
-        if (!currentUser || activeGoal !== null || !todaysPlan) {
-            return;
-        }
-        const todayStr = getISODateString(new Date());
-        const penaltyCheckKey = `penalty_check_for_${currentUser.uid}`;
-        if (sessionStorage.getItem(penaltyCheckKey) === todayStr) {
-            return;
-        }
-
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        const yesterdaysPlan = await dataService.loadPlan(currentUser.uid, yesterday);
-
-        if (yesterdaysPlan && yesterdaysPlan.goals.length > 0 && yesterdaysPlan.goals.some(g => g.status === 'pending')) {
-            const penaltyId = `PENALTY-${getISODateString(yesterday)}`;
-            
-            if (todaysPlan.goals.some(g => g.id === penaltyId)) {
-                sessionStorage.setItem(penaltyCheckKey, todayStr);
-                return;
-            }
-
-            const penaltyGoal = createEndOfDayPenaltyGoal(penaltyId);
-            const updatedPlan = {
-                ...todaysPlan,
-                goals: [penaltyGoal, ...todaysPlan.goals],
-            };
-            handleSavePlan(updatedPlan);
-        }
-        sessionStorage.setItem(penaltyCheckKey, todayStr);
-    };
-    checkPenaltyAndApply();
-  }, [currentUser, todaysPlan, activeGoal]);
-
 
   const clearApiKey = useCallback(() => {
     localStorage.removeItem('GEMINI_API_KEY');
@@ -691,7 +621,7 @@ const App: React.FC = () => {
         if (!currentUser || !todaysPlan) return;
         
         const nextPendingGoal = todaysPlan.goals
-            .filter(g => g.status === 'pending' && !g.id.startsWith('PENALTY-'))
+            .filter(g => g.status === 'pending')
             .sort((a, b) => a.startTime.localeCompare(b.startTime))[0];
 
         if (!nextPendingGoal) {
@@ -736,7 +666,7 @@ const App: React.FC = () => {
         }
 
         const nextPendingGoal = todaysPlan.goals
-            .filter(g => g.status === 'pending' && !g.id.startsWith('PENALTY-'))
+            .filter(g => g.status === 'pending')
             .sort((a, b) => a.startTime.localeCompare(b.startTime))[0];
 
         if (!nextPendingGoal) {
@@ -790,33 +720,6 @@ const App: React.FC = () => {
         }
     }, [appState, breakEndTime, currentTime, handleFinishBreakAndStartNextGoal, nextGoal, resetToStart]);
 
-    // Productivity timer lifecycle effect
-    useEffect(() => {
-        if (appState === AppState.TODAYS_PLAN && !activeGoal && productivityTimerEndTime === null && !productivityTimerFailed) {
-            setProductivityTimerEndTime(Date.now() + 300000); // 5 minutes
-        } else if (appState !== AppState.TODAYS_PLAN || activeGoal) {
-            if (productivityTimerEndTime !== null || productivityTimerFailed) {
-                setProductivityTimerEndTime(null);
-                setProductivityTimerFailed(false);
-            }
-        }
-    }, [appState, activeGoal, productivityTimerEndTime, productivityTimerFailed]);
-
-    // Logic for checking if timer has failed (depends on currentTime)
-    useEffect(() => {
-        if (productivityTimerEndTime && currentTime >= productivityTimerEndTime) {
-            setProductivityTimerFailed(true);
-            setProductivityTimerEndTime(null);
-        }
-    }, [currentTime, productivityTimerEndTime]);
-
-    const resetProductivityChallenge = useCallback(() => {
-        setProductivityTimerFailed(false);
-        setProductivityTimerEndTime(Date.now() + 300000);
-    }, []);
-
-    const productivityTimer = productivityTimerEndTime ? Math.max(0, productivityTimerEndTime - currentTime) : null;
-
   const renderContent = () => {
     if (isLoading) return <div className="flex justify-center items-center p-8"><Spinner /></div>;
     if (!apiKey) return <ApiKeyPrompt onSubmit={handleApiKeySubmit} error={error} />;
@@ -830,9 +733,6 @@ const App: React.FC = () => {
             onStartGoal={handleStartPlannedGoal} 
             currentUser={currentUser.uid} 
             onShowHistory={handleShowHistory}
-            productivityTimer={productivityTimer}
-            productivityTimerFailed={productivityTimerFailed}
-            onResetProductivityChallenge={resetProductivityChallenge}
         /> : <div className="flex justify-center items-center p-8"><Spinner /></div>;
       case AppState.AWAITING_CODE: return <CodeUploader onCodeImageSubmit={handleCodeImageSubmit} isLoading={isLoading} onShowHistory={handleShowHistory} onLogout={handleLogout} currentUser={currentUser} streakData={streakData} onSetCommitment={handleSetDailyCommitment} onCompleteCommitment={handleCompleteDailyCommitment} />;
       case AppState.GOAL_SET: {

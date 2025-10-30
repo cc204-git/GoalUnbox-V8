@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef } from 'react';
 import GoalSetter from './GoalSetter.js';
-import { formatDuration, getISODateString, formatCountdown } from '../utils/timeUtils.js';
+import { formatDuration, getISODateString } from '../utils/timeUtils.js';
 import { savePlan, loadPlan } from '../services/planService.js';
 import { extractScheduleFromImage } from '../services/geminiService.js';
 import Spinner from './Spinner.js';
@@ -13,10 +13,7 @@ const TodaysPlan = ({
     onSavePlan, 
     onStartGoal, 
     currentUser, 
-    onShowHistory,
-    productivityTimer,
-    productivityTimerFailed,
-    onResetProductivityChallenge
+    onShowHistory
 }) => {
     const [plan, setPlan] = useState(initialPlan);
     const [showForm, setShowForm] = useState(false);
@@ -130,8 +127,6 @@ const TodaysPlan = ({
 
     const sortGoals = (goals) => {
         return [...goals].sort((a, b) => {
-            if (a.id.startsWith('PENALTY-')) return -1;
-            if (b.id.startsWith('PENALTY-')) return 1;
             const aHasTime = a.startTime && a.endTime;
             const bHasTime = b.startTime && b.endTime;
             if (aHasTime && !bHasTime) return -1;
@@ -141,17 +136,12 @@ const TodaysPlan = ({
         });
     };
     
-    const penaltyGoal = useMemo(() => {
-        const pGoal = plan.goals.find(g => g.id.startsWith('PENALTY-'));
-        return pGoal && pGoal.status === 'pending' ? pGoal : null;
-    }, [plan.goals]);
-
     const sortedGoals = useMemo(() => sortGoals(plan.goals), [plan.goals]);
     const sortedTomorrowsGoals = useMemo(() => tomorrowsPlan ? sortGoals(tomorrowsPlan.goals) : [], [tomorrowsPlan]);
     const allGoalsCompleted = useMemo(() => plan.goals.length > 0 && plan.goals.every(g => g.status !== 'pending'), [plan.goals]);
     const today = new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
-    const renderGoal = (goal, isTomorrow = false, isLocked = false) => {
+    const renderGoal = (goal, isTomorrow = false) => {
         const isExpanded = expandedGoalId === goal.id;
         const isCompleted = goal.status === 'completed';
         const isSkipped = goal.status === 'skipped';
@@ -171,9 +161,8 @@ const TodaysPlan = ({
         } else if (!isTomorrow) {
             statusBadge = React.createElement('button', {
                 onClick: (e) => { e.stopPropagation(); onStartGoal(goal); },
-                disabled: isLocked,
                 className: 'bg-cyan-500 text-slate-900 font-bold py-2 px-4 rounded-lg hover:bg-cyan-400 transition-colors disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed',
-                title: isLocked ? "You must complete the penalty goal first." : "Start this goal"
+                title: "Start this goal"
             }, 'Start Goal');
         }
 
@@ -197,22 +186,6 @@ const TodaysPlan = ({
         );
     };
     
-    if (productivityTimerFailed) {
-        return React.createElement('div', { className: "fixed inset-0 bg-red-950/90 backdrop-blur-sm flex flex-col items-center justify-center z-50 animate-fade-in p-4" },
-            React.createElement('div', { className: "text-center text-white" },
-                React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", className: "h-24 w-24 mx-auto text-red-400", fill: "none", viewBox: "0 0 24 24", stroke: "currentColor", strokeWidth: 2 },
-                    React.createElement('path', { strokeLinecap: "round", strokeLinejoin: "round", d: "M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" })
-                ),
-                React.createElement('h1', { className: "text-5xl font-bold text-red-400 mt-4" }, "CHALLENGE FAILED"),
-                React.createElement('p', { className: "text-slate-300 mt-4 text-lg max-w-md" }, "You did not start a goal within the 5-minute time limit. Stay focused and try again."),
-                React.createElement('button', {
-                    onClick: onResetProductivityChallenge,
-                    className: "mt-8 bg-white text-red-900 font-bold py-3 px-8 rounded-lg text-lg hover:bg-red-100 transition-colors"
-                }, "Restart Challenge")
-            )
-        );
-    }
-
     if (isLoadingImport) {
         return React.createElement('div', { className: "w-full max-w-3xl bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl text-center animate-fade-in" },
             React.createElement('div', { className: 'flex flex-col items-center gap-4' },
@@ -294,26 +267,14 @@ const TodaysPlan = ({
         React.createElement('path', { strokeLinecap: "round", strokeLinejoin: "round", d: "M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" }))
     );
 
-    const isTimerLow = productivityTimer !== null && productivityTimer < 60000;
-
     return React.createElement('div', { className: 'w-full max-w-3xl' },
-        productivityTimer !== null && React.createElement('div', { className: `w-full text-center p-3 rounded-lg border mb-6 transition-colors duration-500 ${isTimerLow ? 'bg-red-900/50 border-red-500/50 animate-pulse' : 'bg-slate-900/50 border-slate-700'}` },
-            React.createElement('p', { className: `text-sm uppercase tracking-wider ${isTimerLow ? 'text-red-300' : 'text-slate-400'}` }, 'You must start a goal in:'),
-            React.createElement('p', { className: `text-3xl font-mono ${isTimerLow ? 'text-red-300' : 'text-cyan-300'}` }, formatCountdown(productivityTimer))
-        ),
         React.createElement('div', { className: 'bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full text-center animate-fade-in relative' },
             historyButton,
             React.createElement('h2', { className: 'text-3xl font-bold tracking-tighter text-cyan-300' }, "Today's Plan"),
             React.createElement('p', { className: 'text-slate-400 mt-1 mb-6' }, today),
-            penaltyGoal && React.createElement('div', { className: 'my-4' }, 
-                React.createElement(Alert, {
-                    type: 'error',
-                    message: "INCOMPLETE DAY PENALTY: You didn't complete all goals yesterday. You must complete this penalty task before starting any others for today."
-                })
-            ),
             React.createElement('div', { className: 'space-y-4 my-6' },
                 sortedGoals.length === 0 && !showForm && React.createElement('div', { className: 'text-center py-12' }, React.createElement('p', { className: 'text-slate-500' }, 'Your plan is empty. Add a goal to get started!')),
-                sortedGoals.map(goal => renderGoal(goal, false, !!penaltyGoal && goal.id !== penaltyGoal.id))
+                sortedGoals.map(goal => renderGoal(goal, false))
             ),
             !showForm && React.createElement('div', { className: 'flex flex-col sm:flex-row gap-4' },
                 React.createElement('input', { type: 'file', ref: fileInputRef, onChange: handleFileChange, accept: 'image/*', className: 'hidden' }),
