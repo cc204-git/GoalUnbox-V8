@@ -1,3 +1,4 @@
+
 import { User } from "firebase/auth";
 
 export enum AppState {
@@ -57,4 +58,17 @@ export interface PlannedGoal {
 export interface TodaysPlan {
     date: string; // "YYYY-MM-DD"
     goals: PlannedGoal[];
+}
+
+export interface GoogleCalendarEvent {
+    id: string;
+    summary: string;
+    start: {
+        dateTime?: string;
+        date?: string;
+    };
+    end: {
+        dateTime?: string;
+        date?: string;
+    };
 }

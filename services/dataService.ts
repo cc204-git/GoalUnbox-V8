@@ -1,3 +1,4 @@
+
 import { db } from './firebaseService';
 import {
     doc,
@@ -14,7 +15,7 @@ import {
     orderBy
 } from 'firebase/firestore';
 import { ActiveGoalState, CompletedGoal, StreakData, TodaysPlan } from '../types';
-import { getISODateString } from '../utils/timeUtils';
+import { getISODateString, getStartOfWeekISOString } from '../utils/timeUtils';
 
 // Helper to get document references
 const getRefs = (userId: string) => {

@@ -10,6 +10,7 @@ import {
 import { auth } from './services/firebaseService.js';
 import * as authService from './services/authService.js';
 import * as dataService from './services/dataService.js';
+import * as googleCalendarService from './services/googleCalendarService.js';
 import { fileToBase64 } from './utils/fileUtils.js';
 import { formatDuration, getISODateString, formatCountdown, getStartOfWeekISOString } from './utils/timeUtils.js';
 
@@ -24,6 +25,7 @@ import GoalHistory from './components/GoalHistory.js';
 import Auth from './components/Auth.js';
 import ApiKeyPrompt from './components/ApiKeyPrompt.js';
 import Spinner from './components/Spinner.js';
+import GoogleCalendarModal from './components/GoogleCalendarModal.js';
 
 const App = () => {
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('GEMINI_API_KEY'));
@@ -63,6 +65,26 @@ const App = () => {
 
   const [streakData, setStreakData] = useState(null);
   const [todaysPlan, setTodaysPlan] = useState(null);
+
+  // Google Calendar State
+  const [isGapiReady, setIsGapiReady] = useState(false);
+  const [isGoogleSignedIn, setIsGoogleSignedIn] = useState(false);
+  const [showCalendarModal, setShowCalendarModal] = useState(false);
+  const [calendarEvents, setCalendarEvents] = useState([]);
+  const [isCalendarLoading, setIsCalendarLoading] = useState(false);
+  const [goalSetterDataFromCalendar, setGoalSetterDataFromCalendar] = useState(null);
+
+  useEffect(() => {
+    googleCalendarService.initGapiClient(setIsGoogleSignedIn)
+        .then(() => {
+            setIsGapiReady(true);
+        })
+        .catch(err => {
+            console.error("GAPI client init error:", err.message);
+            setError("Could not connect to Google Calendar. Please refresh and try again.");
+            setIsGapiReady(true); // Allow app to load without calendar features
+        });
+  }, []);
   
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, user => {
@@ -80,7 +102,6 @@ const App = () => {
   }, []);
 
   useEffect(() => {
-    // General purpose timer for UI updates every second
     const intervalId = setInterval(() => {
         setCurrentTime(Date.now());
     }, 1000);
@@ -120,15 +141,7 @@ const App = () => {
 
     listeners.push(dataService.listenToPlan(uid, new Date(), (plan) => {
         if (!plan) {
-            const defaultGoal1 = {
-                id: `default-${new Date().getTime()}-1`, subject: "Anki Review", goal: "Upload a verification of finishing all anki flash cards. I must upload a screenshot from my Windows computer. One half of the screen must show the Anki dashboard with 0 cards to do, and the other half must show the current date (Day, Month DD, YYYY). The date in the screenshot must match today's date.",
-                timeLimitInMs: 3600000, consequence: null, startTime: "11:00", endTime: "12:00", status: 'pending',
-            };
-            const defaultGoal2 = {
-                id: `default-${new Date().getTime()}-2`, subject: "Anki Creation", goal: "I must send verification of me uploading flashcards to anki. I must upload a screenshot from my Windows computer. One half of the screen must show the Anki interface after adding new cards, and the other half must show the current date (Day, Month DD, YYYY). The date in the screenshot must match today's date.",
-                timeLimitInMs: null, consequence: null, startTime: "12:00", endTime: "13:00", status: 'pending',
-            };
-            const newPlan = { date: getISODateString(new Date()), goals: [defaultGoal1, defaultGoal2] };
+            const newPlan = { date: getISODateString(new Date()), goals: [] };
             dataService.savePlan(uid, newPlan);
             setTodaysPlan(newPlan);
         } else {
@@ -165,7 +178,6 @@ const App = () => {
             streak.commitment = null;
         }
         
-        // Check and reset weekly skip count
         if (!streak.weekStartDate || streak.weekStartDate !== currentWeekStart) {
             streak.skipsThisWeek = 0;
             streak.weekStartDate = currentWeekStart;
@@ -176,13 +188,12 @@ const App = () => {
 
 
         setStreakData(streak);
-        if (!data || !data.weekStartDate) { // Save back if it was newly created or needed updating
+        if (!data || !data.weekStartDate) {
             dataService.saveStreakData(uid, streak);
         }
     }).catch(err => {
         console.error("Failed to load streak data:", err);
-        setError("Could not load your streak data. Please try again or continue with limited functionality.");
-        // Initialize with default streak data so the app doesn't crash
+        setError("Could not load your streak data.");
         const today = new Date();
         const currentWeekStart = getStartOfWeekISOString(today);
         const defaultStreak = { 
@@ -207,8 +218,31 @@ const App = () => {
 
   const handleSavePlan = (plan) => {
       if (!currentUser) return;
-      setTodaysPlan(plan);
+      if(plan.date === getISODateString(new Date())) {
+        setTodaysPlan(plan);
+      }
       dataService.savePlan(currentUser.uid, plan);
+  };
+
+   const handleAddGoalToPlan = async (payload) => {
+      if (!currentUser) return;
+      const totalMs = (payload.timeLimit.hours * 3600 + payload.timeLimit.minutes * 60) * 1000;
+      const newGoal = {
+          id: Date.now().toString(),
+          goal: payload.goal,
+          subject: payload.subject,
+          timeLimitInMs: totalMs > 0 ? totalMs : null,
+          consequence: payload.consequence.trim() || null,
+          startTime: payload.startTime,
+          endTime: payload.endTime,
+          status: 'pending',
+      };
+      
+      const planToUpdate = todaysPlan || { date: getISODateString(new Date()), goals: [] };
+      const updatedPlan = { ...planToUpdate, goals: [...planToUpdate.goals, newGoal] };
+      await dataService.savePlan(currentUser.uid, updatedPlan);
+
+      if (goalSetterDataFromCalendar) setGoalSetterDataFromCalendar(null);
   };
   
   const clearApiKey = useCallback(() => {
@@ -316,7 +350,7 @@ const App = () => {
         setCompletedSecretCode(secretCode);
         setCompletedSecretCodeImage(secretCodeImage);
         const newData = { ...streakData, lastCompletedCodeImage: secretCodeImage };
-        setStreakData(newData); // Optimistic update
+        setStreakData(newData);
         await dataService.saveStreakData(currentUser.uid, newData);
     }
 
@@ -415,45 +449,30 @@ const App = () => {
   
   const handleSkipGoal = useCallback(async () => {
     if (!currentUser || !activeGoal || !streakData) return;
-
     const skipsLeft = 2 - (streakData.skipsThisWeek ?? 0);
     if (skipsLeft <= 0) {
         setError("You have no skips left for this week.");
         return;
     }
-
     if (!window.confirm(`Are you sure you want to skip this goal? This will use 1 of your ${skipsLeft} skips for the week.`)) {
         return;
     }
-    
     setIsLoading(true);
     setError(null);
-    
     const endTime = Date.now();
     const duration = goalSetTime ? endTime - goalSetTime : 0;
-    
     try {
         const goalSummary = await summarizeGoal(goal);
         const newEntry = {
-            id: endTime,
-            goalSummary,
-            fullGoal: goal,
-            subject: subject,
-            startTime: goalSetTime,
-            endTime,
-            duration,
-            completionReason: 'skipped'
+            id: endTime, goalSummary, fullGoal: goal, subject: subject,
+            startTime: goalSetTime, endTime, duration, completionReason: 'skipped'
         };
         await dataService.addHistoryItem(currentUser.uid, newEntry);
-
         if (activePlannedGoal && todaysPlan) {
-            const updatedGoals = todaysPlan.goals.map(g => 
-                g.id === activePlannedGoal.id ? { ...g, status: 'skipped' } : g
-            );
+            const updatedGoals = todaysPlan.goals.map(g => g.id === activePlannedGoal.id ? { ...g, status: 'skipped' } : g);
             const updatedPlan = { ...todaysPlan, goals: updatedGoals };
             await dataService.savePlan(currentUser.uid, updatedPlan);
         }
-
         const updatedStreakData = {
             ...streakData,
             skipsThisWeek: (streakData.skipsThisWeek ?? 0) + 1,
@@ -461,11 +480,8 @@ const App = () => {
         };
         await dataService.saveStreakData(currentUser.uid, updatedStreakData);
         setStreakData(updatedStreakData);
-
         await dataService.clearActiveGoal(currentUser.uid);
-        
         const breakDurationMs = (duration < 7200000) ? 600000 : (duration / 7200000) * 900000;
-        
         if (breakDurationMs > 0) {
             setAvailableBreakTime(breakDurationMs);
             setCompletionDuration(formatDuration(duration));
@@ -489,11 +505,7 @@ const App = () => {
 
   const handleShowHistory = () => setAppState(AppState.HISTORY_VIEW);
   const handleHistoryBack = () => setAppState(AppState.TODAYS_PLAN);
-
-  const handleDeleteHistoryItem = (firestoreDocId) => {
-    if (currentUser) dataService.deleteHistoryItem(currentUser.uid, firestoreDocId);
-  };
-
+  const handleDeleteHistoryItem = (firestoreDocId) => { if (currentUser) dataService.deleteHistoryItem(currentUser.uid, firestoreDocId); };
   const handleSetDailyCommitment = (text) => {
       if (!currentUser || !streakData) return;
       const todayStr = getISODateString(new Date());
@@ -502,31 +514,21 @@ const App = () => {
       setStreakData(newData);
       dataService.saveStreakData(currentUser.uid, newData);
   };
-    
   const handleCompleteDailyCommitment = () => {
       if (!currentUser || !streakData || !streakData.commitment || streakData.commitment.completed) return;
-      
       const todayStr = getISODateString(new Date());
       const newCommitment = { ...streakData.commitment, completed: true };
       const newStreak = streakData.lastCompletionDate === todayStr ? streakData.currentStreak : streakData.currentStreak + 1;
-      
-      const newData = {
-          ...streakData, commitment: newCommitment, currentStreak: newStreak, lastCompletionDate: todayStr,
-      };
+      const newData = { ...streakData, commitment: newCommitment, currentStreak: newStreak, lastCompletionDate: todayStr };
       setStreakData(newData);
       dataService.saveStreakData(currentUser.uid, newData);
   };
-
     const handleStartPlannedGoal = (goalToStart) => {
         setGoal(goalToStart.goal); setSubject(goalToStart.subject);
         setTimeLimitInMs(goalToStart.timeLimitInMs); setConsequence(goalToStart.consequence);
         setActivePlannedGoal(goalToStart); setAppState(AppState.AWAITING_CODE);
     };
-
-    const handleFinishDay = () => {
-        setAppState(AppState.GOAL_COMPLETED);
-    };
-
+    const handleFinishDay = () => setAppState(AppState.GOAL_COMPLETED);
     const handleNextCodeImageSubmit = async (file) => {
         setIsLoading(true); setError(null);
         try {
@@ -542,20 +544,16 @@ const App = () => {
             };
         } catch (err) { handleApiError(err); setIsLoading(false); }
     };
-
     const handleNextGoalSubmit = (payload) => {
         let totalMs = (payload.timeLimit.hours * 3600 + payload.timeLimit.minutes * 60) * 1000;
         const newTimeLimitInMs = totalMs > 0 ? totalMs : null;
         setNextGoal({ 
-            goal: payload.goal, 
-            subject: payload.subject, 
-            timeLimitInMs: newTimeLimitInMs, 
-            consequence: payload.consequence 
+            goal: payload.goal, subject: payload.subject, 
+            timeLimitInMs: newTimeLimitInMs, consequence: payload.consequence 
         });
         if(availableBreakTime) setBreakEndTime(Date.now() + availableBreakTime);
         setAppState(AppState.BREAK_ACTIVE);
     };
-    
     const handleSelectPlannedGoalForNext = (goalToSelect) => {
         setNextGoal({
             goal: goalToSelect.goal, subject: goalToSelect.subject, timeLimitInMs: goalToSelect.timeLimitInMs,
@@ -564,7 +562,6 @@ const App = () => {
         if(availableBreakTime) setBreakEndTime(Date.now() + availableBreakTime);
         setAppState(AppState.BREAK_ACTIVE);
     };
-
     const handleFinishBreakAndStartNextGoal = useCallback(async () => {
         if (!currentUser || !nextGoal?.goal || !nextGoal?.subject || !nextGoal?.secretCode || !nextGoal.secretCodeImage) {
             setError("Could not start next goal. Information was missing.");
@@ -573,102 +570,57 @@ const App = () => {
         }
         const nextGoalTime = Date.now();
         const activeState = {
-            secretCode: nextGoal.secretCode,
-            secretCodeImage: nextGoal.secretCodeImage,
-            goal: nextGoal.goal,
-            subject: nextGoal.subject,
-            goalSetTime: nextGoalTime,
-            timeLimitInMs: nextGoal.timeLimitInMs || null,
-            consequence: nextGoal.consequence || null,
+            secretCode: nextGoal.secretCode, secretCodeImage: nextGoal.secretCodeImage,
+            goal: nextGoal.goal, subject: nextGoal.subject, goalSetTime: nextGoalTime,
+            timeLimitInMs: nextGoal.timeLimitInMs || null, consequence: nextGoal.consequence || null,
         };
         await dataService.saveActiveGoal(currentUser.uid, activeState);
-        
         if (nextGoal.plannedGoalId && todaysPlan) {
             const plannedGoal = todaysPlan.goals.find(g => g.id === nextGoal.plannedGoalId);
             setActivePlannedGoal(plannedGoal || null);
         } else { setActivePlannedGoal(null); }
-        
         setBreakEndTime(null); setAvailableBreakTime(null); setNextGoal(null);
-        setBreakChoice(null);
-        setVerificationFeedback(null); setChat(null); setChatMessages([]);
+        setBreakChoice(null); setVerificationFeedback(null); setChat(null); setChatMessages([]);
     }, [nextGoal, currentUser, todaysPlan, resetToStart]);
-    
     const handleAutoStartNextGoal = useCallback(async () => {
         if (!currentUser || !todaysPlan) return;
-        
-        const nextPendingGoal = todaysPlan.goals
-            .filter(g => g.status === 'pending')
-            .sort((a, b) => a.startTime.localeCompare(b.startTime))[0];
-
-        if (!nextPendingGoal) {
-            handleFinishDay();
-            return;
-        }
-
+        const nextPendingGoal = todaysPlan.goals.filter(g => g.status === 'pending').sort((a, b) => a.startTime.localeCompare(b.startTime))[0];
+        if (!nextPendingGoal) { handleFinishDay(); return; }
         if (!completedSecretCode || !completedSecretCodeImage) {
             setError("Cannot auto-start next goal: previous code not found. Please start the next goal manually.");
-            resetToStart();
-            return;
+            resetToStart(); return;
         }
-
         const nextGoalTime = Date.now();
         const activeState = {
-            secretCode: completedSecretCode,
-            secretCodeImage: completedSecretCodeImage,
-            goal: nextPendingGoal.goal,
-            subject: nextPendingGoal.subject,
-            goalSetTime: nextGoalTime,
-            timeLimitInMs: nextPendingGoal.timeLimitInMs,
+            secretCode: completedSecretCode, secretCodeImage: completedSecretCodeImage,
+            goal: nextPendingGoal.goal, subject: nextPendingGoal.subject,
+            goalSetTime: nextGoalTime, timeLimitInMs: nextPendingGoal.timeLimitInMs,
             consequence: nextPendingGoal.consequence,
         };
         await dataService.saveActiveGoal(currentUser.uid, activeState);
-        
         setActivePlannedGoal(nextPendingGoal);
-        
-        setBreakEndTime(null); 
-        setAvailableBreakTime(null); 
-        setNextGoal(null);
-        setBreakChoice(null);
-        setVerificationFeedback(null); 
-        setChat(null); 
-        setChatMessages([]);
+        setBreakEndTime(null); setAvailableBreakTime(null); setNextGoal(null);
+        setBreakChoice(null); setVerificationFeedback(null); setChat(null); setChatMessages([]);
     }, [currentUser, todaysPlan, completedSecretCode, completedSecretCodeImage, resetToStart]);
-
-
     const handleStartMealBreak = useCallback(() => {
         if (!todaysPlan || !completedSecretCode || !completedSecretCodeImage) {
-            setError("Cannot start a meal break without a next planned goal or previous code.");
-            return;
+            setError("Cannot start a meal break without a next planned goal or previous code."); return;
         }
-
-        const nextPendingGoal = todaysPlan.goals
-            .filter(g => g.status === 'pending')
-            .sort((a, b) => a.startTime.localeCompare(b.startTime))[0];
-
-        if (!nextPendingGoal) {
-            setError("No more goals for today to start after a break.");
-            return;
-        }
-        
+        const nextPendingGoal = todaysPlan.goals.filter(g => g.status === 'pending').sort((a, b) => a.startTime.localeCompare(b.startTime))[0];
+        if (!nextPendingGoal) { setError("No more goals for today to start after a break."); return; }
         const FORTY_FIVE_MINS_MS = 45 * 60 * 1000;
-
         setNextGoal({
-            goal: nextPendingGoal.goal,
-            subject: nextPendingGoal.subject,
-            timeLimitInMs: nextPendingGoal.timeLimitInMs,
-            consequence: nextPendingGoal.consequence,
-            plannedGoalId: nextPendingGoal.id
+            goal: nextPendingGoal.goal, subject: nextPendingGoal.subject,
+            timeLimitInMs: nextPendingGoal.timeLimitInMs, consequence: nextPendingGoal.consequence,
+            plannedGoalId: nextPendingGoal.id,
         });
-
         setBreakEndTime(Date.now() + FORTY_FIVE_MINS_MS);
         setAppState(AppState.BREAK_ACTIVE);
     }, [todaysPlan, completedSecretCode, completedSecretCodeImage]);
-
-
     useEffect(() => {
         let intervalId;
         if (appState === AppState.AWAITING_BREAK) {
-            setNextGoalSelectionCountdown(120000); // 2 minutes
+            setNextGoalSelectionCountdown(120000);
             intervalId = window.setInterval(() => {
                 setNextGoalSelectionCountdown(prev => {
                     if (prev === null || prev <= 1000) {
@@ -684,7 +636,6 @@ const App = () => {
         }
         return () => { if (intervalId) clearInterval(intervalId); };
     }, [appState, handleAutoStartNextGoal]);
-
     useEffect(() => {
         if (appState === AppState.BREAK_ACTIVE && breakEndTime && breakEndTime - currentTime <= 0) {
             if (nextGoal?.secretCode && nextGoal?.secretCodeImage) {
@@ -696,10 +647,37 @@ const App = () => {
         }
     }, [appState, breakEndTime, currentTime, handleFinishBreakAndStartNextGoal, nextGoal, resetToStart]);
 
+  // Google Calendar Handlers
+  const handleGoogleSignIn = () => googleCalendarService.signIn();
+  const handleFetchCalendarEvents = async () => {
+      setIsCalendarLoading(true);
+      setError(null);
+      try {
+          const events = await googleCalendarService.listTodaysEvents();
+          setCalendarEvents(events);
+          setShowCalendarModal(true);
+      } catch (err) {
+          setError("Could not fetch Google Calendar events. Please try signing in again.");
+          googleCalendarService.signOut();
+      } finally {
+          setIsCalendarLoading(false);
+      }
+  };
+  const handleAddGoalFromCalendar = (event) => {
+      const startTime = event.start.dateTime ? new Date(event.start.dateTime).toTimeString().substring(0, 5) : "00:00";
+      const endTime = event.end.dateTime ? new Date(event.end.dateTime).toTimeString().substring(0, 5) : "23:59";
+      setGoalSetterDataFromCalendar({ subject: event.summary, startTime, endTime });
+      setShowCalendarModal(false);
+  };
+  
   const renderContent = () => {
     if (isLoading) return React.createElement('div', { className: 'flex justify-center items-center p-8' }, React.createElement(Spinner, null));
     if (!apiKey) return React.createElement(ApiKeyPrompt, { onSubmit: handleApiKeySubmit, error });
     if (!currentUser) return React.createElement(Auth, null);
+
+    if (goalSetterDataFromCalendar) {
+      return React.createElement('div', { className: 'mt-6 flex justify-center w-full max-w-lg' }, React.createElement(GoalSetter, { onGoalSubmit: handleAddGoalToPlan, isLoading: false, submitButtonText: 'Add to Plan', onCancel: () => setGoalSetterDataFromCalendar(null), initialData: goalSetterDataFromCalendar }));
+    }
 
     switch (appState) {
       case AppState.TODAYS_PLAN:
@@ -707,8 +685,10 @@ const App = () => {
             initialPlan: todaysPlan, 
             onSavePlan: handleSavePlan, 
             onStartGoal: handleStartPlannedGoal, 
-            currentUser: currentUser.uid, 
             onShowHistory: handleShowHistory,
+            isGoogleSignedIn,
+            onGoogleSignIn: handleGoogleSignIn,
+            onFetchEvents: handleFetchCalendarEvents,
         }) : React.createElement('div', { className: 'flex justify-center items-center p-8' }, React.createElement(Spinner, null));
       case AppState.AWAITING_CODE: return React.createElement(CodeUploader, { onCodeImageSubmit: handleCodeImageSubmit, isLoading, onShowHistory: handleShowHistory, onLogout: handleLogout, currentUser, streakData, onSetCommitment: handleSetDailyCommitment, onCompleteCommitment: handleCompleteDailyCommitment });
       case AppState.GOAL_SET: {
@@ -720,120 +700,45 @@ const App = () => {
       
       case AppState.AWAITING_BREAK: {
             const isLastGoal = todaysPlan?.goals.length > 0 && todaysPlan.goals.every(g => g.status !== 'pending');
-
-            if (isLastGoal) {
-                return React.createElement('div', { className: 'bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full max-w-md text-center animate-fade-in' },
-                    React.createElement('h2', { className: 'text-3xl font-bold mb-4 text-green-400' }, 'All Goals Completed!'),
-                    React.createElement('p', { className: 'text-slate-300 mb-6' }, "Excellent work! You've finished everything for today. Your final unlock code is available."),
-                    React.createElement('button', {
-                        onClick: handleFinishDay,
-                        className: 'w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400 transition-all duration-300'
-                    }, 'View Code & Finish Day')
-                );
-            }
-
+            if (isLastGoal) { return React.createElement('div', { className: 'bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full max-w-md text-center animate-fade-in' }, React.createElement('h2', { className: 'text-3xl font-bold mb-4 text-green-400' }, 'All Goals Completed!'), React.createElement('p', { className: 'text-slate-300 mb-6' }, "Excellent work! You've finished everything for today. Your final unlock code is available."), React.createElement('button', { onClick: handleFinishDay, className: 'w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400 transition-all duration-300' }, 'View Code & Finish Day')); }
             const uncompletedGoals = (todaysPlan?.goals.filter(g => g.status === 'pending') ?? []).sort((a, b) => a.startTime.localeCompare(b.startTime));
-            const now = new Date();
-            const hour = now.getHours();
-            const minute = now.getMinutes();
+            const now = new Date(); const hour = now.getHours(); const minute = now.getMinutes();
             const showLunchButton = (hour === 12 && minute >= 30) || hour === 13;
             const showDinnerButton = hour === 20;
-
-            const mealBreakSection = (!breakChoice && (showLunchButton || showDinnerButton)) ? React.createElement('div', { className: 'bg-slate-800/50 border border-slate-700 p-6 rounded-lg shadow-2xl w-full text-center' },
-                React.createElement('h3', { className: 'text-lg font-semibold text-slate-200 mb-3' }, 'Or Take a Meal Break?'),
-                React.createElement('div', { className: 'flex flex-col sm:flex-row gap-4' },
-                    showLunchButton && React.createElement('button', { onClick: handleStartMealBreak, className: 'flex-1 bg-amber-600/50 border border-amber-500/50 text-amber-300 font-semibold py-3 px-4 rounded-lg hover:bg-amber-600/70 transition-colors' }, 'Lunch Time (45 min)'),
-                    showDinnerButton && React.createElement('button', { onClick: handleStartMealBreak, className: 'flex-1 bg-indigo-600/50 border border-indigo-500/50 text-indigo-300 font-semibold py-3 px-4 rounded-lg hover:bg-indigo-600/70 transition-colors' }, 'Dinner Time (45 min)')
-                )
-            ) : null;
-
+            const mealBreakSection = (!breakChoice && (showLunchButton || showDinnerButton)) ? React.createElement('div', { className: 'bg-slate-800/50 border border-slate-700 p-6 rounded-lg shadow-2xl w-full text-center' }, React.createElement('h3', { className: 'text-lg font-semibold text-slate-200 mb-3' }, 'Or Take a Meal Break?'), React.createElement('div', { className: 'flex flex-col sm:flex-row gap-4' }, showLunchButton && React.createElement('button', { onClick: handleStartMealBreak, className: 'flex-1 bg-amber-600/50 border border-amber-500/50 text-amber-300 font-semibold py-3 px-4 rounded-lg hover:bg-amber-600/70 transition-colors' }, 'Lunch Time (45 min)'), showDinnerButton && React.createElement('button', { onClick: handleStartMealBreak, className: 'flex-1 bg-indigo-600/50 border border-indigo-500/50 text-indigo-300 font-semibold py-3 px-4 rounded-lg hover:bg-indigo-600/70 transition-colors' }, 'Dinner Time (45 min)'))) : null;
             let mainContent;
-            if (!breakChoice) {
-                mainContent = React.createElement('div', { className: 'bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full text-center' },
-                    React.createElement('h2', { className: 'text-xl font-semibold mb-2 text-slate-200' }, 'Prepare Your Next Goal'),
-                    React.createElement('p', { className: 'text-slate-400 mb-4' }, 'You have a break of ', React.createElement('span', {className: 'text-cyan-300 font-bold'}, formatDuration(availableBreakTime ?? 0)), '.'),
-                    React.createElement('div', { className: 'flex flex-col sm:flex-row gap-4' },
-                        React.createElement('button', { onClick: () => setBreakChoice('plan'), className: 'flex-1 bg-slate-700 text-white font-bold py-3 px-4 rounded-lg hover:bg-slate-600 transition-colors', disabled: uncompletedGoals.length === 0 }, `Choose from Plan ${uncompletedGoals.length === 0 ? "(None Left)" : ""}`),
-                        React.createElement('button', { onClick: () => setBreakChoice('new'), className: 'flex-1 bg-slate-700 text-white font-bold py-3 px-4 rounded-lg hover:bg-slate-600 transition-colors' }, 'Set a New Goal')
-                    )
-                );
-            } else if (breakChoice === 'new') {
-                mainContent = React.createElement(GoalSetter, { onGoalSubmit: handleNextGoalSubmit, isLoading: false, submitButtonText: 'Confirm & Start Break', onCancel: () => setBreakChoice(null) });
-            } else if (breakChoice === 'plan') {
-                 mainContent = React.createElement('div', { className: 'bg-slate-800/50 border border-slate-700 p-6 rounded-lg shadow-2xl w-full text-center' },
-                        React.createElement('h2', { className: 'text-xl font-semibold mb-4 text-slate-200' }, 'Select Next Goal from Plan'),
-                        React.createElement('div', { className: 'space-y-3 max-h-64 overflow-y-auto pr-2' },
-                            uncompletedGoals.map(g => React.createElement('div', { key: g.id, className: 'p-3 bg-slate-900/50 border border-slate-700 rounded-lg text-left flex items-center justify-between gap-4' },
-                                React.createElement('div', null,
-                                    React.createElement('p', { className: 'font-mono text-sm text-cyan-300' }, `${g.startTime} - ${g.endTime}`),
-                                    React.createElement('p', { className: 'font-bold text-white mt-1' }, g.subject),
-                                    React.createElement('p', { className: 'text-xs text-slate-400' }, `${g.goal.substring(0, 70)}...`)
-                                ),
-                                React.createElement('button', { onClick: () => handleSelectPlannedGoalForNext(g), className: 'bg-cyan-500 text-slate-900 font-bold py-2 px-3 rounded-lg hover:bg-cyan-400 text-sm flex-shrink-0' }, 'Select')
-                            ))
-                        ),
-                        React.createElement('button', { onClick: () => setBreakChoice(null), className: 'mt-4 text-slate-400 hover:text-white text-sm' }, 'Back')
-                    );
-            }
-
-
-            return React.createElement('div', { className: 'w-full max-w-2xl flex flex-col items-center gap-6' },
-                React.createElement('div', { className: 'w-full text-center bg-slate-800/80 backdrop-blur-sm p-3 rounded-lg border border-slate-700' },
-                    React.createElement('p', { className: 'text-sm text-slate-400 uppercase tracking-wider' }, 'Prepare Next Goal In'),
-                    React.createElement('p', { className: `text-3xl font-mono ${nextGoalSelectionCountdown !== null && nextGoalSelectionCountdown < 30000 ? 'text-red-400' : 'text-cyan-300'}` }, formatCountdown(nextGoalSelectionCountdown ?? 0))
-                ),
-                React.createElement('div', { className: 'w-full max-w-lg flex flex-col justify-center gap-4' },
-                   mealBreakSection,
-                   mainContent
-                )
-            );
+            if (!breakChoice) { mainContent = React.createElement('div', { className: 'bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full text-center' }, React.createElement('h2', { className: 'text-xl font-semibold mb-2 text-slate-200' }, 'Prepare Your Next Goal'), React.createElement('p', { className: 'text-slate-400 mb-4' }, 'You have a break of ', React.createElement('span', { className: 'text-cyan-300 font-bold' }, formatDuration(availableBreakTime ?? 0)), '.'), React.createElement('div', { className: 'flex flex-col sm:flex-row gap-4' }, React.createElement('button', { onClick: () => setBreakChoice('plan'), className: 'flex-1 bg-slate-700 text-white font-bold py-3 px-4 rounded-lg hover:bg-slate-600 transition-colors', disabled: uncompletedGoals.length === 0 }, `Choose from Plan ${uncompletedGoals.length === 0 ? "(None Left)" : ""}`), React.createElement('button', { onClick: () => setBreakChoice('new'), className: 'flex-1 bg-slate-700 text-white font-bold py-3 px-4 rounded-lg hover:bg-slate-600 transition-colors' }, 'Set a New Goal')));
+            } else if (breakChoice === 'new') { mainContent = React.createElement(GoalSetter, { onGoalSubmit: handleNextGoalSubmit, isLoading: false, submitButtonText: 'Confirm & Start Break', onCancel: () => setBreakChoice(null) });
+            } else if (breakChoice === 'plan') { mainContent = React.createElement('div', { className: 'bg-slate-800/50 border border-slate-700 p-6 rounded-lg shadow-2xl w-full text-center' }, React.createElement('h2', { className: 'text-xl font-semibold mb-4 text-slate-200' }, 'Select Next Goal from Plan'), React.createElement('div', { className: 'space-y-3 max-h-64 overflow-y-auto pr-2' }, uncompletedGoals.map(g => React.createElement('div', { key: g.id, className: 'p-3 bg-slate-900/50 border border-slate-700 rounded-lg text-left flex items-center justify-between gap-4' }, React.createElement('div', null, React.createElement('p', { className: 'font-mono text-sm text-cyan-300' }, `${g.startTime} - ${g.endTime}`), React.createElement('p', { className: 'font-bold text-white mt-1' }, g.subject), React.createElement('p', { className: 'text-xs text-slate-400' }, `${g.goal.substring(0, 70)}...`)), React.createElement('button', { onClick: () => handleSelectPlannedGoalForNext(g), className: 'bg-cyan-500 text-slate-900 font-bold py-2 px-3 rounded-lg hover:bg-cyan-400 text-sm flex-shrink-0' }, 'Select')))), React.createElement('button', { onClick: () => setBreakChoice(null), className: 'mt-4 text-slate-400 hover:text-white text-sm' }, 'Back')); }
+            return React.createElement('div', { className: 'w-full max-w-2xl flex flex-col items-center gap-6' }, React.createElement('div', { className: 'w-full text-center bg-slate-800/80 backdrop-blur-sm p-3 rounded-lg border border-slate-700' }, React.createElement('p', { className: 'text-sm text-slate-400 uppercase tracking-wider' }, 'Prepare Next Goal In'), React.createElement('p', { className: `text-3xl font-mono ${nextGoalSelectionCountdown !== null && nextGoalSelectionCountdown < 30000 ? 'text-red-400' : 'text-cyan-300'}` }, formatCountdown(nextGoalSelectionCountdown ?? 0))), React.createElement('div', { className: 'w-full max-w-lg flex flex-col justify-center gap-4' }, mealBreakSection, mainContent));
         }
     
       case AppState.BREAK_ACTIVE: {
             const timeLeft = breakEndTime ? breakEndTime - currentTime : 0;
             const codeSubmitted = !!nextGoal?.secretCode;
-            return React.createElement('div', { className: 'w-full max-w-2xl flex flex-col items-center gap-6' },
-                React.createElement('div', { className: 'w-full text-center bg-slate-800/80 backdrop-blur-sm p-3 rounded-lg border border-slate-700' },
-                    React.createElement('p', { className: 'text-sm text-slate-400 uppercase tracking-wider' }, 'Break Ends In'),
-                    React.createElement('p', { className: `text-3xl font-mono ${timeLeft < 60000 ? 'text-red-400' : 'text-cyan-300'}` }, formatCountdown(timeLeft > 0 ? timeLeft : 0))
-                ),
-                React.createElement('div', { className: 'w-full flex flex-wrap justify-center items-start gap-6' },
-                    completedSecretCodeImage && React.createElement('div', { className: 'text-center flex-1 min-w-[280px]' },
-                        React.createElement('p', { className: 'text-slate-400 text-sm mb-2' }, 'Unlocked Code:'),
-                        React.createElement('img', { src: completedSecretCodeImage, alt: 'Sequestered code', className: 'rounded-lg w-full border-2 border-green-500' })
-                    ),
-                    React.createElement('div', { className: 'flex-1 min-w-[320px]' },
-                        codeSubmitted ? React.createElement('div', { className: 'bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full h-full flex flex-col justify-center items-center text-center' },
-                            React.createElement('svg', { xmlns: 'http://www.w3.org/2000/svg', className: 'h-16 w-16 text-green-400', viewBox: '0 0 20 20', fill: 'currentColor' }, React.createElement('path', { fillRule: 'evenodd', d: 'M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z', clipRule: 'evenodd' })),
-                            React.createElement('h3', { className: 'text-xl font-semibold text-green-400 mt-4' }, 'Next Code Accepted!'),
-                            React.createElement('p', { className: 'text-slate-300 mt-2' }, 'Enjoy the rest of your break. The next goal will start automatically.'),
-                            React.createElement('button', { 
-                                onClick: handleFinishBreakAndStartNextGoal, 
-                                className: 'mt-6 w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400 transition-all' 
-                            }, 'Start Next Goal Now')
-                        ) : React.createElement(CodeUploader, { onCodeImageSubmit: handleNextCodeImageSubmit, isLoading, onShowHistory: ()=>{}, onLogout: ()=>{}, currentUser: null, streakData: null, onSetCommitment: ()=>{}, onCompleteCommitment: ()=>{} })
-                    )
-                ),
-                nextGoal?.goal && React.createElement('div', { className: 'w-full max-w-lg bg-slate-800/50 border border-slate-700 p-4 rounded-lg shadow-2xl text-center' },
-                    React.createElement('h3', { className: 'text-md font-semibold text-slate-300 mb-1' }, 'Up Next: ', React.createElement('span', { className: 'font-bold text-white' }, nextGoal.subject))
-                )
-            );
+            return React.createElement('div', { className: 'w-full max-w-2xl flex flex-col items-center gap-6' }, React.createElement('div', { className: 'w-full text-center bg-slate-800/80 backdrop-blur-sm p-3 rounded-lg border border-slate-700' }, React.createElement('p', { className: 'text-sm text-slate-400 uppercase tracking-wider' }, 'Break Ends In'), React.createElement('p', { className: `text-3xl font-mono ${timeLeft < 60000 ? 'text-red-400' : 'text-cyan-300'}` }, formatCountdown(timeLeft > 0 ? timeLeft : 0))), React.createElement('div', { className: 'w-full flex flex-wrap justify-center items-start gap-6' }, completedSecretCodeImage && React.createElement('div', { className: 'text-center flex-1 min-w-[280px]' }, React.createElement('p', { className: 'text-slate-400 text-sm mb-2' }, 'Unlocked Code:'), React.createElement('img', { src: completedSecretCodeImage, alt: 'Sequestered code', className: 'rounded-lg w-full border-2 border-green-500' })), React.createElement('div', { className: 'flex-1 min-w-[320px]' }, codeSubmitted ? React.createElement('div', { className: 'bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full h-full flex flex-col justify-center items-center text-center' }, React.createElement('svg', { xmlns: 'http://www.w3.org/2000/svg', className: 'h-16 w-16 text-green-400', viewBox: '0 0 20 20', fill: 'currentColor' }, React.createElement('path', { fillRule: 'evenodd', d: 'M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z', clipRule: 'evenodd' })), React.createElement('h3', { className: 'text-xl font-semibold text-green-400 mt-4' }, 'Next Code Accepted!'), React.createElement('p', { className: 'text-slate-300 mt-2' }, 'Enjoy the rest of your break. The next goal will start automatically.'), React.createElement('button', { onClick: handleFinishBreakAndStartNextGoal, className: 'mt-6 w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400 transition-all' }, 'Start Next Goal Now')) : React.createElement(CodeUploader, { onCodeImageSubmit: handleNextCodeImageSubmit, isLoading, onShowHistory: ()=>{}, onLogout: ()=>{}, currentUser: null, streakData: null, onSetCommitment: ()=>{}, onCompleteCommitment: ()=>{} }))), nextGoal?.goal && React.createElement('div', { className: 'w-full max-w-lg bg-slate-800/50 border border-slate-700 p-4 rounded-lg shadow-2xl text-center' }, React.createElement('h3', { className: 'text-md font-semibold text-slate-300 mb-1' }, 'Up Next: ', React.createElement('span', { className: 'font-bold text-white' }, nextGoal.subject))));
         }
       default: return React.createElement('div', { className: 'flex justify-center items-center p-8' }, React.createElement(Spinner, null));
     }
   };
 
   return React.createElement(
-    'div', { className: 'min-h-screen flex flex-col items-center justify-center p-4 bg-slate-900' },
+    'div', { className: `min-h-screen flex flex-col bg-slate-900 items-center justify-center p-4` },
     React.createElement('style', null, `@keyframes fade-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } } .animate-fade-in { animation: fade-in 0.5s ease-out forwards; }`),
     React.createElement(Header, null),
     React.createElement(
-      'main', { className: 'w-full flex flex-col items-center justify-center' },
+      'main', { className: `w-full flex flex-col items-center justify-center` },
       error && React.createElement(Alert, { message: error, type: "error" }),
       appState === AppState.GOAL_SET && verificationFeedback && React.createElement(
         'div', { className: 'w-full max-w-lg mb-4 flex justify-center' },
         React.createElement(VerificationResult, { isSuccess: false, secretCodeImage: null, feedback: verificationFeedback, onRetry: handleRetry, onReset: () => resetToStart(false), chatMessages, onSendChatMessage: handleSendChatMessage, isChatLoading })
       ),
+      showCalendarModal && React.createElement(GoogleCalendarModal, {
+        events: calendarEvents,
+        isLoading: isCalendarLoading,
+        onClose: () => setShowCalendarModal(false),
+        onAddGoal: handleAddGoalFromCalendar
+      }),
       !(appState === AppState.GOAL_SET && verificationFeedback) && renderContent()
     )
   );
