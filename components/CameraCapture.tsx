@@ -136,7 +136,7 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, onCancel }) =>
             <h2 className="text-2xl font-semibold mt-4 text-red-400">Time's Up!</h2>
             <p className="text-slate-300 mt-2">You ran out of time to take the photo.</p>
             <div className="mt-6 flex gap-4">
-                <button onClick={handleTryAgain} className="bg-cyan-500 text-slate-900 font-bold py-3 px-6 rounded-lg hover:bg-cyan-400 transition-colors">
+                <button onClick={handleTryAgain} className="bg-cyan-500 text-slate-900 font-bold py-3 px-6 rounded-lg hover:bg-cyan-400 transition-colors button-glow-cyan">
                     Try Again
                 </button>
                 <button onClick={onCancel} className="bg-slate-700 text-white font-bold py-3 px-6 rounded-lg hover:bg-slate-600 transition-colors">
@@ -175,7 +175,7 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, onCancel }) =>
         <div className="mt-6 flex gap-4">
             {!capturedImage ? (
                 <>
-                    <button onClick={handleCapture} disabled={isLoading || !!error} className="bg-cyan-500 text-slate-900 font-bold py-3 px-6 rounded-lg hover:bg-cyan-400 transition-colors disabled:bg-slate-700 disabled:cursor-not-allowed">
+                    <button onClick={handleCapture} disabled={isLoading || !!error} className="bg-cyan-500 text-slate-900 font-bold py-3 px-6 rounded-lg hover:bg-cyan-400 transition-colors disabled:bg-slate-700 disabled:cursor-not-allowed button-glow-cyan">
                         Capture
                     </button>
                     <button onClick={onCancel} className="bg-slate-700 text-white font-bold py-3 px-6 rounded-lg hover:bg-slate-600 transition-colors">

@@ -1,7 +1,9 @@
 
-import React, { useState, useCallback, useEffect } from 'react';
+
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import Spinner from './Spinner';
 import Alert from './Alert';
+import { PlannedGoal } from '../types';
 
 interface TimeLimit {
     hours: number;
@@ -21,19 +23,26 @@ interface GoalSetterProps {
   isLoading: boolean;
   submitButtonText?: string;
   onCancel?: () => void;
-  initialData?: {
-      subject?: string;
-      startTime?: string;
-      endTime?: string;
-  }
+  initialData?: PlannedGoal;
 }
 
 const GoalSetter: React.FC<GoalSetterProps> = ({ onGoalSubmit, isLoading, submitButtonText = 'Set My Goal', onCancel, initialData }) => {
-  const [goal, setGoal] = useState('');
+  const [goal, setGoal] = useState(initialData?.goal || '');
   const [subject, setSubject] = useState(initialData?.subject || '');
-  const [hours, setHours] = useState('');
-  const [minutes, setMinutes] = useState('');
-  const [consequence, setConsequence] = useState('');
+  
+  const initialTimeLimit = useMemo(() => {
+    if (initialData?.timeLimitInMs) {
+        const totalMinutes = Math.floor(initialData.timeLimitInMs / 60000);
+        const h = Math.floor(totalMinutes / 60);
+        const m = totalMinutes % 60;
+        return { hours: h > 0 ? h.toString() : '', minutes: m > 0 ? m.toString() : '' };
+    }
+    return { hours: '', minutes: '' };
+  }, [initialData]);
+
+  const [hours, setHours] = useState(initialTimeLimit.hours);
+  const [minutes, setMinutes] = useState(initialTimeLimit.minutes);
+  const [consequence, setConsequence] = useState(initialData?.consequence || '');
   const [subQuestions, setSubQuestions] = useState('');
   const [startTime, setStartTime] = useState(initialData?.startTime || '');
   const [endTime, setEndTime] = useState(initialData?.endTime || '');
@@ -56,45 +65,26 @@ I will make sure that all exercises and questions are clearly highlighted on eac
 
   useEffect(() => {
     if (initialData) {
+        setGoal(initialData.goal || '');
         setSubject(initialData.subject || '');
+        setConsequence(initialData.consequence || '');
         setStartTime(initialData.startTime || '');
         setEndTime(initialData.endTime || '');
+
+        if (initialData.timeLimitInMs) {
+            const totalMinutes = Math.floor(initialData.timeLimitInMs / 60000);
+            const h = Math.floor(totalMinutes / 60);
+            const m = totalMinutes % 60;
+            setHours(h > 0 ? h.toString() : '');
+            setMinutes(m > 0 ? m.toString() : '');
+        } else {
+            setHours('');
+            setMinutes('');
+        }
     }
   }, [initialData]);
 
   useEffect(() => {
-    const userMinutes = (Number(hours) || 0) * 60 + (Number(minutes) || 0);
-
-    const lowerCaseGoal = goal.toLowerCase();
-    const hasExemptionKeyword = lowerCaseGoal.includes('devoir') || lowerCaseGoal.includes('probleme') || lowerCaseGoal.includes('serie');
-
-    if (hasExemptionKeyword) {
-        setTimeError(null);
-        return;
-    }
-    if (userMinutes === 0 || !goal.trim() || !subject.trim()) {
-        setTimeError(null);
-        return;
-    }
-    const questionRegex = /(\d+)\s+questions?/gi;
-    const matches = [...goal.matchAll(questionRegex)];
-    let totalQuestions = 0;
-    if (matches.length > 0) {
-        totalQuestions = matches.reduce((sum, match) => sum + parseInt(match[1], 10), 0);
-    }
-    if (totalQuestions === 0) {
-        setTimeError(null);
-        return;
-    }
-    const lowerCaseSubject = subject.toLowerCase();
-    const isSpecialSubject = lowerCaseSubject.includes('analyse') || lowerCaseSubject.includes('algebre');
-    const timePerQuestion = isSpecialSubject ? 10.5 : 8.0;
-    const estimatedMinutes = totalQuestions * timePerQuestion;
-    const numSubQuestions = Number(subQuestions) || 0;
-    const subQuestionBonusMinutes = numSubQuestions * 4;
-    const tolerance = 1.15;
-    const upperBoundMinutes = (estimatedMinutes * tolerance) + subQuestionBonusMinutes;
-
     const formatMinutesToHM = (mins: number) => {
         if (mins < 1) return "less than a minute";
         const h = Math.floor(mins / 60);
@@ -104,12 +94,73 @@ I will make sure that all exercises and questions are clearly highlighted on eac
         return [hStr, mStr].filter(Boolean).join(' ');
     };
 
-    if (userMinutes > upperBoundMinutes) {
-        setTimeError(`Time limit is too high. For ${totalQuestions} question(s) in "${subject}", the maximum allowed time is ${formatMinutesToHM(upperBoundMinutes)}. (Estimated time: ~${formatMinutesToHM(estimatedMinutes)})`);
-    } else {
+    const userMinutes = (Number(hours) || 0) * 60 + (Number(minutes) || 0);
+
+    const lowerCaseGoal = goal.toLowerCase();
+    const hasExemptionKeyword = lowerCaseGoal.includes('devoir') || lowerCaseGoal.includes('probleme') || lowerCaseGoal.includes('serie');
+
+    if (hasExemptionKeyword) {
         setTimeError(null);
+        return;
     }
-  }, [goal, subject, hours, minutes, subQuestions]);
+
+    const questionRegex = /(\d+)\s+questions?/gi;
+    const matches = [...goal.matchAll(questionRegex)];
+    let totalQuestions = 0;
+    if (matches.length > 0) {
+        totalQuestions = matches.reduce((sum, match) => sum + parseInt(match[1], 10), 0);
+    }
+    
+    if (totalQuestions === 0) {
+        setTimeError(null);
+        return;
+    }
+
+    const lowerCaseSubject = subject.toLowerCase();
+    const isSpecialSubject = lowerCaseSubject.includes('analyse') || lowerCaseSubject.includes('algebre');
+    const timePerQuestion = isSpecialSubject ? 10.5 : 8.0;
+    const estimatedMinutes = totalQuestions * timePerQuestion;
+    const numSubQuestions = Number(subQuestions) || 0;
+    const subQuestionBonusMinutes = numSubQuestions * 4;
+    
+    const tolerance = 1.15;
+    const upperBoundMinutes = (estimatedMinutes * tolerance) + subQuestionBonusMinutes;
+
+    if (userMinutes > 0 && userMinutes > upperBoundMinutes) {
+        setTimeError(`Time limit is too high. For ${totalQuestions} question(s) in "${subject}", the maximum allowed time is ${formatMinutesToHM(upperBoundMinutes)}. (Estimated time: ~${formatMinutesToHM(estimatedMinutes)})`);
+        return;
+    }
+
+    let goalLengthMinutes = 0;
+    if (startTime && endTime) {
+        try {
+            const [startH, startM] = startTime.split(':').map(Number);
+            const [endH, endM] = endTime.split(':').map(Number);
+            
+            const startDate = new Date();
+            startDate.setHours(startH, startM, 0, 0);
+            const endDate = new Date();
+            endDate.setHours(endH, endM, 0, 0);
+
+            if (endDate < startDate) {
+                endDate.setDate(endDate.getDate() + 1);
+            }
+            goalLengthMinutes = (endDate.getTime() - startDate.getTime()) / 60000;
+        } catch (e) { /* Invalid time format, ignore */ }
+    }
+
+    if (goalLengthMinutes > 0) {
+        const timeDiffTolerance = goalLengthMinutes >= 120 ? 30 : 15;
+        const lowerBoundMinutes = goalLengthMinutes - timeDiffTolerance;
+
+        if (estimatedMinutes < lowerBoundMinutes) {
+            setTimeError(`The scheduled duration (${formatMinutesToHM(goalLengthMinutes)}) seems too long for the estimated work (~${formatMinutesToHM(estimatedMinutes)}). The schedule cannot exceed the estimate by more than ${timeDiffTolerance} minutes.`);
+            return;
+        }
+    }
+
+    setTimeError(null);
+  }, [goal, subject, hours, minutes, subQuestions, startTime, endTime]);
 
   const handleUseTemplate = () => {
     const today = new Date();
@@ -151,15 +202,15 @@ I will make sure that all exercises and questions are clearly highlighted on eac
   const canSubmit = !goal.trim() || !subject.trim() || !consequence.trim() || !(Number(hours) > 0 || Number(minutes) > 0) || !!timeError || isLoading || !startTime || !endTime;
 
   return (
-    <div className="bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full max-w-lg text-center animate-fade-in">
-      <h2 className="text-2xl font-semibold mb-2 text-cyan-300">Add Goal to Plan</h2>
+    <div className="glass-panel p-8 rounded-2xl shadow-2xl w-full max-w-lg text-center animate-fade-in">
+      <h2 className="text-2xl font-semibold mb-2 text-cyan-300">{initialData ? 'Edit Goal' : 'Add Goal to Plan'}</h2>
       <p className="text-slate-400 mb-6">Be specific! The AI will use this description to verify your proof of completion.</p>
       
       <input
         value={subject}
         onChange={(e) => setSubject(e.target.value)}
         placeholder="Goal Subject (e.g., 'Work', 'Analyse', 'Algebre')"
-        className="w-full bg-slate-900 border border-slate-600 rounded-lg p-3 text-white placeholder-slate-500 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 transition mb-4"
+        className="form-input w-full rounded-lg p-3 text-slate-200 placeholder-slate-500 transition mb-4"
         disabled={isLoading}
       />
       
@@ -178,7 +229,7 @@ I will make sure that all exercises and questions are clearly highlighted on eac
         value={goal}
         onChange={(e) => setGoal(e.target.value)}
         placeholder="e.g., 'Finish writing chapter 1 of my book, ensuring it is at least 3,000 words.'"
-        className="w-full h-40 bg-slate-900 border border-slate-600 rounded-lg p-4 text-white placeholder-slate-500 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 transition mb-6"
+        className="form-input w-full h-40 rounded-lg p-4 text-slate-200 placeholder-slate-500 transition mb-6"
         disabled={isLoading}
       />
 
@@ -191,14 +242,14 @@ I will make sure that all exercises and questions are clearly highlighted on eac
                     type="time"
                     value={startTime}
                     onChange={(e) => setStartTime(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-600 rounded-lg p-2 text-white placeholder-slate-500 focus:ring-1 focus:ring-cyan-500"
+                    className="form-input w-full rounded-lg p-2 text-slate-200 placeholder-slate-500"
                 />
                 <span className="text-slate-400">to</span>
                  <input 
                     type="time"
                     value={endTime}
                     onChange={(e) => setEndTime(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-600 rounded-lg p-2 text-white placeholder-slate-500 focus:ring-1 focus:ring-cyan-500"
+                    className="form-input w-full rounded-lg p-2 text-slate-200 placeholder-slate-500"
                 />
             </div>
         </div>
@@ -211,7 +262,7 @@ I will make sure that all exercises and questions are clearly highlighted on eac
                     onChange={(e) => setHours(e.target.value)}
                     placeholder="Hours"
                     min="0"
-                    className="w-full bg-slate-900 border border-slate-600 rounded-lg p-2 text-white placeholder-slate-500 focus:ring-1 focus:ring-cyan-500"
+                    className="form-input w-full rounded-lg p-2 text-slate-200 placeholder-slate-500"
                 />
                  <input 
                     type="number"
@@ -220,7 +271,7 @@ I will make sure that all exercises and questions are clearly highlighted on eac
                     placeholder="Minutes"
                     min="0"
                     max="59"
-                    className="w-full bg-slate-900 border border-slate-600 rounded-lg p-2 text-white placeholder-slate-500 focus:ring-1 focus:ring-cyan-500"
+                    className="form-input w-full rounded-lg p-2 text-slate-200 placeholder-slate-500"
                 />
             </div>
         </div>
@@ -234,7 +285,7 @@ I will make sure that all exercises and questions are clearly highlighted on eac
                 onChange={(e) => setSubQuestions(e.target.value)}
                 placeholder="e.g., 2"
                 min="0"
-                className="w-full bg-slate-900 border border-slate-600 rounded-lg p-2 text-white placeholder-slate-500 focus:ring-1 focus:ring-cyan-500"
+                className="form-input w-full rounded-lg p-2 text-slate-200 placeholder-slate-500"
                 disabled={isLoading}
             />
         </div>
@@ -259,7 +310,7 @@ I will make sure that all exercises and questions are clearly highlighted on eac
                 value={consequence}
                 onChange={(e) => setConsequence(e.target.value)}
                 placeholder="e.g., 'I must also clean the garage.'"
-                className="w-full h-24 bg-slate-900 border border-slate-600 rounded-lg p-3 text-white placeholder-slate-500 focus:ring-1 focus:ring-cyan-500"
+                className="form-input w-full h-24 rounded-lg p-3 text-slate-200 placeholder-slate-500"
                 disabled={isLoading}
             />
          </div>
@@ -280,7 +331,7 @@ I will make sure that all exercises and questions are clearly highlighted on eac
         <button
             onClick={handleSubmit}
             disabled={canSubmit}
-            className="w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed transition-all duration-300 flex items-center justify-center"
+            className="w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed transition-all duration-300 flex items-center justify-center button-glow-cyan"
         >
             {isLoading ? <Spinner /> : submitButtonText}
         </button>

@@ -1,8 +1,6 @@
-
 import { User } from "firebase/auth";
 
 export enum AppState {
-  AUTH,
   TODAYS_PLAN,
   AWAITING_CODE,
   GOAL_SET,
@@ -11,6 +9,7 @@ export enum AppState {
   HISTORY_VIEW,
   AWAITING_BREAK,
   BREAK_ACTIVE,
+  WEEKLY_PLAN_VIEW,
 }
 
 export interface CompletedGoal {
@@ -42,6 +41,7 @@ export interface StreakData {
     lastCompletedCodeImage?: string;
     skipsThisWeek?: number;
     weekStartDate?: string; // YYYY-MM-DD
+    breakTimeTax?: number;
 }
 
 export interface PlannedGoal {
@@ -55,20 +55,28 @@ export interface PlannedGoal {
   status: 'pending' | 'completed' | 'skipped';
 }
 
+export interface TodoItem {
+  id: string;
+  text: string;
+  completed: boolean;
+}
+
 export interface TodaysPlan {
     date: string; // "YYYY-MM-DD"
     goals: PlannedGoal[];
+    todos?: TodoItem[];
 }
 
+// FIX: Added missing GoogleCalendarEvent interface.
 export interface GoogleCalendarEvent {
-    id: string;
-    summary: string;
-    start: {
-        dateTime?: string;
-        date?: string;
-    };
-    end: {
-        dateTime?: string;
-        date?: string;
-    };
+  id: string;
+  summary: string;
+  start: {
+    dateTime?: string;
+    date?: string;
+  };
+  end: {
+    dateTime?: string;
+    date?: string;
+  };
 }

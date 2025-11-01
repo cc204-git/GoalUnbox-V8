@@ -175,7 +175,7 @@ const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit,
           onCancel={() => setShowGatekeeper(false)}
         />
       )}
-      <div className="relative bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full max-w-2xl text-center animate-fade-in">
+      <div className="relative glass-panel p-8 rounded-2xl shadow-2xl w-full max-w-2xl text-center animate-fade-in">
         <button
             onClick={() => setShowPreviousCodeModal(true)}
             disabled={isLoading || !lastCompletedCodeImage}
@@ -221,7 +221,7 @@ const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit,
           multiple
         />
 
-        <div className="border-2 border-dashed border-slate-600 rounded-lg p-4 mb-6 min-h-[120px] flex items-center justify-center">
+        <div className="border-2 border-dashed border-slate-600 rounded-lg p-4 mb-6 min-h-[120px] flex items-center justify-center bg-slate-900/20">
             {proofFiles.length > 0 ? (
             <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
                 {proofFiles.map((pf) => (
@@ -272,7 +272,7 @@ const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit,
         <button
           onClick={handleSubmit}
           disabled={proofFiles.length === 0 || isLoading}
-          className="w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed transition-all duration-300 flex items-center justify-center"
+          className="w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed transition-all duration-300 flex items-center justify-center button-glow-cyan"
         >
           {isLoading ? <><Spinner /><span className="ml-2">Verifying...</span></> : 'Submit Proof for Verification'}
         </button>
@@ -298,7 +298,7 @@ const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit,
       </div>
        {showPreviousCodeModal && lastCompletedCodeImage && (
             <div 
-                className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 animate-fade-in p-4"
+                className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in p-4"
                 onClick={() => setShowPreviousCodeModal(false)}
             >
                 <div className="relative" onClick={(e) => e.stopPropagation()}>

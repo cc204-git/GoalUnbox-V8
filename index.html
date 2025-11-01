@@ -9,8 +9,6 @@
     <title>Goal Unbox</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://apis.google.com/js/api.js" async defer></script>
-    <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script type="importmap">
 {
   "imports": {
@@ -26,8 +24,44 @@
   }
 }
 </script>
+<style>
+  .glass-panel {
+    background-color: rgba(30, 41, 59, 0.5); /* bg-slate-800 with opacity */
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(71, 85, 105, 0.3); /* border-slate-700 with opacity */
+  }
+  .form-input {
+    background-color: rgba(15, 23, 42, 0.7); /* bg-slate-900 with opacity */
+    border: 1px solid transparent;
+  }
+  .form-input:focus {
+    background-color: rgb(15, 23, 42); /* bg-slate-900 solid */
+    outline: none;
+    box-shadow: 0 0 0 2px #0f172a, 0 0 0 4px rgba(34, 211, 238, 0.7);
+  }
+  .button-glow-cyan {
+    transition: all 0.2s ease-in-out;
+  }
+  .button-glow-cyan:hover:not(:disabled) {
+    box-shadow: 0 0 15px 0 rgba(34, 211, 238, 0.4);
+  }
+  .text-glow-cyan {
+    text-shadow: 0 0 8px rgba(34, 211, 238, 0.7);
+  }
+  .markdown-content b, .markdown-content strong {
+    color: #a5f3fc; /* cyan-200 */
+  }
+  .markdown-content ul {
+    list-style-type: disc;
+    padding-left: 1.5rem;
+  }
+  .markdown-content li {
+    margin-bottom: 0.5em;
+  }
+</style>
 </head>
-  <body class="bg-slate-900 text-white">
+  <body class="bg-gradient-to-br from-slate-900 to-gray-900 text-slate-200">
     <div id="root"></div>
     <script type="module" src="./index.js"></script>
   </body>

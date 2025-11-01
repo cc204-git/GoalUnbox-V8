@@ -2,21 +2,20 @@
 
 
 
-const CACHE_NAME = 'goal-unbox-v11';
+const CACHE_NAME = 'goal-unbox-v14';
 const URLS_TO_CACHE = [
   './',
   './index.html',
   './index.js',
   './App.js',
   './types.js',
-  './config.js',
   './utils/fileUtils.js',
   './utils/timeUtils.js',
+  './utils/defaultSchedule.js',
   './services/geminiService.js',
   './services/authService.js',
   './services/dataService.js',
   './services/firebaseService.js',
-  './services/googleCalendarService.js',
   './components/Alert.js',
   './components/Auth.js',
   './components/ApiKeyPrompt.js',
@@ -28,7 +27,8 @@ const URLS_TO_CACHE = [
   './components/GoalHistory.js',
   './components/GoalSetter.js',
   './components/TodaysPlan.js',
-  './components/GoogleCalendarModal.js',
+  './components/TodoList.js',
+  './components/WeeklyPlanView.js',
   './components/Header.js',
   './components/ProofUploader.js',
   './components/Spinner.js',

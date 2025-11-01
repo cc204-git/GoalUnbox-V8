@@ -1,5 +1,4 @@
 export const AppState = {
-  AUTH: 0,
   TODAYS_PLAN: 1,
   AWAITING_CODE: 2,
   GOAL_SET: 3,
@@ -8,5 +7,11 @@ export const AppState = {
   HISTORY_VIEW: 6,
   AWAITING_BREAK: 7,
   BREAK_ACTIVE: 8,
+  WEEKLY_PLAN_VIEW: 9,
 };
 Object.freeze(AppState);
+
+// No explicit TodoItem or TodaysPlan interface in JS,
+// but the structure will be:
+// TodaysPlan: { date: string, goals: PlannedGoal[], todos?: TodoItem[] }
+// TodoItem: { id: string, text: string, completed: boolean }

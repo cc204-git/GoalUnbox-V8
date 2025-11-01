@@ -1,14 +1,26 @@
 
-import React, { useState, useCallback, useEffect } from 'react';
+
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import Spinner from './Spinner.js';
 import Alert from './Alert.js';
 
 const GoalSetter = ({ onGoalSubmit, isLoading, submitButtonText = 'Set My Goal', onCancel, initialData }) => {
-  const [goal, setGoal] = useState('');
+  const [goal, setGoal] = useState(initialData?.goal || '');
   const [subject, setSubject] = useState(initialData?.subject || '');
-  const [hours, setHours] = useState('');
-  const [minutes, setMinutes] = useState('');
-  const [consequence, setConsequence] = useState('');
+
+  const initialTimeLimit = useMemo(() => {
+    if (initialData?.timeLimitInMs) {
+        const totalMinutes = Math.floor(initialData.timeLimitInMs / 60000);
+        const h = Math.floor(totalMinutes / 60);
+        const m = totalMinutes % 60;
+        return { hours: h > 0 ? h.toString() : '', minutes: m > 0 ? m.toString() : '' };
+    }
+    return { hours: '', minutes: '' };
+  }, [initialData]);
+
+  const [hours, setHours] = useState(initialTimeLimit.hours);
+  const [minutes, setMinutes] = useState(initialTimeLimit.minutes);
+  const [consequence, setConsequence] = useState(initialData?.consequence || '');
   const [subQuestions, setSubQuestions] = useState('');
   const [startTime, setStartTime] = useState(initialData?.startTime || '');
   const [endTime, setEndTime] = useState(initialData?.endTime || '');
@@ -31,45 +43,26 @@ I will make sure that all exercises and questions are clearly highlighted on eac
 
   useEffect(() => {
     if (initialData) {
+        setGoal(initialData.goal || '');
         setSubject(initialData.subject || '');
+        setConsequence(initialData.consequence || '');
         setStartTime(initialData.startTime || '');
         setEndTime(initialData.endTime || '');
+
+        if (initialData.timeLimitInMs) {
+            const totalMinutes = Math.floor(initialData.timeLimitInMs / 60000);
+            const h = Math.floor(totalMinutes / 60);
+            const m = totalMinutes % 60;
+            setHours(h > 0 ? h.toString() : '');
+            setMinutes(m > 0 ? m.toString() : '');
+        } else {
+            setHours('');
+            setMinutes('');
+        }
     }
   }, [initialData]);
 
   useEffect(() => {
-    const userMinutes = (Number(hours) || 0) * 60 + (Number(minutes) || 0);
-
-    const lowerCaseGoal = goal.toLowerCase();
-    const hasExemptionKeyword = lowerCaseGoal.includes('devoir') || lowerCaseGoal.includes('probleme') || lowerCaseGoal.includes('serie');
-
-    if (hasExemptionKeyword) {
-        setTimeError(null);
-        return;
-    }
-    if (userMinutes === 0 || !goal.trim() || !subject.trim()) {
-        setTimeError(null);
-        return;
-    }
-    const questionRegex = /(\d+)\s+questions?/gi;
-    const matches = [...goal.matchAll(questionRegex)];
-    let totalQuestions = 0;
-    if (matches.length > 0) {
-        totalQuestions = matches.reduce((sum, match) => sum + parseInt(match[1], 10), 0);
-    }
-    if (totalQuestions === 0) {
-        setTimeError(null);
-        return;
-    }
-    const lowerCaseSubject = subject.toLowerCase();
-    const isSpecialSubject = lowerCaseSubject.includes('analyse') || lowerCaseSubject.includes('algebre');
-    const timePerQuestion = isSpecialSubject ? 10.5 : 8.0;
-    const estimatedMinutes = totalQuestions * timePerQuestion;
-    const numSubQuestions = Number(subQuestions) || 0;
-    const subQuestionBonusMinutes = numSubQuestions * 4;
-    const tolerance = 1.15;
-    const upperBoundMinutes = (estimatedMinutes * tolerance) + subQuestionBonusMinutes;
-
     const formatMinutesToHM = (mins) => {
         if (mins < 1) return "less than a minute";
         const h = Math.floor(mins / 60);
@@ -79,12 +72,73 @@ I will make sure that all exercises and questions are clearly highlighted on eac
         return [hStr, mStr].filter(Boolean).join(' ');
     };
 
-    if (userMinutes > upperBoundMinutes) {
-        setTimeError(`Time limit is too high. For ${totalQuestions} question(s) in "${subject}", the maximum allowed time is ${formatMinutesToHM(upperBoundMinutes)}. (Estimated time: ~${formatMinutesToHM(estimatedMinutes)})`);
-    } else {
+    const userMinutes = (Number(hours) || 0) * 60 + (Number(minutes) || 0);
+
+    const lowerCaseGoal = goal.toLowerCase();
+    const hasExemptionKeyword = lowerCaseGoal.includes('devoir') || lowerCaseGoal.includes('probleme') || lowerCaseGoal.includes('serie');
+
+    if (hasExemptionKeyword) {
         setTimeError(null);
+        return;
     }
-  }, [goal, subject, hours, minutes, subQuestions]);
+
+    const questionRegex = /(\d+)\s+questions?/gi;
+    const matches = [...goal.matchAll(questionRegex)];
+    let totalQuestions = 0;
+    if (matches.length > 0) {
+        totalQuestions = matches.reduce((sum, match) => sum + parseInt(match[1], 10), 0);
+    }
+    
+    if (totalQuestions === 0) {
+        setTimeError(null);
+        return;
+    }
+
+    const lowerCaseSubject = subject.toLowerCase();
+    const isSpecialSubject = lowerCaseSubject.includes('analyse') || lowerCaseSubject.includes('algebre');
+    const timePerQuestion = isSpecialSubject ? 10.5 : 8.0;
+    const estimatedMinutes = totalQuestions * timePerQuestion;
+    const numSubQuestions = Number(subQuestions) || 0;
+    const subQuestionBonusMinutes = numSubQuestions * 4;
+
+    const tolerance = 1.15;
+    const upperBoundMinutes = (estimatedMinutes * tolerance) + subQuestionBonusMinutes;
+
+    if (userMinutes > 0 && userMinutes > upperBoundMinutes) {
+        setTimeError(`Time limit is too high. For ${totalQuestions} question(s) in "${subject}", the maximum allowed time is ${formatMinutesToHM(upperBoundMinutes)}. (Estimated time: ~${formatMinutesToHM(estimatedMinutes)})`);
+        return;
+    }
+
+    let goalLengthMinutes = 0;
+    if (startTime && endTime) {
+        try {
+            const [startH, startM] = startTime.split(':').map(Number);
+            const [endH, endM] = endTime.split(':').map(Number);
+            
+            const startDate = new Date();
+            startDate.setHours(startH, startM, 0, 0);
+            const endDate = new Date();
+            endDate.setHours(endH, endM, 0, 0);
+
+            if (endDate < startDate) {
+                endDate.setDate(endDate.getDate() + 1);
+            }
+            goalLengthMinutes = (endDate.getTime() - startDate.getTime()) / 60000;
+        } catch (e) { /* Invalid time format, ignore */ }
+    }
+
+    if (goalLengthMinutes > 0) {
+        const timeDiffTolerance = goalLengthMinutes >= 120 ? 30 : 15;
+        const lowerBoundMinutes = goalLengthMinutes - timeDiffTolerance;
+
+        if (estimatedMinutes < lowerBoundMinutes) {
+            setTimeError(`The scheduled duration (${formatMinutesToHM(goalLengthMinutes)}) seems too long for the estimated work (~${formatMinutesToHM(estimatedMinutes)}). The schedule cannot exceed the estimate by more than ${timeDiffTolerance} minutes.`);
+            return;
+        }
+    }
+    
+    setTimeError(null);
+  }, [goal, subject, hours, minutes, subQuestions, startTime, endTime]);
 
 
   const handleUseTemplate = () => {
@@ -129,7 +183,7 @@ I will make sure that all exercises and questions are clearly highlighted on eac
 
   return React.createElement(
     'div', { className: 'bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full max-w-lg text-center animate-fade-in' },
-    React.createElement('h2', { className: 'text-2xl font-semibold mb-2 text-cyan-300' }, 'Add Goal to Plan'),
+    React.createElement('h2', { className: 'text-2xl font-semibold mb-2 text-cyan-300' }, initialData ? 'Edit Goal' : 'Add Goal to Plan'),
     React.createElement('p', { className: 'text-slate-400 mb-6' }, 'Be specific! The AI will use this description to verify your proof of completion.'),
     React.createElement('input', {
       value: subject,

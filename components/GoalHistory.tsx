@@ -1,4 +1,5 @@
 
+
 import React, { useMemo, useState } from 'react';
 import { CompletedGoal } from '../types';
 import { formatDuration } from '../utils/timeUtils';
@@ -79,7 +80,7 @@ const GoalHistory: React.FC<GoalHistoryProps> = ({ onBack, history, onDeleteHist
     };
 
     return (
-        <div className="bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full max-w-4xl text-center animate-fade-in relative">
+        <div className="glass-panel p-8 rounded-2xl shadow-2xl w-full max-w-4xl text-center animate-fade-in relative">
             <button
                 onClick={onBack}
                 className="absolute top-4 left-4 text-slate-400 hover:text-white transition-colors"
@@ -105,7 +106,7 @@ const GoalHistory: React.FC<GoalHistoryProps> = ({ onBack, history, onDeleteHist
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                             </svg>
                         </button>
-                        <div className="text-slate-300 whitespace-pre-wrap font-sans text-sm" dangerouslySetInnerHTML={{ __html: insights.replace(/\n/g, '<br />') }}></div>
+                        <div className="text-slate-300 whitespace-pre-wrap font-sans text-sm markdown-content" dangerouslySetInnerHTML={{ __html: insights.replace(/\n/g, '<br />') }}></div>
                     </div>
                 ) : (
                     <button 
@@ -142,7 +143,6 @@ const GoalHistory: React.FC<GoalHistoryProps> = ({ onBack, history, onDeleteHist
                             <tr>
                                 <th className="p-3">Goal</th>
                                 <th className="p-3">Subject</th>
-                                <th className="p-3">Started</th>
                                 <th className="p-3">Completed</th>
                                 <th className="p-3 text-right">Duration</th>
                                 <th className="p-3 text-right">Actions</th>
@@ -165,7 +165,6 @@ const GoalHistory: React.FC<GoalHistoryProps> = ({ onBack, history, onDeleteHist
                                         </div>
                                     </td>
                                     <td className="p-3 text-slate-300">{item.subject}</td>
-                                    <td className="p-3 text-slate-400">{formatDateTime(item.startTime)}</td>
                                     <td className="p-3 text-slate-400">{formatDateTime(item.endTime)}</td>
                                     <td className="p-3 text-right text-cyan-300 font-mono">{formatDuration(item.duration)}</td>
                                     <td className="p-3 text-right">
@@ -186,7 +185,7 @@ const GoalHistory: React.FC<GoalHistoryProps> = ({ onBack, history, onDeleteHist
                         {totalDuration !== '0s' && (
                             <tfoot className="border-t-2 border-slate-500 font-bold">
                                 <tr>
-                                    <td colSpan={4} className="p-3 text-right text-slate-300">Total Focused Time</td>
+                                    <td colSpan={3} className="p-3 text-right text-slate-300">Total Focused Time</td>
                                     <td className="p-3 text-right text-cyan-300 font-mono text-lg">{totalDuration}</td>
                                     <td></td>
                                 </tr>

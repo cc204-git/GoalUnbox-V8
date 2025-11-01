@@ -23,7 +23,7 @@ const DailyCommitment: React.FC<DailyCommitmentProps> = ({ streakData, onSetComm
     const { currentStreak } = streakData;
 
     return (
-        <div className="w-full max-w-md mt-6 bg-slate-800/50 border border-slate-700 p-4 rounded-lg text-center animate-fade-in">
+        <div className="w-full max-w-md mt-6 glass-panel p-4 rounded-2xl text-center animate-fade-in">
             <div className="flex items-center justify-center gap-4">
                 <div className="text-4xl">🔥</div>
                 <div>
@@ -60,10 +60,10 @@ const DailyCommitment: React.FC<DailyCommitmentProps> = ({ streakData, onSetComm
                             onChange={(e) => setCommitmentText(e.target.value)}
                             onKeyPress={(e) => e.key === 'Enter' && handleSetClick()}
                             placeholder="e.g., Meditate for 10 minutes"
-                            className="flex-grow bg-slate-900 border border-slate-600 rounded-lg p-2 text-white placeholder-slate-500 focus:ring-1 focus:ring-cyan-500"
+                            className="form-input flex-grow rounded-lg p-2 text-slate-200 placeholder-slate-500 transition"
                             autoFocus
                         />
-                        <button onClick={handleSetClick} className="bg-cyan-500 text-slate-900 font-bold py-2 px-4 rounded-lg hover:bg-cyan-400">Set</button>
+                        <button onClick={handleSetClick} className="bg-cyan-500 text-slate-900 font-bold py-2 px-4 rounded-lg hover:bg-cyan-400 button-glow-cyan">Set</button>
                         <button onClick={() => setIsEditing(false)} className="bg-slate-700 text-white py-2 px-4 rounded-lg hover:bg-slate-600">Cancel</button>
                     </div>
                 ) : (

@@ -37,14 +37,14 @@ const ChatBox: React.FC<ChatBoxProps> = ({ messages, onSendMessage, isLoading })
       <div className="h-64 overflow-y-auto space-y-4 pr-2 flex flex-col">
         {messages.map((msg, index) => (
           <div key={index} className={`flex items-end ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[80%] rounded-lg px-4 py-2 text-white ${msg.role === 'user' ? 'bg-cyan-600' : 'bg-slate-700'}`}>
+            <div className={`max-w-[80%] rounded-xl px-4 py-2 text-white ${msg.role === 'user' ? 'bg-cyan-600' : 'bg-slate-700'}`}>
               <p className="text-sm" style={{ whiteSpace: 'pre-wrap', wordWrap: 'break-word' }}>{msg.text}</p>
             </div>
           </div>
         ))}
         {isLoading && (
             <div className="flex justify-start">
-                 <div className="max-w-[80%] rounded-lg px-4 py-2 text-white bg-slate-700 flex items-center gap-2">
+                 <div className="max-w-[80%] rounded-xl px-4 py-2 text-white bg-slate-700 flex items-center gap-2">
                     <Spinner />
                     <span className="text-sm">thinking...</span>
                  </div>
@@ -60,12 +60,12 @@ const ChatBox: React.FC<ChatBoxProps> = ({ messages, onSendMessage, isLoading })
           onKeyPress={handleKeyPress}
           placeholder="Explain here..."
           disabled={isLoading}
-          className="flex-grow bg-slate-800 border border-slate-600 rounded-lg p-2 text-white placeholder-slate-500 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 transition"
+          className="form-input flex-grow rounded-lg p-2 text-slate-200 placeholder-slate-500 transition"
         />
         <button
           onClick={handleSend}
           disabled={!input.trim() || isLoading}
-          className="bg-cyan-500 text-slate-900 font-bold py-2 px-4 rounded-lg hover:bg-cyan-400 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed transition-all"
+          className="bg-cyan-500 text-slate-900 font-bold py-2 px-4 rounded-lg hover:bg-cyan-400 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed transition-all button-glow-cyan"
           aria-label="Send message"
         >
           Send

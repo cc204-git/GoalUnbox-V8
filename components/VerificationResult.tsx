@@ -64,7 +64,7 @@ const VerificationResult: React.FC<VerificationResultProps> = ({ isSuccess, secr
 
     return (
       <>
-        <div className="bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full max-w-md text-center animate-fade-in">
+        <div className="glass-panel p-8 rounded-2xl shadow-2xl w-full max-w-md text-center animate-fade-in">
           <h2 className={`text-3xl font-bold mb-4 ${titleColor}`}>{title}</h2>
           <p className="text-slate-300 mb-6">{feedback?.summary || successMessage}</p>
           
@@ -98,7 +98,7 @@ const VerificationResult: React.FC<VerificationResultProps> = ({ isSuccess, secr
 
           <button
             onClick={onReset}
-            className="mt-8 w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400 transition-all duration-300"
+            className="mt-8 w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400 transition-all duration-300 button-glow-cyan"
           >
             Start a New Goal
           </button>
@@ -112,7 +112,7 @@ const VerificationResult: React.FC<VerificationResultProps> = ({ isSuccess, secr
         
         {isImageModalOpen && secretCodeImage && (
           <div 
-            className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 animate-fade-in p-4"
+            className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in p-4"
             onClick={() => setIsImageModalOpen(false)}
           >
             <div className="relative" onClick={(e) => e.stopPropagation()}>
@@ -138,7 +138,7 @@ const VerificationResult: React.FC<VerificationResultProps> = ({ isSuccess, secr
   }
 
   return (
-    <div className="bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full max-w-lg text-center animate-fade-in">
+    <div className="glass-panel p-8 rounded-2xl shadow-2xl w-full max-w-lg text-center animate-fade-in">
       <h2 className="text-2xl font-semibold mb-4 text-red-400">Verification Failed</h2>
       
       {feedback && (
@@ -163,7 +163,7 @@ const VerificationResult: React.FC<VerificationResultProps> = ({ isSuccess, secr
       
       <button
         onClick={onRetry}
-        className="w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400 transition-all duration-300"
+        className="w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400 transition-all duration-300 button-glow-cyan"
       >
         Submit New Proof
       </button>

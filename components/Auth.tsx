@@ -44,7 +44,7 @@ const Auth: React.FC = () => {
     };
 
     return (
-        <div className="bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full max-w-md text-center animate-fade-in">
+        <div className="glass-panel p-8 rounded-2xl shadow-2xl w-full max-w-md text-center animate-fade-in">
             <h2 className="text-2xl font-semibold mb-2 text-cyan-300">
                 {isLoginView ? 'Welcome Back' : 'Create an Account'}
             </h2>
@@ -61,7 +61,7 @@ const Auth: React.FC = () => {
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="Email"
                     required
-                    className="w-full bg-slate-900 border border-slate-600 rounded-lg p-3 text-white placeholder-slate-500 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 transition"
+                    className="form-input w-full rounded-lg p-3 text-slate-200 placeholder-slate-500 transition"
                     disabled={isLoading}
                     autoComplete="email"
                 />
@@ -72,7 +72,7 @@ const Auth: React.FC = () => {
                     placeholder="Password"
                     required
                     minLength={6}
-                    className="w-full bg-slate-900 border border-slate-600 rounded-lg p-3 text-white placeholder-slate-500 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 transition"
+                    className="form-input w-full rounded-lg p-3 text-slate-200 placeholder-slate-500 transition"
                     disabled={isLoading}
                     autoComplete={isLoginView ? "current-password" : "new-password"}
                 />
@@ -94,7 +94,7 @@ const Auth: React.FC = () => {
                 <button
                     type="submit"
                     disabled={isLoading || !email || password.length < 6}
-                    className="w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed transition-all duration-300 flex items-center justify-center"
+                    className="w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed transition-all duration-300 flex items-center justify-center button-glow-cyan"
                 >
                     {isLoading ? <Spinner /> : (isLoginView ? 'Login' : 'Create Account')}
                 </button>
@@ -117,7 +117,7 @@ const Auth: React.FC = () => {
                     <div className="w-full border-t border-slate-700" />
                 </div>
                 <div className="relative flex justify-center text-sm">
-                    <span className="bg-slate-800/50 px-2 text-slate-500">OR</span>
+                    <span className="bg-slate-800 px-2 text-slate-500 rounded-full">OR</span>
                 </div>
             </div>
 

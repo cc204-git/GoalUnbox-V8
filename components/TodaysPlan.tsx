@@ -1,16 +1,16 @@
 import React, { useState, useMemo } from 'react';
-import { PlannedGoal, TodaysPlan as TodaysPlanType } from '../types';
+import { PlannedGoal, TodaysPlan as TodaysPlanType, TodoItem } from '../types';
 import GoalSetter, { GoalPayload } from './GoalSetter';
 import { formatDuration } from '../utils/timeUtils';
+import TodoList from './TodoList';
 
 interface TodaysPlanProps {
     initialPlan: TodaysPlanType;
     onSavePlan: (plan: TodaysPlanType) => void;
     onStartGoal: (goal: PlannedGoal) => void;
     onShowHistory: () => void;
-    onGoogleSignIn: () => void;
-    onFetchEvents: () => void;
-    isGoogleSignedIn: boolean;
+    onShowWeeklyView: () => void;
+    onEditGoal: (plan: TodaysPlanType, goal: PlannedGoal) => void;
 }
 
 const TodaysPlan: React.FC<TodaysPlanProps> = ({ 
@@ -18,9 +18,8 @@ const TodaysPlan: React.FC<TodaysPlanProps> = ({
     onSavePlan, 
     onStartGoal, 
     onShowHistory,
-    onGoogleSignIn,
-    onFetchEvents,
-    isGoogleSignedIn,
+    onShowWeeklyView,
+    onEditGoal
 }) => {
     const [plan, setPlan] = useState(initialPlan);
     const [showForm, setShowForm] = useState(false);
@@ -28,6 +27,12 @@ const TodaysPlan: React.FC<TodaysPlanProps> = ({
 
     const handleToggleExpand = (goalId: string) => {
         setExpandedGoalId(prevId => (prevId === goalId ? null : goalId));
+    };
+
+    const handleUpdateTodos = (newTodos: TodoItem[]) => {
+        const updatedPlan = { ...plan, todos: newTodos };
+        setPlan(updatedPlan);
+        onSavePlan(updatedPlan);
     };
 
     const handleAddGoal = (payload: GoalPayload) => {
@@ -62,12 +67,14 @@ const TodaysPlan: React.FC<TodaysPlanProps> = ({
     const sortedGoals = useMemo(() => sortGoals(plan.goals), [plan.goals]);
     const allGoalsCompleted = useMemo(() => plan.goals.length > 0 && plan.goals.every(g => g.status !== 'pending'), [plan.goals]);
     const today = new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    const todos = plan.todos || [];
 
     const renderGoal = (goal: PlannedGoal) => {
         const isExpanded = expandedGoalId === goal.id;
         const isCompleted = goal.status === 'completed';
         const isSkipped = goal.status === 'skipped';
         const isDone = isCompleted || isSkipped;
+
         let statusBadge;
         if (isCompleted) {
             statusBadge = (
@@ -87,52 +94,63 @@ const TodaysPlan: React.FC<TodaysPlanProps> = ({
             );
         } else {
             statusBadge = (
-                <button 
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        onStartGoal(goal);
-                    }}
-                    className="bg-cyan-500 text-slate-900 font-bold py-2 px-4 rounded-lg hover:bg-cyan-400 transition-colors disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed"
-                    title="Start this goal"
-                >
-                    Start Goal
-                </button>
+                <div className="flex items-center gap-2">
+                    <button 
+                        onClick={(e) => { e.stopPropagation(); onEditGoal(plan, goal); }}
+                        className="text-slate-400 hover:text-white p-2 rounded-lg bg-slate-700/50 hover:bg-slate-700 transition-colors"
+                        title="Edit Goal"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                            <path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" />
+                            <path fillRule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clipRule="evenodd" />
+                        </svg>
+                    </button>
+                    <button 
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onStartGoal(goal);
+                        }}
+                        className="bg-cyan-500 text-slate-900 font-bold py-2 px-4 rounded-lg hover:bg-cyan-400 transition-colors disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed button-glow-cyan"
+                        title="Start this goal"
+                    >
+                        Start Goal
+                    </button>
+                </div>
             );
         }
         return (
-            <div key={goal.id} className={`p-4 rounded-lg flex flex-col sm:flex-row items-center gap-4 transition-colors ${isDone ? 'bg-slate-900/50 border border-slate-700' : 'bg-slate-800 border border-slate-600'} ${isSkipped ? 'opacity-70' : ''}`}>
-                <div className="flex-shrink-0 text-center sm:text-left w-36">
-                    {goal.startTime && goal.endTime ? (
-                        <p className={`font-mono text-lg ${isDone ? 'text-slate-500' : 'text-cyan-300'} ${isSkipped ? 'line-through' : ''}`}>{goal.startTime} - {goal.endTime}</p>
-                    ) : (
-                        <p className={`font-mono text-lg ${isDone ? 'text-slate-500' : 'text-slate-400'} ${isSkipped ? 'line-through' : ''}`}>Unscheduled</p>
-                    )}
-                    {goal.timeLimitInMs && <p className={`text-xs ${isDone ? 'text-slate-600' : 'text-slate-400'} ${isSkipped ? 'line-through' : ''}`}>({formatDuration(goal.timeLimitInMs)})</p>}
+            <div key={goal.id} className={`bg-slate-900/50 border border-slate-700 rounded-xl p-4 transition-all duration-300 ${isDone ? 'opacity-60' : 'hover:border-cyan-500/50 hover:bg-slate-800/50'}`}>
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                    <div className="flex-shrink-0 text-center sm:text-left w-full sm:w-32">
+                        {goal.startTime && goal.endTime ? (
+                            <p className={`font-mono text-lg ${isDone ? 'text-slate-500' : 'text-cyan-300'} ${isSkipped ? 'line-through' : ''}`}>{goal.startTime} - {goal.endTime}</p>
+                        ) : (
+                            <p className={`font-mono text-lg ${isDone ? 'text-slate-500' : 'text-slate-400'} ${isSkipped ? 'line-through' : ''}`}>Unscheduled</p>
+                        )}
+                        {goal.timeLimitInMs && <p className={`text-xs ${isDone ? 'text-slate-600' : 'text-slate-400'} ${isSkipped ? 'line-through' : ''}`}>({formatDuration(goal.timeLimitInMs)})</p>}
+                    </div>
+                    <div className="flex-1 text-left w-full cursor-pointer" onClick={() => handleToggleExpand(goal.id)}>
+                        <p className={`font-bold text-lg ${isCompleted ? 'text-slate-500 line-through' : isSkipped ? 'text-red-400/90 line-through' : 'text-white'}`}>{goal.subject}</p>
+                        <p className={`text-sm ${isDone ? 'text-slate-600' : 'text-slate-400'} ${isSkipped ? 'line-through' : ''}`}>
+                            {(goal.goal || "No description...").substring(0, 100)}{goal.goal.length > 100 && !isExpanded ? '...' : ''}
+                        </p>
+                    </div>
+                    <div className="flex-shrink-0 w-full sm:w-auto flex justify-end">
+                        {statusBadge}
+                    </div>
                 </div>
-                <div 
-                    className="flex-1 text-center sm:text-left cursor-pointer"
-                    onClick={() => handleToggleExpand(goal.id)}
-                >
-                    <p className={`font-bold text-lg ${isCompleted ? 'text-slate-500 line-through' : isSkipped ? 'text-red-400/90 line-through' : 'text-white'}`}>{goal.subject}</p>
-                    <p className={`text-sm ${isDone ? 'text-slate-600' : 'text-slate-400'} ${isExpanded ? 'whitespace-pre-wrap' : ''} ${isSkipped ? 'line-through' : ''}`}>
-                        {isExpanded ? goal.goal : `${goal.goal.substring(0, 100)}${goal.goal.length > 100 ? '...' : ''}`}
-                    </p>
-                    {goal.goal.length > 100 && (
-                        <span className="text-xs text-cyan-400/80 mt-1 inline-block">
-                            {isExpanded ? 'Show Less' : 'Show More'}
-                        </span>
-                    )}
-                </div>
-                <div className="flex-shrink-0">
-                    {statusBadge}
-                </div>
+                {isExpanded && 
+                    <div className="mt-4 pt-4 border-t border-slate-700 text-left text-sm text-slate-300 whitespace-pre-wrap">
+                        {goal.goal || "No description provided."}
+                    </div>
+                }
             </div>
         );
     };
 
     return (
         <div className="w-full max-w-3xl">
-            <div className="bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full text-center animate-fade-in relative">
+            <div className="glass-panel p-8 rounded-2xl shadow-2xl w-full text-center animate-fade-in relative">
                  <button
                     onClick={onShowHistory}
                     className="absolute top-4 right-4 text-slate-500 hover:text-cyan-400 transition-colors p-2"
@@ -145,11 +163,13 @@ const TodaysPlan: React.FC<TodaysPlanProps> = ({
                 </button>
                 <h2 className="text-3xl font-bold tracking-tighter text-cyan-300">Today's Plan</h2>
                 <p className="text-slate-400 mt-1 mb-6">{today}</p>
+
+                <TodoList todos={todos} onUpdateTodos={handleUpdateTodos} />
                 
                 <div className="space-y-4 my-6">
                     {sortedGoals.length === 0 && !showForm && (
                         <div className="text-center py-12">
-                            <p className="text-slate-500">Your plan is empty. Add a goal or import from your calendar!</p>
+                            <p className="text-slate-500">Your plan is empty. Add your first goal to get started!</p>
                         </div>
                     )}
                     {sortedGoals.map(goal => renderGoal(goal))}
@@ -166,12 +186,14 @@ const TodaysPlan: React.FC<TodaysPlanProps> = ({
                             </svg>
                             Add New Goal
                         </button>
-                        <button 
-                            onClick={isGoogleSignedIn ? onFetchEvents : onGoogleSignIn} 
-                            className="flex-1 bg-sky-600/50 border border-sky-500/50 text-sky-300 font-semibold py-3 px-4 rounded-lg hover:bg-sky-600/70 transition-colors flex items-center justify-center gap-2"
+                         <button
+                            onClick={onShowWeeklyView}
+                            className="flex-1 bg-slate-700/80 border border-slate-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-slate-700 transition-colors flex items-center justify-center gap-2"
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24"><path d="M20.283 10.356h-8.327v3.451h4.792c-.446 2.193-2.313 3.453-4.792 3.453a5.27 5.27 0 0 1-5.279-5.28 5.27 5.27 0 0 1 5.279-5.279c1.259 0 2.397.447 3.29 1.178l2.6-2.599c-1.584-1.381-3.615-2.233-5.89-2.233a8.908 8.908 0 0 0-8.934 8.934 8.907 8.907 0 0 0 8.934 8.934c4.956 0 8.327-3.453 8.327-8.536 0-.622-.053-1.236-.153-1.836Z" /></svg>
-                            {isGoogleSignedIn ? 'Import from Calendar' : 'Connect Google Calendar'}
+                             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
+                            </svg>
+                            Manage Week
                         </button>
                     </div>
                 )}

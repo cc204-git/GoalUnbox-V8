@@ -7,15 +7,31 @@ interface AlertProps {
 }
 
 const Alert: React.FC<AlertProps> = ({ message, type }) => {
-  const baseClasses = 'p-4 rounded-md text-sm mb-6';
   const typeClasses = {
-    error: 'bg-red-900/50 border border-red-500/50 text-red-300',
-    info: 'bg-sky-900/50 border border-sky-500/50 text-sky-300',
+    error: {
+      container: 'bg-red-900/30 border border-red-500/30 text-red-300',
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+        </svg>
+      ),
+    },
+    info: {
+      container: 'bg-sky-900/30 border border-sky-500/30 text-sky-300',
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.707-10.293a1 1 0 00-1.414-1.414l-3 3a1 1 0 001.414 1.414L9 9.414V13a1 1 0 102 0V9.414l1.293 1.293a1 1 0 001.414-1.414l-3-3z" clipRule="evenodd" />
+        </svg>
+      ),
+    },
   };
 
   return (
-    <div className={`${baseClasses} ${typeClasses[type]}`}>
-      {message}
+    <div className={`p-4 rounded-lg text-sm mb-6 flex items-start gap-3 ${typeClasses[type].container}`}>
+      <div className="flex-shrink-0 mt-0.5">
+        {typeClasses[type].icon}
+      </div>
+      <span>{message}</span>
     </div>
   );
 };

@@ -10,13 +10,13 @@ import {
 import { auth } from './services/firebaseService.js';
 import * as authService from './services/authService.js';
 import * as dataService from './services/dataService.js';
-import * as googleCalendarService from './services/googleCalendarService.js';
 import { fileToBase64 } from './utils/fileUtils.js';
 import { formatDuration, getISODateString, formatCountdown, getStartOfWeekISOString } from './utils/timeUtils.js';
 
 import Header from './components/Header.js';
 import CodeUploader from './components/CodeUploader.js';
 import TodaysPlanComponent from './components/TodaysPlan.js';
+import WeeklyPlanView from './components/WeeklyPlanView.js';
 import GoalSetter from './components/GoalSetter.js';
 import ProofUploader from './components/ProofUploader.js';
 import VerificationResult from './components/VerificationResult.js';
@@ -25,11 +25,38 @@ import GoalHistory from './components/GoalHistory.js';
 import Auth from './components/Auth.js';
 import ApiKeyPrompt from './components/ApiKeyPrompt.js';
 import Spinner from './components/Spinner.js';
-import GoogleCalendarModal from './components/GoogleCalendarModal.js';
+
+const calculateBreakFromSchedule = (completedGoal, allGoalsInPlan) => {
+    if (!completedGoal || !allGoalsInPlan) return 0;
+
+    const sortedPendingGoals = allGoalsInPlan
+        .filter(g => g.status === 'pending' && g.startTime)
+        .sort((a, b) => a.startTime.localeCompare(b.startTime));
+
+    const nextPlannedGoal = sortedPendingGoals[0];
+
+    if (nextPlannedGoal && completedGoal.endTime) {
+        try {
+            const [endH, endM] = completedGoal.endTime.split(':').map(Number);
+            const [startH, startM] = nextPlannedGoal.startTime.split(':').map(Number);
+            
+            const now = new Date();
+            const endTimeToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), endH, endM);
+            const startTimeToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), startH, startM);
+
+            if (startTimeToday > endTimeToday) {
+                return startTimeToday.getTime() - endTimeToday.getTime();
+            }
+        } catch (e) {
+            console.error("Error calculating break time from schedule:", e);
+        }
+    }
+    return 0;
+};
 
 const App = () => {
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('GEMINI_API_KEY'));
-  const [appState, setAppState] = useState(AppState.AUTH);
+  const [appState, setAppState] = useState(AppState.TODAYS_PLAN);
   const [currentUser, setCurrentUser] = useState(null);
   const [activeGoal, setActiveGoal] = useState(null);
 
@@ -65,37 +92,21 @@ const App = () => {
 
   const [streakData, setStreakData] = useState(null);
   const [todaysPlan, setTodaysPlan] = useState(null);
+  const [weekStartDate, setWeekStartDate] = useState(() => new Date(getStartOfWeekISOString(new Date())));
+  const [weeklyPlans, setWeeklyPlans] = useState(null);
+  const [editingGoalInfo, setEditingGoalInfo] = useState(null);
 
-  // Google Calendar State
-  const [isGapiReady, setIsGapiReady] = useState(false);
-  const [isGoogleSignedIn, setIsGoogleSignedIn] = useState(false);
-  const [showCalendarModal, setShowCalendarModal] = useState(false);
-  const [calendarEvents, setCalendarEvents] = useState([]);
-  const [isCalendarLoading, setIsCalendarLoading] = useState(false);
-  const [goalSetterDataFromCalendar, setGoalSetterDataFromCalendar] = useState(null);
-
-  useEffect(() => {
-    googleCalendarService.initGapiClient(setIsGoogleSignedIn)
-        .then(() => {
-            setIsGapiReady(true);
-        })
-        .catch(err => {
-            console.error("GAPI client init error:", err.message);
-            setError(err.message); // Use the specific error message from the service
-            setIsGapiReady(true); // Allow app to load without calendar features
-        });
-  }, []);
   
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, user => {
       setCurrentUser(user);
       if (!user) {
         setIsLoading(false);
-        setAppState(AppState.AUTH);
         setHistory([]);
         setStreakData(null);
         setTodaysPlan(null);
         setActiveGoal(null);
+        setWeeklyPlans(null);
       }
     });
     return () => unsubscribe();
@@ -133,14 +144,15 @@ const App = () => {
             appState !== AppState.AWAITING_BREAK &&
             appState !== AppState.AWAITING_CODE &&
             appState !== AppState.BREAK_ACTIVE &&
-            appState !== AppState.HISTORY_VIEW
+            appState !== AppState.HISTORY_VIEW &&
+            appState !== AppState.WEEKLY_PLAN_VIEW
         ) {
             setAppState(AppState.TODAYS_PLAN);
         }
     }));
 
     listeners.push(dataService.listenToPlan(uid, new Date(), (plan) => {
-        if (!plan) {
+        if (!plan && !isInitialLoad) {
             const newPlan = { date: getISODateString(new Date()), goals: [] };
             dataService.savePlan(uid, newPlan);
             setTodaysPlan(newPlan);
@@ -151,7 +163,7 @@ const App = () => {
     
     listeners.push(dataService.listenToHistory(uid, setHistory));
 
-    dataService.getStreakData(uid).then(data => {
+    dataService.getStreakData(uid).then(async (data) => {
         let streak = data;
         const today = new Date();
         const currentWeekStart = getStartOfWeekISOString(today);
@@ -164,6 +176,7 @@ const App = () => {
                 skipsThisWeek: 0,
                 weekStartDate: currentWeekStart
             };
+            await dataService.createDefaultWeeklyPlan(uid, today);
         }
         
         const todayStr = getISODateString(today);
@@ -222,28 +235,13 @@ const App = () => {
       }
       dataService.savePlan(currentUser.uid, plan);
   };
-
-  const handleAddGoalToPlan = async (payload) => {
-      if (!currentUser) return;
-      const totalMs = (payload.timeLimit.hours * 3600 + payload.timeLimit.minutes * 60) * 1000;
-      const newGoal = {
-          id: Date.now().toString(),
-          goal: payload.goal,
-          subject: payload.subject,
-          timeLimitInMs: totalMs > 0 ? totalMs : null,
-          consequence: payload.consequence.trim() || null,
-          startTime: payload.startTime,
-          endTime: payload.endTime,
-          status: 'pending',
-      };
-      
-      const planToUpdate = todaysPlan || { date: getISODateString(new Date()), goals: [] };
-      const updatedPlan = { ...planToUpdate, goals: [...planToUpdate.goals, newGoal] };
-      await dataService.savePlan(currentUser.uid, updatedPlan);
-      
-      // Reset calendar-related goal setter
-      if(goalSetterDataFromCalendar) setGoalSetterDataFromCalendar(null);
-  };
+    const handleSavePlanAndUpdateWeek = async (plan) => {
+        if (!currentUser) return;
+        await dataService.savePlan(currentUser.uid, plan);
+        // After saving, refresh the weekly view data
+        const plans = await dataService.loadWeeklyPlans(currentUser.uid, weekStartDate);
+        setWeeklyPlans(plans);
+    };
 
   const clearApiKey = useCallback(() => {
     localStorage.removeItem('GEMINI_API_KEY');
@@ -355,24 +353,28 @@ const App = () => {
 
     await dataService.clearActiveGoal(currentUser.uid);
 
+    let breakDurationMs = 0;
+
     if (activePlannedGoal && todaysPlan) {
         const updatedGoals = todaysPlan.goals.map(g => g.id === activePlannedGoal.id ? { ...g, status: 'completed' } : g);
         const updatedPlan = { ...todaysPlan, goals: updatedGoals };
         await dataService.savePlan(currentUser.uid, updatedPlan);
+        
+        if (reason === 'verified') {
+            breakDurationMs = calculateBreakFromSchedule(activePlannedGoal, updatedPlan.goals);
+        }
+        
         setActivePlannedGoal(null);
     }
 
-    if (reason === 'verified') {
-        let breakDurationMs = (duration < 7200000) ? 600000 : (duration / 7200000) * 900000;
-        if (breakDurationMs > 0) {
-            setAvailableBreakTime(breakDurationMs);
-            setCompletionDuration(formatDuration(duration));
-            setVerificationFeedback(feedback);
-            setCompletionReason('verified');
-            setAppState(AppState.AWAITING_BREAK);
-            setIsLoading(false);
-            return;
-        }
+    if (reason === 'verified' && breakDurationMs > 0) {
+        setAvailableBreakTime(breakDurationMs);
+        setCompletionDuration(formatDuration(duration));
+        setVerificationFeedback(feedback);
+        setCompletionReason('verified');
+        setAppState(AppState.AWAITING_BREAK);
+        setIsLoading(false);
+        return;
     }
 
     setCompletionDuration(formatDuration(duration));
@@ -467,10 +469,12 @@ const App = () => {
         };
         await dataService.addHistoryItem(currentUser.uid, newEntry);
         
+        let breakDurationMs = 0;
         if (activePlannedGoal && todaysPlan) {
             const updatedGoals = todaysPlan.goals.map(g => g.id === activePlannedGoal.id ? { ...g, status: 'skipped' } : g);
             const updatedPlan = { ...todaysPlan, goals: updatedGoals };
             await dataService.savePlan(currentUser.uid, updatedPlan);
+            breakDurationMs = calculateBreakFromSchedule(activePlannedGoal, updatedPlan.goals);
         }
         const updatedStreakData = {
             ...streakData,
@@ -480,7 +484,6 @@ const App = () => {
         await dataService.saveStreakData(currentUser.uid, updatedStreakData);
         setStreakData(updatedStreakData);
         await dataService.clearActiveGoal(currentUser.uid);
-        const breakDurationMs = (duration < 7200000) ? 600000 : (duration / 7200000) * 900000;
         
         if (breakDurationMs > 0) {
             setAvailableBreakTime(breakDurationMs);
@@ -523,10 +526,47 @@ const App = () => {
       setStreakData(newData);
       dataService.saveStreakData(currentUser.uid, newData);
   };
+
   const handleStartPlannedGoal = (goalToStart) => {
-        setGoal(goalToStart.goal); setSubject(goalToStart.subject);
-        setTimeLimitInMs(goalToStart.timeLimitInMs); setConsequence(goalToStart.consequence);
-        setActivePlannedGoal(goalToStart); setAppState(AppState.AWAITING_CODE);
+        if (!goalToStart.goal || goalToStart.goal.trim() === '') {
+            setError("Please edit the goal to add a description before starting. It cannot be empty.");
+            window.scrollTo(0, 0);
+            return;
+        }
+        setError(null);
+        setGoal(goalToStart.goal);
+        setSubject(goalToStart.subject);
+        setTimeLimitInMs(goalToStart.timeLimitInMs);
+        setConsequence(goalToStart.consequence);
+        setActivePlannedGoal(goalToStart);
+        setAppState(AppState.AWAITING_CODE);
+  };
+
+  const handleEditGoal = (plan, goal) => {
+    setEditingGoalInfo({ plan, goal });
+  };
+  const handleSaveEditedGoal = (payload) => {
+    if (!editingGoalInfo || !currentUser) return;
+    const { plan, goal } = editingGoalInfo;
+    const totalMs = (payload.timeLimit.hours * 3600 + payload.timeLimit.minutes * 60) * 1000;
+    const updatedGoal = {
+        ...goal,
+        goal: payload.goal,
+        subject: payload.subject,
+        timeLimitInMs: totalMs > 0 ? totalMs : null,
+        consequence: payload.consequence.trim() || null,
+        startTime: payload.startTime,
+        endTime: payload.endTime,
+    };
+    const updatedGoals = plan.goals.map(g => g.id === updatedGoal.id ? updatedGoal : g);
+    const updatedPlan = { ...plan, goals: updatedGoals };
+
+    if (plan.date === getISODateString(new Date())) {
+        handleSavePlan(updatedPlan);
+    } else {
+        handleSavePlanAndUpdateWeek(updatedPlan);
+    }
+    setEditingGoalInfo(null);
   };
   const handleFinishDay = () => setAppState(AppState.GOAL_COMPLETED);
   const handleNextCodeImageSubmit = async (file) => {
@@ -649,54 +689,40 @@ const App = () => {
         }
   }, [appState, breakEndTime, currentTime, handleFinishBreakAndStartNextGoal, nextGoal, resetToStart]);
 
-  // Google Calendar Handlers
-  const handleGoogleSignIn = async () => {
-      setError(null);
-      try {
-        await googleCalendarService.signIn();
-      } catch (err) {
-        setError(err.message);
-      }
-  };
-  const handleFetchCalendarEvents = async () => {
-      setIsCalendarLoading(true);
-      setError(null);
-      try {
-          const events = await googleCalendarService.listTodaysEvents();
-          setCalendarEvents(events);
-          setShowCalendarModal(true);
-      } catch (err) {
-          setError("Could not fetch Google Calendar events. Please try signing in again.");
-           // The token might be expired or invalid. Update the UI to prompt for re-authentication.
-          setIsGoogleSignedIn(false);
-      } finally {
-          setIsCalendarLoading(false);
-      }
-  };
-  const handleAddGoalFromCalendar = (event) => {
-      const startTime = event.start.dateTime ? new Date(event.start.dateTime).toTimeString().substring(0, 5) : "00:00";
-      const endTime = event.end.dateTime ? new Date(event.end.dateTime).toTimeString().substring(0, 5) : "23:59";
-      setGoalSetterDataFromCalendar({ subject: event.summary, startTime, endTime });
-      setShowCalendarModal(false);
-  };
+    const handleShowWeeklyView = async () => {
+        if (!currentUser) return;
+        setIsLoading(true);
+        try {
+            const plans = await dataService.loadWeeklyPlans(currentUser.uid, weekStartDate);
+            setWeeklyPlans(plans);
+            setAppState(AppState.WEEKLY_PLAN_VIEW);
+        } catch (err) {
+            handleApiError(err);
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
+    const handleNavigateWeek = async (direction) => {
+        if (!currentUser) return;
+        setIsLoading(true);
+        const newWeekStartDate = new Date(weekStartDate);
+        newWeekStartDate.setDate(weekStartDate.getDate() + (direction === 'next' ? 7 : -7));
+        setWeekStartDate(newWeekStartDate);
+        try {
+            const plans = await dataService.loadWeeklyPlans(currentUser.uid, newWeekStartDate);
+            setWeeklyPlans(plans);
+        } catch (err) {
+            handleApiError(err);
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
   const renderContent = () => {
     if (isLoading) return React.createElement('div', { className: "flex justify-center items-center p-8" }, React.createElement(Spinner, null));
     if (!apiKey) return React.createElement(ApiKeyPrompt, { onSubmit: handleApiKeySubmit, error: error });
     if (!currentUser) return React.createElement(Auth, null);
-
-    if (goalSetterDataFromCalendar) {
-      return React.createElement('div', { className: "mt-6 flex justify-center w-full max-w-lg" }, 
-        React.createElement(GoalSetter, { 
-            onGoalSubmit: handleAddGoalToPlan, 
-            isLoading: false, 
-            submitButtonText: "Add to Plan", 
-            onCancel: () => setGoalSetterDataFromCalendar(null), 
-            initialData: goalSetterDataFromCalendar
-        })
-      );
-    }
 
     switch (appState) {
       case AppState.TODAYS_PLAN:
@@ -705,10 +731,20 @@ const App = () => {
             onSavePlan: handleSavePlan, 
             onStartGoal: handleStartPlannedGoal, 
             onShowHistory: handleShowHistory,
-            isGoogleSignedIn: isGoogleSignedIn,
-            onGoogleSignIn: handleGoogleSignIn,
-            onFetchEvents: handleFetchCalendarEvents
+            onShowWeeklyView: handleShowWeeklyView,
+            onEditGoal: handleEditGoal
         }) : React.createElement('div', { className: "flex justify-center items-center p-8" }, React.createElement(Spinner, null));
+      case AppState.WEEKLY_PLAN_VIEW:
+          return weeklyPlans ? React.createElement(WeeklyPlanView, {
+            initialPlans: weeklyPlans,
+            weekStartDate: weekStartDate,
+            onBack: () => setAppState(AppState.TODAYS_PLAN),
+            onSavePlan: handleSavePlanAndUpdateWeek,
+            onStartGoal: handleStartPlannedGoal,
+            onNavigateWeek: handleNavigateWeek,
+            isLoading: isLoading,
+            onEditGoal: handleEditGoal
+          }) : React.createElement('div', { className: "flex justify-center items-center p-8" }, React.createElement(Spinner, null));
       case AppState.AWAITING_CODE: return React.createElement(CodeUploader, { onCodeImageSubmit: handleCodeImageSubmit, isLoading: isLoading, onShowHistory: handleShowHistory, onLogout: handleLogout, currentUser: currentUser, streakData: streakData, onSetCommitment: handleSetDailyCommitment, onCompleteCommitment: handleCompleteDailyCommitment });
       case AppState.GOAL_SET: {
         const skipsLeft = 2 - (streakData?.skipsThisWeek ?? 0);
@@ -767,21 +803,33 @@ const App = () => {
     }
   };
 
+  const editingModal = editingGoalInfo && React.createElement('div', { 
+        className: "fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 animate-fade-in overflow-y-auto",
+        onClick: () => setEditingGoalInfo(null)
+    },
+    React.createElement('div', { className: "flex items-center justify-center min-h-full p-4" },
+        React.createElement('div', { onClick: e => e.stopPropagation() },
+            React.createElement(GoalSetter, { 
+                initialData: editingGoalInfo.goal,
+                onGoalSubmit: handleSaveEditedGoal,
+                isLoading: false, 
+                submitButtonText: "Save Changes",
+                onCancel: () => setEditingGoalInfo(null)
+            })
+        )
+    )
+  );
+
   return React.createElement(
-    'div', { className: "min-h-screen flex flex-col bg-slate-900 items-center justify-center p-4" },
+    'div', { className: "min-h-screen flex flex-col items-center justify-center p-4" },
     React.createElement('style', null, `@keyframes fade-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } } .animate-fade-in { animation: fade-in 0.5s ease-out forwards; }`),
     React.createElement(Header, null),
     React.createElement('main', { className: "w-full flex flex-col items-center justify-center" },
         error && React.createElement(Alert, { message: error, type: "error" }),
+        editingModal,
         appState === AppState.GOAL_SET && verificationFeedback && React.createElement('div', { className: "w-full max-w-lg mb-4 flex justify-center" },
             React.createElement(VerificationResult, { isSuccess: false, secretCodeImage: null, feedback: verificationFeedback, onRetry: handleRetry, onReset: () => resetToStart(false), chatMessages: chatMessages, onSendChatMessage: handleSendChatMessage, isChatLoading: isChatLoading })
         ),
-        showCalendarModal && React.createElement(GoogleCalendarModal, { 
-            events: calendarEvents,
-            isLoading: isCalendarLoading,
-            onClose: () => setShowCalendarModal(false),
-            onAddGoal: handleAddGoalFromCalendar
-        }),
         !(appState === AppState.GOAL_SET && verificationFeedback) && renderContent()
     )
   );

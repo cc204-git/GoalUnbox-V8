@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import { createGatekeeperChat, GatekeeperResponse } from '../services/geminiService';
 import Spinner from './Spinner';
@@ -65,20 +66,20 @@ const DistractionGatekeeper: React.FC<DistractionGatekeeperProps> = ({ goal, con
     };
     
     return (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 animate-fade-in p-4">
-            <div className="bg-slate-800 border border-slate-700 p-6 rounded-lg shadow-2xl w-full max-w-lg relative">
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in p-4">
+            <div className="glass-panel p-6 rounded-2xl shadow-2xl w-full max-w-lg relative">
                 <h2 className="text-xl font-semibold mb-4 text-amber-300">Wait a second...</h2>
                 <div className="mb-4 h-64 overflow-y-auto space-y-4 pr-2 bg-slate-900/50 p-3 rounded-lg border border-slate-700">
                     {messages.map((msg, index) => (
                       <div key={index} className={`flex items-end ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-[80%] rounded-lg px-3 py-2 text-white ${msg.role === 'user' ? 'bg-cyan-600' : 'bg-slate-700'}`}>
+                        <div className={`max-w-[80%] rounded-xl px-3 py-2 text-white ${msg.role === 'user' ? 'bg-cyan-600' : 'bg-slate-700'}`}>
                           <p className="text-sm" style={{ whiteSpace: 'pre-wrap', wordWrap: 'break-word' }}>{msg.text}</p>
                         </div>
                       </div>
                     ))}
                     {isLoading && (
                         <div className="flex justify-start">
-                             <div className="max-w-[80%] rounded-lg px-3 py-2 text-white bg-slate-700 flex items-center gap-2">
+                             <div className="max-w-[80%] rounded-xl px-3 py-2 text-white bg-slate-700 flex items-center gap-2">
                                 <Spinner />
                                 <span className="text-sm">thinking...</span>
                              </div>
@@ -103,12 +104,12 @@ const DistractionGatekeeper: React.FC<DistractionGatekeeperProps> = ({ goal, con
                           onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
                           placeholder="State your reason for skipping..."
                           disabled={isLoading}
-                          className="flex-grow bg-slate-800 border border-slate-600 rounded-lg p-2 text-white placeholder-slate-500 focus:ring-1 focus:ring-cyan-500"
+                          className="form-input flex-grow rounded-lg p-2 text-slate-200 placeholder-slate-500 transition"
                         />
                         <button
                           onClick={handleSendMessage}
                           disabled={!input.trim() || isLoading}
-                          className="bg-cyan-500 text-slate-900 font-bold py-2 px-4 rounded-lg hover:bg-cyan-400 disabled:bg-slate-700"
+                          className="bg-cyan-500 text-slate-900 font-bold py-2 px-4 rounded-lg hover:bg-cyan-400 disabled:bg-slate-700 button-glow-cyan"
                         >
                           Send
                         </button>

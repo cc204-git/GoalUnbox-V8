@@ -58,7 +58,7 @@ const CodeUploader: React.FC<CodeUploaderProps> = ({
   return (
     <div className="relative w-full max-w-md flex flex-col items-center">
       {showCamera && <CameraCapture onCapture={handleCapture} onCancel={() => setShowCamera(false)} />}
-      <div className="bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full text-center animate-fade-in">
+      <div className="glass-panel p-8 rounded-2xl shadow-2xl w-full text-center animate-fade-in">
         
         <div className="absolute top-4 right-4 flex items-center gap-2">
             {currentUser && !currentUser.isAnonymous && (
@@ -87,8 +87,8 @@ const CodeUploader: React.FC<CodeUploaderProps> = ({
             }
         </div>
 
-        {currentUser && !currentUser.isAnonymous && <p className="text-sm text-slate-500 mb-6 -mt-2 text-left">Logged in as: <strong>{currentUser.email}</strong></p>}
-        {currentUser && currentUser.isAnonymous && <p className="text-sm text-slate-500 mb-6 -mt-2 text-left">Logged in as: <strong>Guest</strong></p>}
+        {currentUser && !currentUser.isAnonymous && <p className="text-sm text-slate-400 mb-6 -mt-2 text-left">Logged in as: <strong>{currentUser.email}</strong></p>}
+        {currentUser && currentUser.isAnonymous && <p className="text-sm text-slate-400 mb-6 -mt-2 text-left">Logged in as: <strong>Guest</strong></p>}
 
         <h2 className="text-2xl font-semibold mb-2 text-cyan-300">{title}</h2>
         <p className="text-slate-400 mb-6">{description}</p>
@@ -102,7 +102,7 @@ const CodeUploader: React.FC<CodeUploaderProps> = ({
           disabled={isLoading}
         />
 
-        <div className="border-2 border-dashed border-slate-600 rounded-lg p-6 mb-6 hover:border-cyan-400 transition-colors duration-300 min-h-[150px] flex items-center justify-center">
+        <div className="border-2 border-dashed border-slate-600 rounded-lg p-6 mb-6 hover:border-cyan-400 transition-colors duration-300 min-h-[150px] flex items-center justify-center bg-slate-900/20">
             {file ? (
                 <div className="flex flex-col items-center justify-center gap-4 text-green-400">
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -145,7 +145,7 @@ const CodeUploader: React.FC<CodeUploaderProps> = ({
         <button
           onClick={handleSubmit}
           disabled={!file || isLoading}
-          className="w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed transition-all duration-300 flex items-center justify-center"
+          className="w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed transition-all duration-300 flex items-center justify-center button-glow-cyan"
         >
           {isLoading ? <Spinner /> : 'Analyze & Save Code'}
         </button>

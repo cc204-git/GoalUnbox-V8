@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import GoalSetter from './GoalSetter.js';
 import { formatDuration } from '../utils/timeUtils.js';
+import TodoList from './TodoList.js';
 
 
 const TodaysPlan = ({ 
@@ -8,9 +9,8 @@ const TodaysPlan = ({
     onSavePlan, 
     onStartGoal, 
     onShowHistory,
-    onGoogleSignIn,
-    onFetchEvents,
-    isGoogleSignedIn,
+    onShowWeeklyView,
+    onEditGoal
 }) => {
     const [plan, setPlan] = useState(initialPlan);
     const [showForm, setShowForm] = useState(false);
@@ -18,6 +18,12 @@ const TodaysPlan = ({
 
     const handleToggleExpand = (goalId) => {
         setExpandedGoalId(prevId => (prevId === goalId ? null : goalId));
+    };
+
+    const handleUpdateTodos = (newTodos) => {
+        const updatedPlan = { ...plan, todos: newTodos };
+        setPlan(updatedPlan);
+        onSavePlan(updatedPlan);
     };
 
     const handleAddGoal = (payload) => {
@@ -52,6 +58,8 @@ const TodaysPlan = ({
     const sortedGoals = useMemo(() => sortGoals(plan.goals), [plan.goals]);
     const allGoalsCompleted = useMemo(() => plan.goals.length > 0 && plan.goals.every(g => g.status !== 'pending'), [plan.goals]);
     const today = new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    const todos = plan.todos || [];
+
 
     const renderGoal = (goal) => {
         const isExpanded = expandedGoalId === goal.id;
@@ -71,11 +79,23 @@ const TodaysPlan = ({
                 'Skipped'
             );
         } else {
-            statusBadge = React.createElement('button', {
-                onClick: (e) => { e.stopPropagation(); onStartGoal(goal); },
-                className: 'bg-cyan-500 text-slate-900 font-bold py-2 px-4 rounded-lg hover:bg-cyan-400 transition-colors disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed',
-                title: "Start this goal"
-            }, 'Start Goal');
+            statusBadge = React.createElement('div', { className: "flex items-center gap-2" },
+                React.createElement('button', { 
+                    onClick: (e) => { e.stopPropagation(); onEditGoal(plan, goal); },
+                    className: "text-slate-400 hover:text-white p-2 rounded-lg bg-slate-700/50 hover:bg-slate-700 transition-colors",
+                    title: "Edit Goal"
+                }, 
+                    React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", className: "h-5 w-5", viewBox: "0 0 20 20", fill: "currentColor" },
+                        React.createElement('path', { d: "M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" }),
+                        React.createElement('path', { fillRule: "evenodd", d: "M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z", clipRule: "evenodd" })
+                    )
+                ),
+                React.createElement('button', {
+                    onClick: (e) => { e.stopPropagation(); onStartGoal(goal); },
+                    className: 'bg-cyan-500 text-slate-900 font-bold py-2 px-4 rounded-lg hover:bg-cyan-400 transition-colors disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed',
+                    title: "Start this goal"
+                }, 'Start Goal')
+            );
         }
 
 
@@ -91,8 +111,8 @@ const TodaysPlan = ({
                 onClick: () => handleToggleExpand(goal.id)
             },
                 React.createElement('p', { className: `font-bold text-lg ${isCompleted ? 'text-slate-500 line-through' : isSkipped ? 'text-red-400/90 line-through' : 'text-white'}` }, goal.subject),
-                React.createElement('p', { className: `text-sm ${isDone ? 'text-slate-600' : 'text-slate-400'} ${isExpanded ? 'whitespace-pre-wrap' : ''} ${isSkipped ? 'line-through' : ''}` }, isExpanded ? goal.goal : `${goal.goal.substring(0, 100)}${goal.goal.length > 100 ? '...' : ''}`),
-                goal.goal.length > 100 && React.createElement('span', { className: "text-xs text-cyan-400/80 mt-1 inline-block" }, isExpanded ? 'Show Less' : 'Show More')
+                React.createElement('p', { className: `text-sm ${isDone ? 'text-slate-600' : 'text-slate-400'} ${isExpanded ? 'whitespace-pre-wrap' : ''} ${isSkipped ? 'line-through' : ''}` }, isExpanded ? (goal.goal || "No description provided.") : `${(goal.goal || "No description...").substring(0, 100)}${goal.goal.length > 100 ? '...' : ''}`),
+                (goal.goal.length > 100 || goal.goal) && React.createElement('span', { className: "text-xs text-cyan-400/80 mt-1 inline-block" }, isExpanded ? 'Show Less' : 'Show More')
             ),
             React.createElement('div', { className: 'flex-shrink-0' }, statusBadge)
         );
@@ -117,11 +137,11 @@ const TodaysPlan = ({
             'Add New Goal'
         ),
         React.createElement('button', {
-            onClick: isGoogleSignedIn ? onFetchEvents : onGoogleSignIn,
-            className: 'flex-1 bg-sky-600/50 border border-sky-500/50 text-sky-300 font-semibold py-3 px-4 rounded-lg hover:bg-sky-600/70 transition-colors flex items-center justify-center gap-2'
+            onClick: onShowWeeklyView,
+            className: 'flex-1 bg-slate-700/80 border border-slate-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-slate-700 transition-colors flex items-center justify-center gap-2'
         },
-            React.createElement('svg', { xmlns: 'http://www.w3.org/2000/svg', className: 'h-5 w-5', fill: 'currentColor', viewBox: '0 0 24 24' }, React.createElement('path', { d: 'M20.283 10.356h-8.327v3.451h4.792c-.446 2.193-2.313 3.453-4.792 3.453a5.27 5.27 0 0 1-5.279-5.28 5.27 5.27 0 0 1 5.279-5.279c1.259 0 2.397.447 3.29 1.178l2.6-2.599c-1.584-1.381-3.615-2.233-5.89-2.233a8.908 8.908 0 0 0-8.934 8.934 8.907 8.907 0 0 0 8.934 8.934c4.956 0 8.327-3.453 8.327-8.536 0-.622-.053-1.236-.153-1.836Z' })),
-            isGoogleSignedIn ? 'Import from Calendar' : 'Connect Google Calendar'
+            React.createElement('svg', { xmlns: 'http://www.w3.org/2000/svg', className: 'h-5 w-5', viewBox: '0 0 20 20', fill: 'currentColor' }, React.createElement('path', { fillRule: 'evenodd', d: 'M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z', clipRule: 'evenodd' })),
+            'Manage Week'
         )
     );
 
@@ -134,8 +154,9 @@ const TodaysPlan = ({
             historyButton,
             React.createElement('h2', { className: 'text-3xl font-bold tracking-tighter text-cyan-300' }, "Today's Plan"),
             React.createElement('p', { className: 'text-slate-400 mt-1 mb-6' }, today),
+            React.createElement(TodoList, { todos: todos, onUpdateTodos: handleUpdateTodos }),
             React.createElement('div', { className: 'space-y-4 my-6' },
-                sortedGoals.length === 0 && !showForm && React.createElement('div', { className: 'text-center py-12' }, React.createElement('p', { className: 'text-slate-500' }, 'Your plan is empty. Add a goal or import from your calendar!')),
+                sortedGoals.length === 0 && !showForm && React.createElement('div', { className: 'text-center py-12' }, React.createElement('p', { className: 'text-slate-500' }, 'Your plan is empty. Add your first goal to get started!')),
                 sortedGoals.map(goal => renderGoal(goal))
             ),
             actionButtons,

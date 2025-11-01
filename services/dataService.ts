@@ -1,4 +1,3 @@
-
 import { db } from './firebaseService';
 import {
     doc,
@@ -16,6 +15,7 @@ import {
 } from 'firebase/firestore';
 import { ActiveGoalState, CompletedGoal, StreakData, TodaysPlan } from '../types';
 import { getISODateString, getStartOfWeekISOString } from '../utils/timeUtils';
+import { getDefaultGoalsForDay } from '../utils/defaultSchedule';
 
 // Helper to get document references
 const getRefs = (userId: string) => {
@@ -71,6 +71,56 @@ export const loadPlan = async (userId: string, date: Date): Promise<TodaysPlan |
     const docSnap = await getDoc(planDocRef);
     return docSnap.exists() ? docSnap.data() as TodaysPlan : null;
 };
+
+export const loadWeeklyPlans = async (userId: string, weekStartDate: Date): Promise<TodaysPlan[]> => {
+    const plans: TodaysPlan[] = [];
+    const promises: Promise<TodaysPlan | null>[] = [];
+
+    for (let i = 0; i < 7; i++) {
+        const date = new Date(weekStartDate);
+        date.setDate(weekStartDate.getDate() + i);
+        promises.push(loadPlan(userId, date));
+    }
+
+    const results = await Promise.all(promises);
+
+    results.forEach((plan, i) => {
+        const date = new Date(weekStartDate);
+        date.setDate(weekStartDate.getDate() + i);
+        if (plan) {
+            plans.push(plan);
+        } else {
+            // Create an empty plan if one doesn't exist for a day in the week
+            plans.push({ date: getISODateString(date), goals: [] });
+        }
+    });
+
+    return plans;
+};
+
+export const createDefaultWeeklyPlan = async (userId: string, dateInWeek: Date) => {
+    const startOfWeek = new Date(getStartOfWeekISOString(dateInWeek));
+    const promises: Promise<void>[] = [];
+
+    for (let i = 0; i < 7; i++) {
+        const date = new Date(startOfWeek);
+        date.setDate(date.getDate() + i);
+        
+        const dayOfWeek = date.getDay(); // Sunday: 0, Monday: 1, etc.
+        const goals = getDefaultGoalsForDay(dayOfWeek);
+        
+        // Only create a plan if there are default goals for that day
+        if (goals.length > 0) {
+            const plan: TodaysPlan = {
+                date: getISODateString(date),
+                goals: goals
+            };
+            promises.push(savePlan(userId, plan));
+        }
+    }
+    await Promise.all(promises);
+};
+
 
 // Streak Data
 export const saveStreakData = (userId: string, data: StreakData) => {
