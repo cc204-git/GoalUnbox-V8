@@ -2,6 +2,7 @@ import React, { useState, useCallback, useRef } from 'react';
 import Spinner from './Spinner.js';
 import CameraCapture from './CameraCapture.js';
 import DailyCommitment from './DailyCommitment.js';
+import InstallPWA from './InstallPWA.js';
 
 
 const CodeUploader = ({ onCodeImageSubmit, isLoading, onShowHistory, onLogout, currentUser, streakData, onSetCommitment, onCompleteCommitment, title = "Step 1: Sequester Your Code", description = "Take a picture of the 3-digit code on your lock box. The code will be hidden until your goal is complete." }) => {
@@ -32,6 +33,7 @@ const CodeUploader = ({ onCodeImageSubmit, isLoading, onShowHistory, onLogout, c
   };
 
   const controls = React.createElement('div', { className: "absolute top-4 right-4 flex items-center gap-2" },
+      React.createElement(InstallPWA),
       currentUser && !currentUser.isAnonymous && React.createElement('button', {
           onClick: onLogout,
           className: "text-slate-500 hover:text-red-400 transition-colors p-2",

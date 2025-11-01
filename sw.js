@@ -2,7 +2,7 @@
 
 
 
-const CACHE_NAME = 'goal-unbox-v14';
+const CACHE_NAME = 'goal-unbox-v15';
 const URLS_TO_CACHE = [
   './',
   './index.html',
@@ -33,8 +33,11 @@ const URLS_TO_CACHE = [
   './components/ProofUploader.js',
   './components/Spinner.js',
   './components/VerificationResult.js',
+  './components/InstallPWA.js',
   './icon.svg',
-  './manifest.json'
+  './manifest.json',
+  './icon-192.png',
+  './icon-512.png',
 ];
 
 self.addEventListener('install', (event) => {

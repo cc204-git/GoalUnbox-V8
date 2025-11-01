@@ -3,6 +3,7 @@ import Spinner from './Spinner';
 import CameraCapture from './CameraCapture';
 import DailyCommitment from './DailyCommitment';
 import { StreakData } from '../types';
+import InstallPWA from './InstallPWA';
 
 interface CodeUploaderProps {
   onCodeImageSubmit: (file: File) => void;
@@ -61,6 +62,7 @@ const CodeUploader: React.FC<CodeUploaderProps> = ({
       <div className="glass-panel p-8 rounded-2xl shadow-2xl w-full text-center animate-fade-in">
         
         <div className="absolute top-4 right-4 flex items-center gap-2">
+            <InstallPWA />
             {currentUser && !currentUser.isAnonymous && (
                  <button
                     onClick={onLogout}
