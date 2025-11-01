@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useEffect } from 'react';
 import { User, onAuthStateChanged } from 'firebase/auth';
 import { Unsubscribe } from 'firebase/firestore';
@@ -60,7 +59,6 @@ const App: React.FC = () => {
   const [breakEndTime, setBreakEndTime] = useState<number | null>(null);
   const [completedSecretCode, setCompletedSecretCode] = useState<string | null>(null);
   const [completedSecretCodeImage, setCompletedSecretCodeImage] = useState<string | null>(null);
-  // FIX: Initialize useState with null instead of the variable being declared.
   const [nextGoal, setNextGoal] = useState<{
       secretCode?: string;
       secretCodeImage?: string;
@@ -97,7 +95,7 @@ const App: React.FC = () => {
         })
         .catch(err => {
             console.error("GAPI client init error:", (err as Error).message);
-            setError("Could not connect to Google Calendar. Please refresh and try again.");
+            setError((err as Error).message); // Use the specific error message from the service
             setIsGapiReady(true); // Allow app to load without calendar features
         });
   }, []);
@@ -666,7 +664,14 @@ const App: React.FC = () => {
   }, [appState, breakEndTime, currentTime, handleFinishBreakAndStartNextGoal, nextGoal, resetToStart]);
 
   // Google Calendar Handlers
-  const handleGoogleSignIn = () => googleCalendarService.signIn();
+  const handleGoogleSignIn = async () => {
+      setError(null);
+      try {
+        await googleCalendarService.signIn();
+      } catch (err) {
+        setError((err as Error).message);
+      }
+  };
   const handleFetchCalendarEvents = async () => {
       setIsCalendarLoading(true);
       setError(null);
@@ -676,7 +681,8 @@ const App: React.FC = () => {
           setShowCalendarModal(true);
       } catch (err) {
           setError("Could not fetch Google Calendar events. Please try signing in again.");
-          googleCalendarService.signOut();
+          // The token might be expired or invalid. Update the UI to prompt for re-authentication.
+          setIsGoogleSignedIn(false);
       } finally {
           setIsCalendarLoading(false);
       }

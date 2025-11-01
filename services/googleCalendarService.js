@@ -39,6 +39,12 @@ const initializeClients = () => {
  * @param updateSigninStatus A callback function to update the sign-in status in the app state.
  */
 export const initGapiClient = async (updateSigninStatus) => {
+    // Check if the credentials in the config file are still the placeholder values.
+    if (GOOGLE_API_KEY === "YOUR_GOOGLE_API_KEY" || GOOGLE_CLIENT_ID === "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com") {
+        // Reject with a specific, user-friendly error message.
+        return Promise.reject(new Error("Google Calendar not configured. Please follow the instructions in config.js to add your API Key and Client ID."));
+    }
+
     // If initialization is already in progress or completed, return the existing promise.
     if (initPromise) {
         return initPromise;
@@ -71,10 +77,16 @@ export const initGapiClient = async (updateSigninStatus) => {
 /**
  * Initiates the Google Sign-In flow.
  */
-export const signIn = () => {
+export const signIn = async () => {
+    if (!initPromise) {
+        throw new Error("Google Calendar service is not initialized. Please refresh the page.");
+    }
+    // Await the initialization promise to ensure clients are ready.
+    await initPromise;
+
     if (!tokenClient) {
-        console.error("Token client is not initialized.");
-        return;
+        // This case should ideally not be reached if initPromise resolves successfully.
+        throw new Error("Google Token Client failed to initialize. Please try again.");
     }
     // Prompt the user to select a Google Account and ask for consent to share their data
     tokenClient.requestAccessToken({ prompt: 'consent' });
@@ -94,6 +106,12 @@ export const signOut = () => {
  * @returns A promise that resolves with an array of calendar events.
  */
 export const listTodaysEvents = async () => {
+    if (!initPromise) {
+        throw new Error("Google Calendar service is not initialized. Please refresh the page.");
+    }
+    // Await the initialization promise to ensure clients are ready.
+    await initPromise;
+    
     if (!gapi || !gapi.client.getToken()) {
         throw new Error("User not signed in or GAPI not initialized.");
     }
