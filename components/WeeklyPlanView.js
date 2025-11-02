@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+
+import React, { useState, useMemo, useEffect } from 'react';
 import GoalSetter from './GoalSetter.js';
 import Spinner from './Spinner.js';
 
@@ -15,6 +16,12 @@ const WeeklyPlanView = ({
     const [plans, setPlans] = useState(initialPlans);
     const [editingDate, setEditingDate] = useState(null);
     const [expandedGoal, setExpandedGoal] = useState(null);
+
+    useEffect(() => {
+        if(initialPlans) {
+            setPlans(initialPlans);
+        }
+    }, [initialPlans]);
 
     const weekDays = useMemo(() => {
         const days = [];
@@ -35,7 +42,6 @@ const WeeklyPlanView = ({
             goal: payload.goal,
             subject: payload.subject,
             timeLimitInMs: totalMs > 0 ? totalMs : null,
-            consequence: payload.consequence.trim() || null,
             startTime: payload.startTime,
             endTime: payload.endTime,
             status: 'pending',

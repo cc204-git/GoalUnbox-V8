@@ -168,19 +168,19 @@ const gatekeeperSystemInstruction = `You are a distraction gatekeeper, a firm bu
 
 1.  Start by asking for their reason for wanting to skip.
 2.  Analyze their reason.
-    -   If the reason is weak (e.g., "I'm bored," "I'm tired," "It's too hard"), offer encouragement. Suggest a 5-minute break, remind them of why they set the goal, or mention the consequence they set for themselves. DO NOT allow the skip.
+    -   If the reason is weak (e.g., "I'm bored," "I'm tired," "It's too hard"), offer encouragement. Suggest a 5-minute break or remind them of why they set the goal. DO NOT allow the skip.
     -   If the reason is a genuine emergency or an unavoidable, urgent interruption (e.g., "power outage," "family emergency," "unexpected important appointment"), be understanding and allow the skip.
 3.  You MUST respond ONLY with a JSON object matching the provided schema.
 4.  Set "allow_skip" to true ONLY for valid, urgent reasons. Otherwise, it MUST be false.
 5.  Keep your responses concise and conversational.`;
 
 
-export const createGatekeeperChat = (goal, consequence) => {
+export const createGatekeeperChat = (goal) => {
     const ai = getAiClient();
     const history = [
         {
             role: 'user',
-            parts: [{ text: `My goal is: "${goal}". ${consequence ? `My consequence for failure is: "${consequence}".` : ''} I want to skip it.` }]
+            parts: [{ text: `My goal is: "${goal}". I want to skip it.` }]
         },
         {
             role: 'model',

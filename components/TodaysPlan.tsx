@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { PlannedGoal, TodaysPlan as TodaysPlanType, TodoItem } from '../types';
 import GoalSetter, { GoalPayload } from './GoalSetter';
 import { formatDuration } from '../utils/timeUtils';
@@ -25,6 +25,10 @@ const TodaysPlan: React.FC<TodaysPlanProps> = ({
     const [showForm, setShowForm] = useState(false);
     const [expandedGoalId, setExpandedGoalId] = useState<string | null>(null);
 
+    useEffect(() => {
+        setPlan(initialPlan);
+    }, [initialPlan]);
+
     const handleToggleExpand = (goalId: string) => {
         setExpandedGoalId(prevId => (prevId === goalId ? null : goalId));
     };
@@ -42,7 +46,6 @@ const TodaysPlan: React.FC<TodaysPlanProps> = ({
             goal: payload.goal,
             subject: payload.subject,
             timeLimitInMs: totalMs > 0 ? totalMs : null,
-            consequence: payload.consequence.trim() || null,
             startTime: payload.startTime,
             endTime: payload.endTime,
             status: 'pending',

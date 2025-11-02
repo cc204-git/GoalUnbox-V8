@@ -31,7 +31,6 @@ export interface ActiveGoalState {
     subject: string;
     goalSetTime: number;
     timeLimitInMs: number | null;
-    consequence: string | null;
 }
 
 export interface StreakData {
@@ -49,7 +48,6 @@ export interface PlannedGoal {
   goal: string;
   subject: string;
   timeLimitInMs: number | null;
-  consequence: string | null;
   startTime: string; // "HH:mm"
   endTime: string; // "HH:mm"
   status: 'pending' | 'completed' | 'skipped';

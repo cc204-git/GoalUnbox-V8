@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { PlannedGoal, TodaysPlan } from '../types';
 import GoalSetter, { GoalPayload } from './GoalSetter';
 import { formatDuration } from '../utils/timeUtils';
@@ -29,6 +29,10 @@ const WeeklyPlanView: React.FC<WeeklyPlanViewProps> = ({
     const [editingDate, setEditingDate] = useState<string | null>(null);
     const [expandedGoal, setExpandedGoal] = useState<{ day: string; goalId: string } | null>(null);
 
+    useEffect(() => {
+        setPlans(initialPlans);
+    }, [initialPlans]);
+
     const weekDays = useMemo(() => {
         const days = [];
         for (let i = 0; i < 7; i++) {
@@ -48,7 +52,6 @@ const WeeklyPlanView: React.FC<WeeklyPlanViewProps> = ({
             goal: payload.goal,
             subject: payload.subject,
             timeLimitInMs: totalMs > 0 ? totalMs : null,
-            consequence: payload.consequence.trim() || null,
             startTime: payload.startTime,
             endTime: payload.endTime,
             status: 'pending',

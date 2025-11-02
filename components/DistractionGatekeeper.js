@@ -1,9 +1,10 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import { createGatekeeperChat } from '../services/geminiService.js';
 import Spinner from './Spinner.js';
 
-const DistractionGatekeeper = ({ goal, consequence, onConfirmSkip, onCancel }) => {
+const DistractionGatekeeper = ({ goal, onConfirmSkip, onCancel }) => {
     const [chat, setChat] = useState(null);
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
@@ -13,7 +14,7 @@ const DistractionGatekeeper = ({ goal, consequence, onConfirmSkip, onCancel }) =
 
     useEffect(() => {
         try {
-            const chatSession = createGatekeeperChat(goal, consequence);
+            const chatSession = createGatekeeperChat(goal);
             setChat(chatSession);
             chatSession.getHistory().then(history => {
                  const initialModelMessage = JSON.parse(history[1].parts[0].text);
@@ -25,7 +26,7 @@ const DistractionGatekeeper = ({ goal, consequence, onConfirmSkip, onCancel }) =
         } finally {
             setIsLoading(false);
         }
-    }, [goal, consequence]);
+    }, [goal]);
     
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });

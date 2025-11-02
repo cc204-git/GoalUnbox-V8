@@ -78,7 +78,6 @@ const App: React.FC = () => {
   const [goalSetTime, setGoalSetTime] = useState<number | null>(null);
   const [completionDuration, setCompletionDuration] = useState<string | null>(null);
   const [timeLimitInMs, setTimeLimitInMs] = useState<number | null>(null);
-  const [consequence, setConsequence] = useState<string | null>(null);
   
   const [completionReason, setCompletionReason] = useState<CompletionReason | null>(null);
   const [activePlannedGoal, setActivePlannedGoal] = useState<PlannedGoal | null>(null);
@@ -95,7 +94,6 @@ const App: React.FC = () => {
       goal?: string;
       subject?: string;
       timeLimitInMs?: number | null;
-      consequence?: string | null;
       plannedGoalId?: string;
   } | null>(null);
   const [currentTime, setCurrentTime] = useState(Date.now());
@@ -161,28 +159,26 @@ const App: React.FC = () => {
             setSubject(goalState.subject);
             setGoalSetTime(goalState.goalSetTime);
             setTimeLimitInMs(goalState.timeLimitInMs);
-            setConsequence(goalState.consequence);
             setAppState(AppState.GOAL_SET);
-        } else if (
-            appState !== AppState.GOAL_COMPLETED &&
-            appState !== AppState.AWAITING_BREAK &&
-            appState !== AppState.AWAITING_CODE &&
-            appState !== AppState.BREAK_ACTIVE &&
-            appState !== AppState.HISTORY_VIEW &&
-            appState !== AppState.WEEKLY_PLAN_VIEW
-        ) {
-            setAppState(AppState.TODAYS_PLAN);
+        } else {
+            setAppState(currentState => {
+                 if (
+                    currentState !== AppState.GOAL_COMPLETED &&
+                    currentState !== AppState.AWAITING_BREAK &&
+                    currentState !== AppState.AWAITING_CODE &&
+                    currentState !== AppState.BREAK_ACTIVE &&
+                    currentState !== AppState.HISTORY_VIEW &&
+                    currentState !== AppState.WEEKLY_PLAN_VIEW
+                ) {
+                    return AppState.TODAYS_PLAN;
+                }
+                return currentState;
+            });
         }
     }));
 
     listeners.push(dataService.listenToPlan(uid, new Date(), (plan) => {
-        if (!plan && !isInitialLoad) { // Only create empty plan if not initial load (new user handled below)
-            const newPlan = { date: getISODateString(new Date()), goals: [] };
-            dataService.savePlan(uid, newPlan);
-            setTodaysPlan(newPlan);
-        } else {
-            setTodaysPlan(plan);
-        }
+        setTodaysPlan(plan);
     }));
     
     listeners.push(dataService.listenToHistory(uid, setHistory));
@@ -231,6 +227,13 @@ const App: React.FC = () => {
         if (!data || !data.weekStartDate) {
             dataService.saveStreakData(uid, streak);
         }
+
+        // Ensure today's plan exists for all users
+        const todaysDocument = await dataService.loadPlan(uid, today);
+        if (!todaysDocument) {
+            const newPlan = { date: getISODateString(today), goals: [] };
+            await dataService.savePlan(uid, newPlan);
+        }
     }).catch(err => {
         console.error("Failed to load streak data:", err);
         setError("Could not load your streak data.");
@@ -255,7 +258,7 @@ const App: React.FC = () => {
     return () => {
         listeners.forEach(unsubscribe => unsubscribe());
     };
-}, [currentUser, appState]);
+}, [currentUser]);
 
   const handleSavePlan = (plan: TodaysPlan) => {
       if (!currentUser) return;
@@ -298,7 +301,7 @@ const App: React.FC = () => {
     setVerificationFeedback(null); setIsLoading(false); setError(null);
     setChat(null); setChatMessages([]); setIsChatLoading(false);
     setGoalSetTime(null); setCompletionDuration(null); setTimeLimitInMs(null);
-    setConsequence(null); setCompletionReason(null); setActivePlannedGoal(null);
+    setCompletionReason(null); setActivePlannedGoal(null);
     setAvailableBreakTime(null); setBreakEndTime(null); setCompletedSecretCode(null); setCompletedSecretCodeImage(null);
     setNextGoal(null); setBreakChoice(null); setSkippedGoalForReflection(null);
   }, [currentUser]);
@@ -341,7 +344,7 @@ const App: React.FC = () => {
         
         const activeState: ActiveGoalState = { 
             secretCode: code, secretCodeImage: tempSecretCodeImage!, goal, subject, 
-            goalSetTime: goalStartTime, timeLimitInMs, consequence 
+            goalSetTime: goalStartTime, timeLimitInMs
         };
         await dataService.saveActiveGoal(currentUser.uid, activeState);
     } catch (err) {
@@ -350,14 +353,11 @@ const App: React.FC = () => {
     } finally {
         setIsLoading(false);
     }
-  }, [handleApiError, goal, subject, timeLimitInMs, consequence, currentUser]);
+  }, [handleApiError, goal, subject, timeLimitInMs, currentUser]);
 
   const getEffectiveGoal = useCallback(() => {
-    if (timeLimitInMs && goalSetTime && consequence && Date.now() > goalSetTime + timeLimitInMs) {
-      return `The user's original goal was: "${goal}". They failed to meet the time limit. The consequence is: "${consequence}". The new combined goal is to complete BOTH the original goal AND the consequence.`;
-    }
     return goal;
-  }, [goal, timeLimitInMs, goalSetTime, consequence]);
+  }, [goal]);
 
  const handleGoalSuccess = useCallback(async (feedback: VerificationFeedback | null, reason: CompletionReason) => {
     if (!currentUser) return;
@@ -548,7 +548,6 @@ const App: React.FC = () => {
             subject: "Accountability Reflection",
             goalSetTime: reflectionGoalSetTime,
             timeLimitInMs: 5 * 60 * 1000,
-            consequence: "You must complete this reflection to continue.",
         };
         
         setSkippedGoalForReflection(activePlannedGoal);
@@ -652,7 +651,6 @@ const App: React.FC = () => {
     setGoal(goalToStart.goal);
     setSubject(goalToStart.subject);
     setTimeLimitInMs(goalToStart.timeLimitInMs);
-    setConsequence(goalToStart.consequence);
     setActivePlannedGoal(goalToStart);
     setAppState(AppState.AWAITING_CODE);
 };
@@ -669,7 +667,6 @@ const App: React.FC = () => {
         goal: payload.goal,
         subject: payload.subject,
         timeLimitInMs: totalMs > 0 ? totalMs : null,
-        consequence: payload.consequence.trim() || null,
         startTime: payload.startTime,
         endTime: payload.endTime,
     };
@@ -704,7 +701,7 @@ const App: React.FC = () => {
         const newTimeLimitInMs = totalMs > 0 ? totalMs : null;
         setNextGoal({ 
             goal: payload.goal, subject: payload.subject, 
-            timeLimitInMs: newTimeLimitInMs, consequence: payload.consequence 
+            timeLimitInMs: newTimeLimitInMs
         });
         if(availableBreakTime) setBreakEndTime(Date.now() + availableBreakTime);
         setAppState(AppState.BREAK_ACTIVE);
@@ -712,7 +709,7 @@ const App: React.FC = () => {
   const handleSelectPlannedGoalForNext = (goalToSelect: PlannedGoal) => {
         setNextGoal({
             goal: goalToSelect.goal, subject: goalToSelect.subject, timeLimitInMs: goalToSelect.timeLimitInMs,
-            consequence: goalToSelect.consequence, plannedGoalId: goalToSelect.id,
+            plannedGoalId: goalToSelect.id,
         });
         if(availableBreakTime) setBreakEndTime(Date.now() + availableBreakTime);
         setAppState(AppState.BREAK_ACTIVE);
@@ -727,7 +724,7 @@ const App: React.FC = () => {
         const activeState: ActiveGoalState = {
             secretCode: nextGoal.secretCode, secretCodeImage: nextGoal.secretCodeImage, 
             goal: nextGoal.goal, subject: nextGoal.subject, goalSetTime: nextGoalTime, 
-            timeLimitInMs: nextGoal.timeLimitInMs || null, consequence: nextGoal.consequence || null,
+            timeLimitInMs: nextGoal.timeLimitInMs || null,
         };
         await dataService.saveActiveGoal(currentUser.uid, activeState);
         
@@ -752,7 +749,6 @@ const App: React.FC = () => {
             secretCode: completedSecretCode, secretCodeImage: completedSecretCodeImage,
             goal: nextPendingGoal.goal, subject: nextPendingGoal.subject,
             goalSetTime: nextGoalTime, timeLimitInMs: nextPendingGoal.timeLimitInMs,
-            consequence: nextPendingGoal.consequence,
         };
         await dataService.saveActiveGoal(currentUser.uid, activeState);
         setActivePlannedGoal(nextPendingGoal);
@@ -768,7 +764,7 @@ const App: React.FC = () => {
         const FORTY_FIVE_MINS_MS = 45 * 60 * 1000;
         setNextGoal({
             goal: nextPendingGoal.goal, subject: nextPendingGoal.subject,
-            timeLimitInMs: nextPendingGoal.timeLimitInMs, consequence: nextPendingGoal.consequence,
+            timeLimitInMs: nextPendingGoal.timeLimitInMs, 
             plannedGoalId: nextPendingGoal.id,
         });
         setBreakEndTime(Date.now() + FORTY_FIVE_MINS_MS);
@@ -863,7 +859,7 @@ const App: React.FC = () => {
       case AppState.AWAITING_CODE: return <CodeUploader onCodeImageSubmit={handleCodeImageSubmit} isLoading={isLoading} onShowHistory={handleShowHistory} onLogout={handleLogout} currentUser={currentUser} streakData={streakData} onSetCommitment={handleSetDailyCommitment} onCompleteCommitment={handleCompleteDailyCommitment} />;
       case AppState.GOAL_SET: {
         const skipsLeft = 2 - (streakData?.skipsThisWeek ?? 0);
-        return <ProofUploader goal={goal} onProofImageSubmit={handleProofImageSubmit} isLoading={isLoading} goalSetTime={goalSetTime} timeLimitInMs={timeLimitInMs} consequence={consequence} onSkipGoal={handleSkipGoal} skipsLeftThisWeek={skipsLeft > 0 ? skipsLeft : 0} lastCompletedCodeImage={streakData?.lastCompletedCodeImage} />;
+        return <ProofUploader goal={goal} onProofImageSubmit={handleProofImageSubmit} isLoading={isLoading} goalSetTime={goalSetTime} timeLimitInMs={timeLimitInMs} onSkipGoal={handleSkipGoal} skipsLeftThisWeek={skipsLeft > 0 ? skipsLeft : 0} lastCompletedCodeImage={streakData?.lastCompletedCodeImage} />;
       }
       case AppState.HISTORY_VIEW: return <GoalHistory onBack={handleHistoryBack} history={history} onDeleteHistoryItem={handleDeleteHistoryItem} />;
       case AppState.GOAL_COMPLETED: return <VerificationResult isSuccess={true} secretCodeImage={secretCodeImage || completedSecretCodeImage} feedback={verificationFeedback} onRetry={handleRetry} onReset={() => resetToStart(false)} completionDuration={completionDuration} completionReason={completionReason} />;

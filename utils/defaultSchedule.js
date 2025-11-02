@@ -1,37 +1,4 @@
-export const defaultSchedule = {
-    1: [ // Monday
-        { subject: 'Physique', startTime: '19:15', endTime: '23:00' },
-    ],
-    2: [ // Tuesday
-        { subject: 'Analyse', startTime: '19:15', endTime: '23:00' },
-    ],
-    3: [ // Wednesday
-        { subject: 'Algebre', startTime: '19:30', endTime: '21:30' },
-        { subject: 'Chimie', startTime: '21:45', endTime: '23:00' },
-    ],
-    4: [ // Thursday
-        { subject: 'Physique', startTime: '21:30', endTime: '23:00' } 
-    ],
-    5: [ // Friday
-        { subject: 'CM', startTime: '14:00', endTime: '16:00' },
-        { subject: 'FM', startTime: '16:00', endTime: '17:00' },
-        { subject: 'MSI', startTime: '17:20', endTime: '19:20' },
-        { subject: 'Analyse', startTime: '19:45', endTime: '22:45' },
-    ],
-    6: [ // Saturday
-        { subject: 'Physique', startTime: '14:00', endTime: '17:00' },
-        { subject: 'Inf', startTime: '17:20', endTime: '19:20' },
-        { subject: 'Algebre', startTime: '19:45', endTime: '22:45' },
-    ],
-    0: [ // Sunday
-        { subject: 'Physique', startTime: '08:00', endTime: '10:00' },
-        { subject: 'Algebre', startTime: '10:20', endTime: '12:20' },
-        { subject: 'Analyse', startTime: '14:00', endTime: '17:00' },
-        { subject: 'CM', startTime: '17:20', endTime: '19:20' },
-        { subject: 'Aut', startTime: '19:40', endTime: '21:40' },
-        { subject: 'FM', startTime: '22:00', endTime: '23:00' },
-    ]
-};
+export const defaultSchedule = {};
 
 const calculateTimeLimit = (startTime, endTime) => {
     try {

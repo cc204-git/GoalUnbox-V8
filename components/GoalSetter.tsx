@@ -13,7 +13,6 @@ export interface GoalPayload {
     goal: string;
     subject: string;
     timeLimit: TimeLimit;
-    consequence: string;
     startTime: string;
     endTime: string;
 }
@@ -42,32 +41,15 @@ const GoalSetter: React.FC<GoalSetterProps> = ({ onGoalSubmit, isLoading, submit
 
   const [hours, setHours] = useState(initialTimeLimit.hours);
   const [minutes, setMinutes] = useState(initialTimeLimit.minutes);
-  const [consequence, setConsequence] = useState(initialData?.consequence || '');
   const [subQuestions, setSubQuestions] = useState('');
   const [startTime, setStartTime] = useState(initialData?.startTime || '');
   const [endTime, setEndTime] = useState(initialData?.endTime || '');
   const [timeError, setTimeError] = useState<string | null>(null);
 
-  const consequenceTemplates = [
-    `I will submit my homework on separate, numbered papers.
-Each paper will have the date DD/MM/YY written at the top.
-My homework will include:
-Exercise X: Y Questions
-I will make sure that all exercises and questions are clearly highlighted on each paper.`
-  ];
-  const [consequenceTemplateIndex, setConsequenceTemplateIndex] = useState(0);
-
-  const handleUseConsequenceTemplate = () => {
-      const nextIndex = (consequenceTemplateIndex + 1) % consequenceTemplates.length;
-      setConsequence(consequenceTemplates[consequenceTemplateIndex]);
-      setConsequenceTemplateIndex(nextIndex);
-  };
-
   useEffect(() => {
     if (initialData) {
         setGoal(initialData.goal || '');
         setSubject(initialData.subject || '');
-        setConsequence(initialData.consequence || '');
         setStartTime(initialData.startTime || '');
         setEndTime(initialData.endTime || '');
 
@@ -179,7 +161,7 @@ I will make sure that all exercises and questions are clearly highlighted on eac
 
   const handleSubmit = useCallback(() => {
     const totalMinutes = (Number(hours) || 0) * 60 + (Number(minutes) || 0);
-    if (goal.trim() && subject.trim() && consequence.trim() && totalMinutes > 0 && startTime && endTime) {
+    if (goal.trim() && subject.trim() && totalMinutes > 0 && startTime && endTime) {
       let finalGoal = goal.trim();
       const numSubQuestions = Number(subQuestions) || 0;
 
@@ -191,15 +173,14 @@ I will make sure that all exercises and questions are clearly highlighted on eac
             goal: finalGoal,
             subject: subject.trim(),
             timeLimit: { hours: Number(hours) || 0, minutes: Number(minutes) || 0 },
-            consequence: consequence.trim(),
             startTime,
             endTime,
         };
       onGoalSubmit(payload);
     }
-  }, [goal, subject, onGoalSubmit, hours, minutes, consequence, subQuestions, startTime, endTime]);
+  }, [goal, subject, onGoalSubmit, hours, minutes, subQuestions, startTime, endTime]);
 
-  const canSubmit = !goal.trim() || !subject.trim() || !consequence.trim() || !(Number(hours) > 0 || Number(minutes) > 0) || !!timeError || isLoading || !startTime || !endTime;
+  const canSubmit = !goal.trim() || !subject.trim() || !(Number(hours) > 0 || Number(minutes) > 0) || !!timeError || isLoading || !startTime || !endTime;
 
   return (
     <div className="glass-panel p-8 rounded-2xl shadow-2xl w-full max-w-lg text-center animate-fade-in">
@@ -234,7 +215,7 @@ I will make sure that all exercises and questions are clearly highlighted on eac
       />
 
       <div className="border-t border-slate-700 pt-6 mb-6 text-left space-y-4">
-        <h3 className="text-slate-300 font-semibold text-lg">Set Time Range & Consequence</h3>
+        <h3 className="text-slate-300 font-semibold text-lg">Set Time Range</h3>
         <div>
             <label className="block text-sm font-medium text-slate-400 mb-1">Time Range</label>
             <div className="flex items-center gap-2">
@@ -294,26 +275,6 @@ I will make sure that all exercises and questions are clearly highlighted on eac
                 <Alert message={timeError} type="error" />
             </div>
         )}
-         <div>
-            <div className="flex justify-between items-center mb-1">
-                <label htmlFor="consequence" className="block text-sm font-medium text-slate-400">Consequence for Failure</label>
-                <button
-                  onClick={handleUseConsequenceTemplate}
-                  type="button"
-                  className="text-sm bg-slate-700 text-cyan-300 font-semibold py-1 px-3 rounded-md hover:bg-slate-600 transition-colors"
-                >
-                  Template
-                </button>
-            </div>
-            <textarea
-                id="consequence"
-                value={consequence}
-                onChange={(e) => setConsequence(e.target.value)}
-                placeholder="e.g., 'I must also clean the garage.'"
-                className="form-input w-full h-24 rounded-lg p-3 text-slate-200 placeholder-slate-500"
-                disabled={isLoading}
-            />
-         </div>
       </div>
 
 

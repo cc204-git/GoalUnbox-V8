@@ -12,7 +12,6 @@ interface ProofUploaderProps {
   isLoading: boolean;
   goalSetTime: number | null;
   timeLimitInMs: number | null;
-  consequence: string | null;
   onSkipGoal: () => void;
   skipsLeftThisWeek: number;
   lastCompletedCodeImage?: string | null;
@@ -32,7 +31,7 @@ const PDFIcon = () => (
 );
 
 
-const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeLimitInMs, consequence, onSkipGoal, skipsLeftThisWeek, lastCompletedCodeImage }) => {
+const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeLimitInMs, onSkipGoal, skipsLeftThisWeek, lastCompletedCodeImage }) => {
   const [proofFiles, setProofFiles] = useState<ProofFile[]>([]);
   const [showCamera, setShowCamera] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -42,6 +41,7 @@ const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit,
   const [elapsedTime, setElapsedTime] = useState<string | null>(null);
   const [showPreviousCodeModal, setShowPreviousCodeModal] = useState(false);
   const [showGatekeeper, setShowGatekeeper] = useState(false);
+  const [showPrayerModal, setShowPrayerModal] = useState(true);
 
   // Effect for the elapsed time count-up timer
   useEffect(() => {
@@ -79,8 +79,6 @@ const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit,
           setTimeLeft(formatCountdown(0));
           if (!isTimeUp) {
             setIsTimeUp(true);
-            const updatedGoal = `Original Goal: "${goal}"\n\nTIME'S UP! Consequence Added: "${consequence}"`;
-            setDisplayGoal(updatedGoal);
           }
           return true; // Time is up
         } else {
@@ -103,7 +101,7 @@ const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit,
     return () => {
       if (consequenceInterval) clearInterval(consequenceInterval);
     };
-  }, [goal, goalSetTime, timeLimitInMs, consequence, isTimeUp, isLoading]);
+  }, [goal, goalSetTime, timeLimitInMs, isTimeUp, isLoading]);
 
 
   const addFiles = (newFiles: File[]) => {
@@ -163,11 +161,32 @@ const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit,
 
   return (
     <>
+      {showPrayerModal && (
+        <div 
+            className="fixed inset-0 bg-slate-900/80 backdrop-blur-md flex items-center justify-center z-50 animate-fade-in p-4"
+            onClick={() => setShowPrayerModal(false)}
+        >
+            <div 
+                className="glass-panel p-8 rounded-2xl max-w-xl text-center" 
+                dir="rtl"
+                onClick={(e) => e.stopPropagation()}
+            >
+                <p className="text-2xl font-serif text-slate-100 text-glow-cyan" style={{ lineHeight: '1.8' }}>
+                    "اللهم اني اسئلك فهم النبيين وحفظ المرسلين والملائكه المقربين اللهم اعني في دراستي وبارك لي في وقتي واجعل نهاية جهدي فرحاً ونجاحاً ومعدل عالي يا ارحم الراحمين"
+                </p>
+                <button 
+                    onClick={() => setShowPrayerModal(false)} 
+                    className="mt-8 bg-cyan-500 text-slate-900 font-bold py-2 px-8 rounded-lg hover:bg-cyan-400 transition-all duration-300 button-glow-cyan"
+                >
+                    Start Focusing
+                </button>
+            </div>
+        </div>
+      )}
       {showCamera && <CameraCapture onCapture={handleCapture} onCancel={() => setShowCamera(false)} />}
       {showGatekeeper && (
         <DistractionGatekeeper
           goal={goal}
-          consequence={consequence}
           onConfirmSkip={() => {
             setShowGatekeeper(false);
             onSkipGoal();

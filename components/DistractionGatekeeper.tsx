@@ -7,12 +7,11 @@ import { Chat } from '@google/genai';
 
 interface DistractionGatekeeperProps {
   goal: string;
-  consequence: string | null;
   onConfirmSkip: () => void;
   onCancel: () => void;
 }
 
-const DistractionGatekeeper: React.FC<DistractionGatekeeperProps> = ({ goal, consequence, onConfirmSkip, onCancel }) => {
+const DistractionGatekeeper: React.FC<DistractionGatekeeperProps> = ({ goal, onConfirmSkip, onCancel }) => {
     const [chat, setChat] = useState<Chat | null>(null);
     const [messages, setMessages] = useState<{ text: string, role: 'user' | 'model' }[]>([]);
     const [input, setInput] = useState('');
@@ -22,7 +21,7 @@ const DistractionGatekeeper: React.FC<DistractionGatekeeperProps> = ({ goal, con
 
     useEffect(() => {
         try {
-            const chatSession = createGatekeeperChat(goal, consequence);
+            const chatSession = createGatekeeperChat(goal);
             setChat(chatSession);
             // The initial message is now set in createGatekeeperChat history
             chatSession.getHistory().then(history => {
@@ -35,7 +34,7 @@ const DistractionGatekeeper: React.FC<DistractionGatekeeperProps> = ({ goal, con
         } finally {
             setIsLoading(false);
         }
-    }, [goal, consequence]);
+    }, [goal]);
     
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });

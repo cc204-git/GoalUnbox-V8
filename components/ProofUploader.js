@@ -11,7 +11,7 @@ const PDFIcon = () => React.createElement(
     React.createElement('path', { fillRule: 'evenodd', d: 'M4 2a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V8.414a1 1 0 00-.293-.707l-4.414-4.414A1 1 0 0011.586 2H4zm6 6a1 1 0 100-2 1 1 0 000 2zM8 12a1 1 0 100-2 1 1 0 000 2zm2 1a1 1 0 011-1h.01a1 1 0 110 2H11a1 1 0 01-1-1z', clipRule: 'evenodd' })
 );
 
-const ProofUploader = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeLimitInMs, consequence, onSkipGoal, skipsLeftThisWeek, lastCompletedCodeImage }) => {
+const ProofUploader = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeLimitInMs, onSkipGoal, skipsLeftThisWeek, lastCompletedCodeImage }) => {
   const [proofFiles, setProofFiles] = useState([]);
   const [showCamera, setShowCamera] = useState(false);
   const fileInputRef = useRef(null);
@@ -21,6 +21,7 @@ const ProofUploader = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeL
   const [elapsedTime, setElapsedTime] = useState(null);
   const [showPreviousCodeModal, setShowPreviousCodeModal] = useState(false);
   const [showGatekeeper, setShowGatekeeper] = useState(false);
+  const [showPrayerModal, setShowPrayerModal] = useState(true);
 
   useEffect(() => {
     if (!goalSetTime || isLoading) return;
@@ -54,8 +55,6 @@ const ProofUploader = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeL
           setTimeLeft(formatCountdown(0));
           if (!isTimeUp) {
             setIsTimeUp(true);
-            const updatedGoal = `Original Goal: "${goal}"\n\nTIME'S UP! Consequence Added: "${consequence}"`;
-            setDisplayGoal(updatedGoal);
           }
           return true; // Time is up
         } else {
@@ -78,7 +77,7 @@ const ProofUploader = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeL
     return () => {
       if (consequenceInterval) clearInterval(consequenceInterval);
     };
-  }, [goal, goalSetTime, timeLimitInMs, consequence, isTimeUp, isLoading]);
+  }, [goal, goalSetTime, timeLimitInMs, isTimeUp, isLoading]);
 
   const addFiles = (newFiles) => {
       const uniqueNewFiles = newFiles.filter(newFile => 
@@ -223,15 +222,37 @@ const ProofUploader = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeL
         ),
         React.createElement('span', null, 'View Previous Code')
     );
-
+    
+    const prayerModal = showPrayerModal && React.createElement(
+        'div',
+        {
+            className: 'fixed inset-0 bg-slate-900/80 backdrop-blur-md flex items-center justify-center z-50 animate-fade-in p-4',
+            onClick: () => setShowPrayerModal(false)
+        },
+        React.createElement(
+            'div',
+            {
+                className: 'glass-panel p-8 rounded-2xl max-w-xl text-center',
+                dir: 'rtl',
+                onClick: (e) => e.stopPropagation()
+            },
+            React.createElement('p', { className: 'text-2xl font-serif text-slate-100 text-glow-cyan', style: { lineHeight: '1.8' } },
+                '"اللهم اني اسئلك فهم النبيين وحفظ المرسلين والملائكه المقربين اللهم اعني في دراستي وبارك لي في وقتي واجعل نهاية جهدي فرحاً ونجاحاً ومعدل عالي يا ارحم الراحمين"'
+            ),
+            React.createElement('button', {
+                onClick: () => setShowPrayerModal(false),
+                className: 'mt-8 bg-cyan-500 text-slate-900 font-bold py-2 px-8 rounded-lg hover:bg-cyan-400 transition-all duration-300 button-glow-cyan'
+            }, 'Start Focusing')
+        )
+    );
 
   return React.createElement(
     React.Fragment,
     null,
+    prayerModal,
     showCamera && React.createElement(CameraCapture, { onCapture: handleCapture, onCancel: () => setShowCamera(false) }),
     showGatekeeper && React.createElement(DistractionGatekeeper, {
         goal,
-        consequence,
         onConfirmSkip: () => {
             setShowGatekeeper(false);
             onSkipGoal();
