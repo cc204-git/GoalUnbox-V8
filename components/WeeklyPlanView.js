@@ -1,4 +1,5 @@
 
+
 import React, { useState, useMemo, useEffect } from 'react';
 import GoalSetter from './GoalSetter.js';
 import Spinner from './Spinner.js';
@@ -46,6 +47,10 @@ const WeeklyPlanView = ({
             endTime: payload.endTime,
             status: 'pending',
         };
+
+        if (payload.pdfAttachment) {
+            newGoal.pdfAttachment = payload.pdfAttachment;
+        }
 
         const planToUpdate = plans.find(p => p.date === editingDate);
         if (planToUpdate) {
@@ -131,7 +136,8 @@ const WeeklyPlanView = ({
                 onGoalSubmit: handleAddGoal,
                 isLoading: false,
                 submitButtonText: "Add to Plan",
-                onCancel: () => setEditingDate(null)
+                onCancel: () => setEditingDate(null),
+                planDate: editingDate
             })
          )
     );

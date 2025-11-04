@@ -42,8 +42,12 @@ const TodaysPlan = ({
             startTime: payload.startTime,
             endTime: payload.endTime,
             status: 'pending',
-            pdfAttachment: payload.pdfAttachment || undefined,
         };
+
+        if (payload.pdfAttachment) {
+            newGoal.pdfAttachment = payload.pdfAttachment;
+        }
+
         const updatedPlan = { ...plan, goals: [...plan.goals, newGoal] };
         setPlan(updatedPlan);
         onSavePlan(updatedPlan);
@@ -173,7 +177,8 @@ const TodaysPlan = ({
                 onGoalSubmit: handleAddGoal,
                 isLoading: false,
                 submitButtonText: 'Add to Plan',
-                onCancel: () => setShowForm(false)
+                onCancel: () => setShowForm(false),
+                planDate: plan.date
             })
         )
     );

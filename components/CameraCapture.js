@@ -45,9 +45,19 @@ const CameraCapture = ({ onCapture, onCancel }) => {
       }
       setIsStreamActive(true);
     } catch (err) {
-      console.error("Error accessing camera:", err);
-      setError("Could not access the camera. Please ensure you have given permission and are not using it elsewhere.");
-      setIsStreamActive(false);
+      console.warn("Could not access rear camera, trying any camera:", err);
+      try {
+        const mediaStream = await navigator.mediaDevices.getUserMedia({ video: true });
+        streamRef.current = mediaStream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = mediaStream;
+        }
+        setIsStreamActive(true);
+      } catch (finalErr) {
+        console.error("Error accessing any camera:", finalErr);
+        setError("Could not access the camera. Please ensure you have given permission and are not using it elsewhere.");
+        setIsStreamActive(false);
+      }
     } finally {
       setIsLoading(false);
     }

@@ -49,8 +49,12 @@ const TodaysPlan: React.FC<TodaysPlanProps> = ({
             startTime: payload.startTime,
             endTime: payload.endTime,
             status: 'pending',
-            pdfAttachment: payload.pdfAttachment || undefined,
         };
+        
+        if (payload.pdfAttachment) {
+            (newGoal as any).pdfAttachment = payload.pdfAttachment;
+        }
+
         const updatedPlan = { ...plan, goals: [...plan.goals, newGoal] };
         setPlan(updatedPlan);
         onSavePlan(updatedPlan);
@@ -216,6 +220,7 @@ const TodaysPlan: React.FC<TodaysPlanProps> = ({
                         isLoading={false} 
                         submitButtonText="Add to Plan"
                         onCancel={() => setShowForm(false)}
+                        planDate={plan.date}
                     />
                 </div>
             )}

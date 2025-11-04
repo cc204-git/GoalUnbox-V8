@@ -51,6 +51,20 @@ const GoalSetter: React.FC<GoalSetterProps> = ({ onGoalSubmit, isLoading, submit
   const [existingPdfName, setExistingPdfName] = useState(initialData?.pdfAttachment?.name || '');
   const [pdfRemoved, setPdfRemoved] = useState(false);
 
+  const resetForm = useCallback(() => {
+    setGoal('');
+    setSubject('');
+    setHours('');
+    setMinutes('');
+    setSubQuestions('');
+    setStartTime('');
+    setEndTime('');
+    setTimeError(null);
+    setPdfFile(null);
+    setExistingPdfName('');
+    setPdfRemoved(false);
+  }, []);
+
   useEffect(() => {
     if (initialData) {
         setGoal(initialData.goal || '');
@@ -241,8 +255,11 @@ I will make sure that all exercises and questions are clearly highlighted on eac
             pdfAttachment: pdfPayload
         };
       onGoalSubmit(payload);
+      if (!initialData) {
+        resetForm();
+      }
     }
-  }, [goal, subject, onGoalSubmit, hours, minutes, subQuestions, startTime, endTime, pdfFile, pdfRemoved]);
+  }, [goal, subject, onGoalSubmit, hours, minutes, subQuestions, startTime, endTime, pdfFile, pdfRemoved, initialData, resetForm]);
 
   const canSubmit = !goal.trim() || !subject.trim() || !(Number(hours) > 0 || Number(minutes) > 0) || !!timeError || isLoading || !startTime || !endTime;
   const isCrmGoal = subject.toLowerCase().includes('crm');

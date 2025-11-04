@@ -56,6 +56,10 @@ const WeeklyPlanView: React.FC<WeeklyPlanViewProps> = ({
             endTime: payload.endTime,
             status: 'pending',
         };
+        
+        if (payload.pdfAttachment) {
+            (newGoal as any).pdfAttachment = payload.pdfAttachment;
+        }
 
         const planToUpdate = plans.find(p => p.date === editingDate);
         if (planToUpdate) {
@@ -173,6 +177,7 @@ const WeeklyPlanView: React.FC<WeeklyPlanViewProps> = ({
                             isLoading={false}
                             submitButtonText="Add to Plan"
                             onCancel={() => setEditingDate(null)}
+                            planDate={editingDate}
                         />
                      </div>
                  </div>
