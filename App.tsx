@@ -638,6 +638,31 @@ const App: React.FC = () => {
     }
 }, [currentUser, activeGoal, streakData, todaysPlan, handleApiError]);
 
+const handleAbandonGoal = useCallback(async () => {
+    const goalToAbandonId = activeGoal?.plannedGoalId;
+
+    if (!currentUser || !todaysPlan || !goalToAbandonId) {
+        setError("Could not abandon goal. Required data is missing.");
+        return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+        const updatedGoals = todaysPlan.goals.filter(g => g.id !== goalToAbandonId);
+        const updatedPlan = { ...todaysPlan, goals: updatedGoals };
+        
+        await dataService.savePlan(currentUser.uid, updatedPlan);
+        
+        resetToStart(); 
+
+    } catch (err) {
+        handleApiError(err);
+        setIsLoading(false);
+    }
+}, [currentUser, activeGoal, todaysPlan, resetToStart, handleApiError]);
+
 
   const handleShowHistory = () => setAppState(AppState.HISTORY_VIEW);
   const handleHistoryBack = () => setAppState(AppState.TODAYS_PLAN);
@@ -912,7 +937,7 @@ const App: React.FC = () => {
       case AppState.AWAITING_CODE: return <CodeUploader onCodeImageSubmit={handleCodeImageSubmit} isLoading={isLoading} onShowHistory={handleShowHistory} onLogout={handleLogout} currentUser={currentUser} streakData={streakData} onSetCommitment={handleSetDailyCommitment} onCompleteCommitment={handleCompleteDailyCommitment} />;
       case AppState.GOAL_SET: {
         const skipsLeft = 2 - (streakData?.skipsThisWeek ?? 0);
-        return <ProofUploader goal={goal} subject={subject} onProofImageSubmit={handleProofImageSubmit} isLoading={isLoading} goalSetTime={goalSetTime} timeLimitInMs={timeLimitInMs} onSkipGoal={handleSkipGoal} skipsLeftThisWeek={skipsLeft > 0 ? skipsLeft : 0} lastCompletedCodeImage={streakData?.lastCompletedCodeImage} pdfAttachment={activeGoal?.pdfAttachment} apiKey={apiKey!} />;
+        return <ProofUploader goal={goal} subject={subject} onProofImageSubmit={handleProofImageSubmit} isLoading={isLoading} goalSetTime={goalSetTime} timeLimitInMs={timeLimitInMs} onSkipGoal={handleSkipGoal} onAbandonGoal={handleAbandonGoal} skipsLeftThisWeek={skipsLeft > 0 ? skipsLeft : 0} lastCompletedCodeImage={streakData?.lastCompletedCodeImage} pdfAttachment={activeGoal?.pdfAttachment} apiKey={apiKey!} />;
       }
       case AppState.HISTORY_VIEW: return <GoalHistory onBack={handleHistoryBack} history={history} onDeleteHistoryItem={handleDeleteHistoryItem} apiKey={apiKey!} />;
       case AppState.GOAL_COMPLETED: return <VerificationResult isSuccess={true} secretCodeImage={secretCodeImage || completedSecretCodeImage} feedback={verificationFeedback} onRetry={handleRetry} onReset={() => resetToStart(false)} completionDuration={completionDuration} completionReason={completionReason} />;

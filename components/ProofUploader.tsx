@@ -15,6 +15,7 @@ interface ProofUploaderProps {
   goalSetTime: number | null;
   timeLimitInMs: number | null;
   onSkipGoal: () => void;
+  onAbandonGoal: () => void;
   skipsLeftThisWeek: number;
   lastCompletedCodeImage?: string | null;
   pdfAttachment?: { name: string; data: string; } | null;
@@ -35,7 +36,7 @@ const PDFIcon = () => (
 );
 
 
-const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, subject, onProofImageSubmit, isLoading, goalSetTime, timeLimitInMs, onSkipGoal, skipsLeftThisWeek, lastCompletedCodeImage, pdfAttachment, apiKey }) => {
+const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, subject, onProofImageSubmit, isLoading, goalSetTime, timeLimitInMs, onSkipGoal, onAbandonGoal, skipsLeftThisWeek, lastCompletedCodeImage, pdfAttachment, apiKey }) => {
   const [proofFiles, setProofFiles] = useState<ProofFile[]>([]);
   const [showCamera, setShowCamera] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -176,6 +177,12 @@ const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, subject, onProofIma
     } catch (error) {
         console.error("Failed to download PDF:", error);
     }
+  };
+
+  const handleAbandonClick = () => {
+      if (window.confirm("Are you sure you want to abandon this goal? It will be removed from your plan for today.")) {
+          onAbandonGoal();
+      }
   };
 
   const skipTitle = isReflectionGoal
@@ -350,6 +357,19 @@ const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, subject, onProofIma
                  <span className={`text-xs mt-1 ${skipsLeftThisWeek > 0 ? 'text-slate-500' : 'text-red-500/80'}`}>
                     ({skipsLeftThisWeek} left this week)
                 </span>
+            </div>
+            <div className="flex flex-col items-center">
+                <button
+                    onClick={handleAbandonClick}
+                    disabled={isLoading || isReflectionGoal}
+                    className="text-sm text-slate-500 hover:text-red-400 transition-colors duration-300 flex items-center justify-center gap-2 disabled:text-slate-600 disabled:hover:text-slate-600 disabled:cursor-not-allowed"
+                    title={isReflectionGoal ? "Reflections cannot be abandoned." : "Abandon this goal and remove it from your plan."}
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
+                    Abandon Goal
+                </button>
             </div>
         </div>
       </div>

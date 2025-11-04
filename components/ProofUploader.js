@@ -1,4 +1,5 @@
 
+
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import Spinner from './Spinner.js';
 import CameraCapture from './CameraCapture.js';
@@ -11,7 +12,7 @@ const PDFIcon = () => React.createElement(
     React.createElement('path', { fillRule: 'evenodd', d: 'M4 2a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V8.414a1 1 0 00-.293-.707l-4.414-4.414A1 1 0 0011.586 2H4zm6 6a1 1 0 100-2 1 1 0 000 2zM8 12a1 1 0 100-2 1 1 0 000 2zm2 1a1 1 0 011-1h.01a1 1 0 110 2H11a1 1 0 01-1-1z', clipRule: 'evenodd' })
 );
 
-const ProofUploader = ({ goal, subject, onProofImageSubmit, isLoading, goalSetTime, timeLimitInMs, onSkipGoal, skipsLeftThisWeek, lastCompletedCodeImage, pdfAttachment, apiKey }) => {
+const ProofUploader = ({ goal, subject, onProofImageSubmit, isLoading, goalSetTime, timeLimitInMs, onSkipGoal, onAbandonGoal, skipsLeftThisWeek, lastCompletedCodeImage, pdfAttachment, apiKey }) => {
   const [proofFiles, setProofFiles] = useState([]);
   const [showCamera, setShowCamera] = useState(false);
   const fileInputRef = useRef(null);
@@ -152,6 +153,12 @@ const ProofUploader = ({ goal, subject, onProofImageSubmit, isLoading, goalSetTi
             console.error("Failed to download PDF:", error);
         }
     };
+
+    const handleAbandonClick = () => {
+      if (window.confirm("Are you sure you want to abandon this goal? It will be removed from your plan for today.")) {
+          onAbandonGoal();
+      }
+    };
     
   const timerElements = [
     React.createElement(
@@ -196,6 +203,21 @@ const ProofUploader = ({ goal, subject, onProofImageSubmit, isLoading, goalSetTi
             ),
             React.createElement('span', { className: `text-xs mt-1 ${skipsLeftThisWeek > 0 ? 'text-slate-500' : 'text-red-500/80'}`},
                  `(${skipsLeftThisWeek} left this week)`
+            )
+        ),
+        React.createElement('div', { className: 'flex flex-col items-center' },
+            React.createElement(
+                'button',
+                {
+                    onClick: handleAbandonClick,
+                    disabled: isLoading || isReflectionGoal,
+                    className: 'text-sm text-slate-500 hover:text-red-400 transition-colors duration-300 flex items-center justify-center gap-2 disabled:text-slate-600 disabled:hover:text-slate-600 disabled:cursor-not-allowed',
+                    title: isReflectionGoal ? "Reflections cannot be abandoned." : "Abandon this goal and remove it from your plan."
+                },
+                React.createElement('svg', { xmlns: 'http://www.w3.org/2000/svg', className: 'h-4 w-4', viewBox: '0 0 20 20', fill: 'currentColor' },
+                    React.createElement('path', { fillRule: 'evenodd', d: 'M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z', clipRule: 'evenodd' })
+                ),
+                'Abandon Goal'
             )
         )
     );
