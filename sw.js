@@ -18,7 +18,6 @@ const URLS_TO_CACHE = [
   './services/firebaseService.js',
   './components/Alert.js',
   './components/Auth.js',
-  './components/ApiKeyPrompt.js',
   './components/CameraCapture.js',
   './components/ChatBox.js',
   './components/CodeUploader.js',

@@ -24,7 +24,6 @@ import VerificationResult from './components/VerificationResult.js';
 import Alert from './components/Alert.js';
 import GoalHistory from './components/GoalHistory.js';
 import Auth from './components/Auth.js';
-import ApiKeyPrompt from './components/ApiKeyPrompt.js';
 import Spinner from './components/Spinner.js';
 
 const calculateBreakFromSchedule = (completedGoal, allGoalsInPlan) => {
@@ -56,7 +55,6 @@ const calculateBreakFromSchedule = (completedGoal, allGoalsInPlan) => {
 };
 
 const App = () => {
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem('GEMINI_API_KEY'));
   const [appState, setAppState] = useState(AppState.TODAYS_PLAN);
   const [currentUser, setCurrentUser] = useState(null);
   const [activeGoal, setActiveGoal] = useState(null);
@@ -277,21 +275,11 @@ const App = () => {
             return [...prevPlans, plan].sort((a, b) => a.date.localeCompare(b.date));
         });
     };
-
-  const clearApiKey = useCallback(() => {
-    localStorage.removeItem('GEMINI_API_KEY');
-    setApiKey(null);
-  }, []);
   
   const handleApiError = useCallback((err) => {
       const error = err;
-      if (error.message.includes("API Key is not valid")) {
-          clearApiKey();
-          setError("Your API Key is invalid. Please enter a valid one to continue.");
-      } else {
-          setError(error.message);
-      }
-  }, [clearApiKey]);
+      setError(error.message);
+  }, []);
 
   const resetToStart = useCallback((isLogout = false) => {
     if (currentUser) dataService.clearActiveGoal(currentUser.uid);
@@ -309,12 +297,6 @@ const App = () => {
     setNextGoal(null); setSkippedGoalForReflection(null);
   }, [currentUser]);
 
-  const handleApiKeySubmit = (key) => {
-    localStorage.setItem('GEMINI_API_KEY', key);
-    setApiKey(key);
-    setError(null);
-  };
-  
   const handleLogout = () => {
       resetToStart(true);
   };
@@ -813,7 +795,6 @@ const App = () => {
 
   const renderContent = () => {
     if (isLoading) return React.createElement('div', { className: "flex justify-center items-center p-8" }, React.createElement(Spinner, null));
-    if (!apiKey) return React.createElement(ApiKeyPrompt, { onSubmit: handleApiKeySubmit, error: error });
     if (!currentUser) return React.createElement(Auth, null);
 
     switch (appState) {
@@ -866,7 +847,7 @@ const App = () => {
                     completedSecretCodeImage && React.createElement('div', { className: "text-center flex-1 min-w-[280px]" }, React.createElement('p', { className: "text-slate-400 text-sm mb-2" }, "Unlocked Code:"), React.createElement('img', { src: completedSecretCodeImage, alt: "Sequestered code", className: "rounded-lg w-full border-2 border-green-500" })),
                     React.createElement('div', { className: "flex-1 min-w-[320px]" }, codeUploader)
                 ),
-                nextGoal?.goal && React.createElement('div', { className: "w-full max-w-lg glass-panel p-4 rounded-2xl shadow-2xl text-center" }, React.createElement('h3', { className: "text-md font-semibold text-slate-300 mb-1" }, "Up Next: ", React.createElement('span', { className: "font-bold text-white" }, nextGoal.subject))),
+                nextGoal?.goal && React.createElement('div', { className: "glass-panel p-4 rounded-2xl shadow-2xl text-center" }, React.createElement('h3', { className: "text-md font-semibold text-slate-300 mb-1" }, "Up Next: ", React.createElement('span', { className: "font-bold text-white" }, nextGoal.subject))),
                 skipBreakButton
             );
         }

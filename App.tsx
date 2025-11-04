@@ -27,7 +27,6 @@ import VerificationResult from './components/VerificationResult';
 import Alert from './components/Alert';
 import GoalHistory from './components/GoalHistory';
 import Auth from './components/Auth';
-import ApiKeyPrompt from './components/ApiKeyPrompt';
 import Spinner from './components/Spinner';
 import { Chat } from '@google/genai';
 
@@ -62,7 +61,6 @@ const calculateBreakFromSchedule = (completedGoal: PlannedGoal, allGoalsInPlan: 
 };
 
 const App: React.FC = () => {
-  const [apiKey, setApiKey] = useState<string | null>(() => localStorage.getItem('GEMINI_API_KEY'));
   const [appState, setAppState] = useState<AppState>(AppState.TODAYS_PLAN);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [activeGoal, setActiveGoal] = useState<ActiveGoalState | null>(null);
@@ -290,21 +288,11 @@ const App: React.FC = () => {
             return [...prevPlans, plan].sort((a,b) => a.date.localeCompare(b.date));
         });
     };
-
-  const clearApiKey = useCallback(() => {
-    localStorage.removeItem('GEMINI_API_KEY');
-    setApiKey(null);
-  }, []);
   
   const handleApiError = useCallback((err: unknown) => {
       const error = err as Error;
-      if (error.message.includes("API Key is not valid")) {
-          clearApiKey();
-          setError("Your API Key is invalid. Please enter a valid one to continue.");
-      } else {
-          setError(error.message);
-      }
-  }, [clearApiKey]);
+      setError(error.message);
+  }, []);
 
   const resetToStart = useCallback((isLogout = false) => {
     if (currentUser) dataService.clearActiveGoal(currentUser.uid);
@@ -322,12 +310,6 @@ const App: React.FC = () => {
     setNextGoal(null); setSkippedGoalForReflection(null);
   }, [currentUser]);
 
-  const handleApiKeySubmit = (key: string) => {
-    localStorage.setItem('GEMINI_API_KEY', key);
-    setApiKey(key);
-    setError(null);
-  };
-  
   const handleLogout = () => {
       resetToStart(true);
   };
@@ -827,7 +809,6 @@ const App: React.FC = () => {
 
   const renderContent = () => {
     if (isLoading) return <div className="flex justify-center items-center p-8"><Spinner /></div>;
-    if (!apiKey) return <ApiKeyPrompt onSubmit={handleApiKeySubmit} error={error} />;
     if (!currentUser) return <Auth />;
 
     switch (appState) {

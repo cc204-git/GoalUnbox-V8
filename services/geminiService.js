@@ -13,11 +13,9 @@ function getAiClient() {
 const handleApiError = (error) => {
     console.error("Gemini API Error:", error);
     if (error instanceof Error) {
-        if (error.message.includes('API key not valid') || error.message.includes('permission denied')) {
-            return new Error("Your API Key is not valid. Please enter a valid key.");
-        }
+        return new Error(`An error occurred with the AI service: ${error.message}`);
     }
-    return new Error("An error occurred with the AI service. Please try again.");
+    return new Error("An unknown error occurred with the AI service. Please try again.");
 };
 
 export const extractCodeFromImage = async (base64Image, mimeType) => {
@@ -25,7 +23,7 @@ export const extractCodeFromImage = async (base64Image, mimeType) => {
     const ai = getAiClient();
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
-      contents: {
+      contents: [{
         parts: [
           {
             text: "Analyze this image and extract the 3-digit number. Respond with only the three digits. If no 3-digit number is clearly visible, respond with 'ERROR'."
@@ -37,7 +35,7 @@ export const extractCodeFromImage = async (base64Image, mimeType) => {
             },
           },
         ],
-      },
+      }],
     });
 
     const code = response.text.trim();
@@ -80,7 +78,7 @@ export const verifyGoalCompletion = async (goal, images) => {
         
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
-            contents: { parts: [{ text: userPrompt }, ...imageParts] },
+            contents: [{ parts: [{ text: userPrompt }, ...imageParts] }],
             config: { systemInstruction: verificationSystemInstruction, responseMimeType: "application/json", responseSchema: verificationSchema }
         });
         return JSON.parse(response.text);
