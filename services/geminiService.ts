@@ -2,25 +2,13 @@
 import { GoogleGenAI, Type, Chat, Content } from "@google/genai";
 import { CompletedGoal } from "../types";
 
-let ai: GoogleGenAI | null = null;
-let usedApiKey: string | null = null;
-
-// FIX: Refactored to avoid accessing private 'apiKey' property and to correctly handle API key changes.
+// Always create a new instance to ensure the latest API key is used.
 function getAiClient(): GoogleGenAI {
     const apiKey = process.env.API_KEY;
     if (!apiKey) {
         throw new Error("API Key not found. Please ensure the API_KEY environment variable is set.");
     }
-
-    // If 'ai' instance exists and was created with the current apiKey, return it.
-    if (ai && usedApiKey === apiKey) {
-        return ai;
-    }
-
-    // Otherwise, create a new instance.
-    ai = new GoogleGenAI({ apiKey });
-    usedApiKey = apiKey;
-    return ai;
+    return new GoogleGenAI({ apiKey });
 }
 
 const handleApiError = (error: unknown): Error => {
