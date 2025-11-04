@@ -21,7 +21,10 @@ const ApiKeyPrompt = ({ onSubmit, error: initialError }) => {
         React.createElement('input', {
             type: "password",
             value: apiKey,
-            onChange: (e) => setApiKey(e.target.value),
+            onChange: (e) => {
+                setApiKey(e.target.value);
+                setError(null);
+            },
             placeholder: "Enter your Gemini API Key",
             required: true,
             className: "w-full bg-slate-900 border border-slate-600 rounded-lg p-3 text-white placeholder-slate-500 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 transition",
@@ -36,11 +39,11 @@ const ApiKeyPrompt = ({ onSubmit, error: initialError }) => {
 
     return React.createElement('div', { className: "bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full max-w-md text-center animate-fade-in" },
         React.createElement('h2', { className: "text-2xl font-semibold mb-2 text-cyan-300" }, 'Enter Your API Key'),
-        React.createElement('p', { className: "text-slate-400 mb-6" }, 'Your Google Gemini API key is required to use this application. It is stored securely in your browser\'s local storage and never leaves your device.'),
+        React.createElement('p', { className: "text-slate-400 mb-6" }, 'Your Google Gemini API key is required. It\'s stored in your browser\'s local storage and never leaves your device.'),
         error && React.createElement('div', { className: "p-4 rounded-md text-sm mb-6 bg-red-900/50 border border-red-500/50 text-red-300" }, error),
         form,
         React.createElement('p', { className: "text-xs text-slate-500 mt-4" },
-            'You can get your API key from ',
+            'Get your API key from ',
             React.createElement('a', { href: "https://aistudio.google.com/app/apikey", target: "_blank", rel: "noopener noreferrer", className: "text-cyan-400 hover:underline" }, 'Google AI Studio'),
             '.'
         )

@@ -1,8 +1,5 @@
 
-
-
-
-const CACHE_NAME = 'goal-unbox-v15';
+const CACHE_NAME = 'goal-unbox-v16';
 const URLS_TO_CACHE = [
   './',
   './index.html',
@@ -18,6 +15,7 @@ const URLS_TO_CACHE = [
   './services/firebaseService.js',
   './components/Alert.js',
   './components/Auth.js',
+  './components/ApiKeyPrompt.js',
   './components/CameraCapture.js',
   './components/ChatBox.js',
   './components/CodeUploader.js',

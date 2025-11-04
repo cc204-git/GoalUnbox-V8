@@ -1,5 +1,4 @@
 
-
 import React, { useMemo, useState } from 'react';
 import { CompletedGoal } from '../types';
 import { formatDuration } from '../utils/timeUtils';
@@ -11,9 +10,10 @@ interface GoalHistoryProps {
   onBack: () => void;
   history: CompletedGoal[];
   onDeleteHistoryItem: (firestoreDocId: string) => void;
+  apiKey: string;
 }
 
-const GoalHistory: React.FC<GoalHistoryProps> = ({ onBack, history, onDeleteHistoryItem }) => {
+const GoalHistory: React.FC<GoalHistoryProps> = ({ onBack, history, onDeleteHistoryItem, apiKey }) => {
     const sortedHistory = useMemo(() => 
         [...history].sort((a: CompletedGoal, b: CompletedGoal) => b.endTime - a.endTime), 
     [history]);
@@ -57,7 +57,7 @@ const GoalHistory: React.FC<GoalHistoryProps> = ({ onBack, history, onDeleteHist
                 return;
             }
             
-            const result = await generateHistoryInsights(weeklyHistory);
+            const result = await generateHistoryInsights(weeklyHistory, apiKey);
             setInsights(result);
         } catch (err) {
             setInsightsError((err as Error).message);

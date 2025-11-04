@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect, useRef } from 'react';
 import { createGatekeeperChat, GatekeeperResponse } from '../services/geminiService';
 import Spinner from './Spinner';
@@ -9,9 +8,10 @@ interface DistractionGatekeeperProps {
   goal: string;
   onConfirmSkip: () => void;
   onCancel: () => void;
+  apiKey: string;
 }
 
-const DistractionGatekeeper: React.FC<DistractionGatekeeperProps> = ({ goal, onConfirmSkip, onCancel }) => {
+const DistractionGatekeeper: React.FC<DistractionGatekeeperProps> = ({ goal, onConfirmSkip, onCancel, apiKey }) => {
     const [chat, setChat] = useState<Chat | null>(null);
     const [messages, setMessages] = useState<{ text: string, role: 'user' | 'model' }[]>([]);
     const [input, setInput] = useState('');
@@ -21,9 +21,8 @@ const DistractionGatekeeper: React.FC<DistractionGatekeeperProps> = ({ goal, onC
 
     useEffect(() => {
         try {
-            const chatSession = createGatekeeperChat(goal);
+            const chatSession = createGatekeeperChat(goal, apiKey);
             setChat(chatSession);
-            // The initial message is now set in createGatekeeperChat history
             chatSession.getHistory().then(history => {
                  const initialModelMessage = JSON.parse(history[1].parts[0].text!) as GatekeeperResponse;
                  setMessages([{ role: 'model', text: initialModelMessage.response_text }]);
@@ -34,7 +33,7 @@ const DistractionGatekeeper: React.FC<DistractionGatekeeperProps> = ({ goal, onC
         } finally {
             setIsLoading(false);
         }
-    }, [goal]);
+    }, [goal, apiKey]);
     
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });

@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useEffect } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { AppState } from './types.js';
@@ -25,6 +26,7 @@ import Alert from './components/Alert.js';
 import GoalHistory from './components/GoalHistory.js';
 import Auth from './components/Auth.js';
 import Spinner from './components/Spinner.js';
+import ApiKeyPrompt from './components/ApiKeyPrompt.js';
 
 const calculateBreakFromSchedule = (completedGoal, allGoalsInPlan) => {
     if (!completedGoal || !allGoalsInPlan) return 0;
@@ -59,6 +61,8 @@ const App = () => {
   const [currentUser, setCurrentUser] = useState(null);
   const [activeGoal, setActiveGoal] = useState(null);
 
+  const [apiKey, setApiKey] = useState(null);
+  const [isApiKeyValid, setIsApiKeyValid] = useState(false);
   const [secretCode, setSecretCode] = useState(null);
   const [secretCodeImage, setSecretCodeImage] = useState(null);
   const [goal, setGoal] = useState('');
@@ -97,6 +101,11 @@ const App = () => {
 
   
   useEffect(() => {
+    const storedApiKey = localStorage.getItem('geminiApiKey');
+    if (storedApiKey) {
+        setApiKey(storedApiKey);
+        setIsApiKeyValid(true); // Assume valid until an API call fails
+    }
     const unsubscribe = onAuthStateChanged(auth, user => {
       setCurrentUser(user);
       if (!user) {
@@ -211,10 +220,9 @@ const App = () => {
             dataService.saveStreakData(uid, streak);
         }
 
-        // Ensure today's plan exists for all users
         const todaysDocument = await dataService.loadPlan(uid, today);
         if (!todaysDocument) {
-            const dayIndex = (today.getDay() + 6) % 7; // Monday = 0
+            const dayIndex = (today.getDay() + 6) % 7;
             const defaultDayPlanData = defaultWeeklyPlan[dayIndex];
             const newPlan = {
                 date: getISODateString(today),
@@ -263,7 +271,6 @@ const App = () => {
     const handleSavePlanAndUpdateWeek = async (plan) => {
         if (!currentUser) return;
         await dataService.savePlan(currentUser.uid, plan);
-        // Optimistically update local state instead of re-fetching to avoid race conditions.
         setWeeklyPlans(prevPlans => {
             if (!prevPlans) return [plan];
             const existingPlanIndex = prevPlans.findIndex(p => p.date === plan.date);
@@ -278,7 +285,14 @@ const App = () => {
   
   const handleApiError = useCallback((err) => {
       const error = err;
-      setError(error.message);
+      if (error.message.includes('API key not valid')) {
+        setError('Your API key is not valid. Please enter a correct key.');
+        setApiKey(null);
+        setIsApiKeyValid(false);
+        localStorage.removeItem('geminiApiKey');
+      } else {
+        setError(error.message);
+      }
   }, []);
 
   const resetToStart = useCallback((isLogout = false) => {
@@ -302,7 +316,7 @@ const App = () => {
   };
   
   const handleCodeImageSubmit = useCallback(async (file) => {
-    if (!currentUser) return;
+    if (!currentUser || !apiKey) return;
     setIsLoading(true);
     setError(null);
     
@@ -321,7 +335,7 @@ const App = () => {
         const base64 = await fileToBase64(file);
         await imagePromise;
 
-        const code = await extractCodeFromImage(base64, file.type);
+        const code = await extractCodeFromImage(base64, file.type, apiKey);
         setSecretCode(code);
         
         const goalStartTime = Date.now();
@@ -347,14 +361,14 @@ const App = () => {
     } finally {
         setIsLoading(false);
     }
-  }, [handleApiError, goal, subject, timeLimitInMs, currentUser, activePlannedGoal]);
+  }, [handleApiError, goal, subject, timeLimitInMs, currentUser, activePlannedGoal, apiKey]);
 
   const getEffectiveGoal = useCallback(() => {
     return goal;
   }, [goal]);
 
  const handleGoalSuccess = useCallback(async (feedback, reason) => {
-    if (!currentUser) return;
+    if (!currentUser || !apiKey) return;
 
     if (subject === "Accountability Reflection") {
         setIsLoading(true);
@@ -413,7 +427,7 @@ const App = () => {
     const finalGoal = getEffectiveGoal();
 
     try {
-        const goalSummary = await summarizeGoal(finalGoal);
+        const goalSummary = await summarizeGoal(finalGoal, apiKey);
         const newEntry = { id: endTime, goalSummary, fullGoal: finalGoal, subject: subject, startTime: goalSetTime, endTime, duration, completionReason: reason };
         await dataService.addHistoryItem(currentUser.uid, newEntry);
     } catch (e) { console.error("Failed to save goal:", e); }
@@ -422,7 +436,6 @@ const App = () => {
         setCompletedSecretCode(secretCode);
         setCompletedSecretCodeImage(secretCodeImage);
         const newData = { ...streakData, lastCompletedCodeImage: secretCodeImage };
-        // Tax will be reset below, so we save the combined state change.
         setStreakData(newData); 
     }
 
@@ -461,7 +474,6 @@ const App = () => {
         const nextPendingGoal = todaysPlan?.goals.filter(g => g.status === 'pending').sort((a, b) => a.startTime.localeCompare(b.startTime))[0];
 
         if (nextPendingGoal) {
-            // Found the next goal, start the break for it.
             setNextGoal({
                 goal: nextPendingGoal.goal,
                 subject: nextPendingGoal.subject,
@@ -472,7 +484,6 @@ const App = () => {
             setBreakEndTime(Date.now() + breakDurationMs);
             setAppState(AppState.BREAK_ACTIVE);
         } else {
-            // No more pending goals for today.
             setAppState(AppState.GOAL_COMPLETED);
         }
         setIsLoading(false);
@@ -484,9 +495,10 @@ const App = () => {
     setVerificationFeedback(feedback);
     setAppState(AppState.GOAL_COMPLETED);
     setIsLoading(false);
-}, [currentUser, goal, goalSetTime, getEffectiveGoal, secretCode, secretCodeImage, subject, activePlannedGoal, todaysPlan, streakData, skippedGoalForReflection, handleApiError]);
+}, [currentUser, goal, goalSetTime, getEffectiveGoal, secretCode, secretCodeImage, subject, activePlannedGoal, todaysPlan, streakData, skippedGoalForReflection, handleApiError, apiKey]);
 
   const handleProofImageSubmit = useCallback(async (files) => {
+    if (!apiKey) return;
     const pauseStartTime = Date.now();
     setIsLoading(true); setError(null); setVerificationFeedback(null); setChat(null); setChatMessages([]);
 
@@ -498,14 +510,14 @@ const App = () => {
     try {
         const imagePayloads = await Promise.all(files.map(async (file) => ({ base64: await fileToBase64(file), mimeType: file.type })));
         const finalGoal = getEffectiveGoal();
-        const result = await verifyGoalCompletion(finalGoal, imagePayloads);
+        const result = await verifyGoalCompletion(finalGoal, imagePayloads, apiKey);
 
         if (result.completed) {
             await handleGoalSuccess(result.feedback, 'verified');
         } else {
             resumeTimers();
             setVerificationFeedback(result.feedback);
-            const chatSession = createVerificationChat(finalGoal, imagePayloads, result);
+            const chatSession = createVerificationChat(finalGoal, imagePayloads, result, apiKey);
             setChat(chatSession);
             setChatMessages([{ role: 'model', text: result.feedback.summary }]);
             setIsLoading(false);
@@ -515,7 +527,7 @@ const App = () => {
         handleApiError(err);
         setIsLoading(false);
     }
-  }, [getEffectiveGoal, handleApiError, handleGoalSuccess]);
+  }, [getEffectiveGoal, handleApiError, handleGoalSuccess, apiKey]);
   
   const handleSendChatMessage = useCallback(async (message) => {
     if (!chat) return;
@@ -625,7 +637,7 @@ const App = () => {
         const scheduledStartTime = parseTime(goalToStart.startTime);
         const delay = now.getTime() - scheduledStartTime.getTime();
 
-        if (delay > 60000) { // More than 1 minute late
+        if (delay > 60000) {
             const tax = Math.round(delay * 0.25);
             const newTax = (streakData.breakTimeTax || 0) + tax;
             
@@ -710,6 +722,7 @@ const App = () => {
     setEditingGoalInfo(null);
   };
   const handleNextCodeImageSubmit = async (file) => {
+        if (!apiKey) return;
         setIsLoading(true); setError(null);
         try {
             const base64 = await fileToBase64(file);
@@ -717,7 +730,7 @@ const App = () => {
             reader.readAsDataURL(file);
             reader.onload = () => {
                 const dataUrl = reader.result;
-                extractCodeFromImage(base64, file.type).then(code => {
+                extractCodeFromImage(base64, file.type, apiKey).then(code => {
                     setNextGoal(prev => ({ ...prev, secretCode: code, secretCodeImage: dataUrl }));
                     setIsLoading(false);
                 }).catch(err => { handleApiError(err); setIsLoading(false); });
@@ -793,8 +806,16 @@ const App = () => {
         resetToStart();
     };
 
+    const handleApiKeySubmit = (submittedKey) => {
+        localStorage.setItem('geminiApiKey', submittedKey);
+        setApiKey(submittedKey);
+        setIsApiKeyValid(true);
+        setError(null);
+    };
+
   const renderContent = () => {
     if (isLoading) return React.createElement('div', { className: "flex justify-center items-center p-8" }, React.createElement(Spinner, null));
+    if (!isApiKeyValid) return React.createElement(ApiKeyPrompt, { onSubmit: handleApiKeySubmit, error: error });
     if (!currentUser) return React.createElement(Auth, null);
 
     switch (appState) {
@@ -878,7 +899,8 @@ const App = () => {
     'div', { className: "min-h-screen flex flex-col items-center justify-center p-4" },
     React.createElement(Header, null),
     React.createElement('main', { className: "w-full flex flex-col items-center justify-center" },
-        error && React.createElement(Alert, { message: error, type: "error" }),
+        error && !isApiKeyValid && React.createElement('div', null),
+        error && isApiKeyValid && React.createElement(Alert, { message: error, type: "error" }),
         infoMessage && React.createElement(Alert, { message: infoMessage, type: "info" }),
         editingModal,
         appState === AppState.GOAL_SET && verificationFeedback ? React.createElement('div', { className: "w-full max-w-lg mb-4 flex justify-center" },

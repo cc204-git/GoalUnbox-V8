@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useEffect } from 'react';
 import { User, onAuthStateChanged } from 'firebase/auth';
 import { Unsubscribe } from 'firebase/firestore';
@@ -28,6 +29,7 @@ import Alert from './components/Alert';
 import GoalHistory from './components/GoalHistory';
 import Auth from './components/Auth';
 import Spinner from './components/Spinner';
+import ApiKeyPrompt from './components/ApiKeyPrompt';
 import { Chat } from '@google/genai';
 
 type CompletionReason = 'verified' | 'skipped';
@@ -65,6 +67,8 @@ const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [activeGoal, setActiveGoal] = useState<ActiveGoalState | null>(null);
 
+  const [apiKey, setApiKey] = useState<string | null>(null);
+  const [isApiKeyValid, setIsApiKeyValid] = useState<boolean>(false);
   const [secretCode, setSecretCode] = useState<string | null>(null);
   const [secretCodeImage, setSecretCodeImage] = useState<string | null>(null);
   const [goal, setGoal] = useState<string>('');
@@ -110,18 +114,23 @@ const App: React.FC = () => {
 
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, user => {
-      setCurrentUser(user);
-      if (!user) {
-        setIsLoading(false);
-        setHistory([]);
-        setStreakData(null);
-        setTodaysPlan(null);
-        setActiveGoal(null);
-        setWeeklyPlans(null);
+      const storedApiKey = localStorage.getItem('geminiApiKey');
+      if (storedApiKey) {
+          setApiKey(storedApiKey);
+          setIsApiKeyValid(true); // Assume valid until an API call fails
       }
-    });
-    return () => unsubscribe();
+      const unsubscribe = onAuthStateChanged(auth, user => {
+          setCurrentUser(user);
+          if (!user) {
+              setIsLoading(false);
+              setHistory([]);
+              setStreakData(null);
+              setTodaysPlan(null);
+              setActiveGoal(null);
+              setWeeklyPlans(null);
+          }
+      });
+      return () => unsubscribe();
   }, []);
   
   useEffect(() => {
@@ -224,7 +233,6 @@ const App: React.FC = () => {
             dataService.saveStreakData(uid, streak);
         }
 
-        // Ensure today's plan exists for all users
         const todaysDocument = await dataService.loadPlan(uid, today);
         if (!todaysDocument) {
             const dayIndex = (today.getDay() + 6) % 7; // Monday = 0
@@ -276,7 +284,6 @@ const App: React.FC = () => {
     const handleSavePlanAndUpdateWeek = async (plan: TodaysPlan) => {
         if (!currentUser) return;
         await dataService.savePlan(currentUser.uid, plan);
-        // Optimistically update local state instead of re-fetching to avoid race conditions.
         setWeeklyPlans(prevPlans => {
             if (!prevPlans) return [plan];
             const existingPlanIndex = prevPlans.findIndex(p => p.date === plan.date);
@@ -291,7 +298,14 @@ const App: React.FC = () => {
   
   const handleApiError = useCallback((err: unknown) => {
       const error = err as Error;
-      setError(error.message);
+      if (error.message.includes('API key not valid')) {
+        setError('Your API key is not valid. Please enter a correct key.');
+        setApiKey(null);
+        setIsApiKeyValid(false);
+        localStorage.removeItem('geminiApiKey');
+      } else {
+        setError(error.message);
+      }
   }, []);
 
   const resetToStart = useCallback((isLogout = false) => {
@@ -315,7 +329,7 @@ const App: React.FC = () => {
   };
   
   const handleCodeImageSubmit = useCallback(async (file: File) => {
-    if (!currentUser) return;
+    if (!currentUser || !apiKey) return;
     setIsLoading(true);
     setError(null);
     
@@ -334,7 +348,7 @@ const App: React.FC = () => {
         const base64 = await fileToBase64(file);
         await imagePromise;
 
-        const code = await extractCodeFromImage(base64, file.type);
+        const code = await extractCodeFromImage(base64, file.type, apiKey);
         setSecretCode(code);
         
         const goalStartTime = Date.now();
@@ -360,14 +374,14 @@ const App: React.FC = () => {
     } finally {
         setIsLoading(false);
     }
-  }, [handleApiError, goal, subject, timeLimitInMs, currentUser, activePlannedGoal]);
+  }, [handleApiError, goal, subject, timeLimitInMs, currentUser, activePlannedGoal, apiKey]);
 
   const getEffectiveGoal = useCallback(() => {
     return goal;
   }, [goal]);
 
  const handleGoalSuccess = useCallback(async (feedback: VerificationFeedback | null, reason: CompletionReason) => {
-    if (!currentUser) return;
+    if (!currentUser || !apiKey) return;
 
     if (subject === "Accountability Reflection") {
         setIsLoading(true);
@@ -426,7 +440,7 @@ const App: React.FC = () => {
     const finalGoal = getEffectiveGoal();
 
     try {
-        const goalSummary = await summarizeGoal(finalGoal);
+        const goalSummary = await summarizeGoal(finalGoal, apiKey);
         const newEntry: Omit<CompletedGoal, 'firestoreId'> = { id: endTime, goalSummary, fullGoal: finalGoal, subject: subject, startTime: goalSetTime!, endTime, duration, completionReason: reason };
         await dataService.addHistoryItem(currentUser.uid, newEntry);
     } catch (e) { console.error("Failed to save goal:", e); }
@@ -435,7 +449,6 @@ const App: React.FC = () => {
         setCompletedSecretCode(secretCode);
         setCompletedSecretCodeImage(secretCodeImage);
         const newData = { ...streakData, lastCompletedCodeImage: secretCodeImage };
-        // Tax will be reset below, so we save the combined state change.
         setStreakData(newData); 
     }
 
@@ -474,7 +487,6 @@ const App: React.FC = () => {
         const nextPendingGoal = todaysPlan?.goals.filter(g => g.status === 'pending').sort((a, b) => a.startTime.localeCompare(b.startTime))[0];
 
         if (nextPendingGoal) {
-            // Found the next goal, start the break for it.
             setNextGoal({
                 goal: nextPendingGoal.goal,
                 subject: nextPendingGoal.subject,
@@ -485,7 +497,6 @@ const App: React.FC = () => {
             setBreakEndTime(Date.now() + breakDurationMs);
             setAppState(AppState.BREAK_ACTIVE);
         } else {
-            // No more pending goals for today.
             setAppState(AppState.GOAL_COMPLETED);
         }
         setIsLoading(false);
@@ -497,9 +508,10 @@ const App: React.FC = () => {
     setVerificationFeedback(feedback);
     setAppState(AppState.GOAL_COMPLETED);
     setIsLoading(false);
-}, [currentUser, goal, goalSetTime, getEffectiveGoal, secretCode, secretCodeImage, subject, activePlannedGoal, todaysPlan, streakData, skippedGoalForReflection, handleApiError]);
+}, [currentUser, goal, goalSetTime, getEffectiveGoal, secretCode, secretCodeImage, subject, activePlannedGoal, todaysPlan, streakData, skippedGoalForReflection, handleApiError, apiKey]);
 
   const handleProofImageSubmit = useCallback(async (files: File[]) => {
+    if (!apiKey) return;
     const pauseStartTime = Date.now();
     setIsLoading(true); setError(null); setVerificationFeedback(null); setChat(null); setChatMessages([]);
 
@@ -511,14 +523,14 @@ const App: React.FC = () => {
     try {
         const imagePayloads = await Promise.all(files.map(async (file) => ({ base64: await fileToBase64(file), mimeType: file.type })));
         const finalGoal = getEffectiveGoal();
-        const result = await verifyGoalCompletion(finalGoal, imagePayloads);
+        const result = await verifyGoalCompletion(finalGoal, imagePayloads, apiKey);
 
         if (result.completed) {
             await handleGoalSuccess(result.feedback, 'verified');
         } else {
             resumeTimers();
             setVerificationFeedback(result.feedback);
-            const chatSession = createVerificationChat(finalGoal, imagePayloads, result);
+            const chatSession = createVerificationChat(finalGoal, imagePayloads, result, apiKey);
             setChat(chatSession);
             setChatMessages([{ role: 'model', text: result.feedback.summary }]);
             setIsLoading(false);
@@ -528,7 +540,7 @@ const App: React.FC = () => {
         handleApiError(err);
         setIsLoading(false);
     }
-  }, [getEffectiveGoal, handleApiError, handleGoalSuccess]);
+  }, [getEffectiveGoal, handleApiError, handleGoalSuccess, apiKey]);
   
   const handleSendChatMessage = useCallback(async (message: string) => {
     if (!chat) return;
@@ -638,7 +650,7 @@ const App: React.FC = () => {
         const scheduledStartTime = parseTime(goalToStart.startTime);
         const delay = now.getTime() - scheduledStartTime.getTime();
 
-        if (delay > 60000) { // More than 1 minute late
+        if (delay > 60000) {
             const tax = Math.round(delay * 0.25);
             const newTax = (streakData.breakTimeTax || 0) + tax;
             
@@ -724,6 +736,7 @@ const App: React.FC = () => {
     setEditingGoalInfo(null);
   };
   const handleNextCodeImageSubmit = async (file: File) => {
+        if (!apiKey) return;
         setIsLoading(true); setError(null);
         try {
             const base64 = await fileToBase64(file);
@@ -731,7 +744,7 @@ const App: React.FC = () => {
             reader.readAsDataURL(file);
             reader.onload = () => {
                 const dataUrl = reader.result as string;
-                extractCodeFromImage(base64, file.type).then(code => {
+                extractCodeFromImage(base64, file.type, apiKey).then(code => {
                     setNextGoal(prev => ({ ...prev, secretCode: code, secretCodeImage: dataUrl }));
                     setIsLoading(false);
                 }).catch(err => { handleApiError(err); setIsLoading(false); });
@@ -807,8 +820,16 @@ const App: React.FC = () => {
         resetToStart();
     };
 
+    const handleApiKeySubmit = (submittedKey: string) => {
+        localStorage.setItem('geminiApiKey', submittedKey);
+        setApiKey(submittedKey);
+        setIsApiKeyValid(true);
+        setError(null);
+    };
+
   const renderContent = () => {
     if (isLoading) return <div className="flex justify-center items-center p-8"><Spinner /></div>;
+    if (!isApiKeyValid) return <ApiKeyPrompt onSubmit={handleApiKeySubmit} error={error} />;
     if (!currentUser) return <Auth />;
 
     switch (appState) {
@@ -896,7 +917,8 @@ const App: React.FC = () => {
     <div className="min-h-screen flex flex-col items-center justify-center p-4">
       <Header />
       <main className="w-full flex flex-col items-center justify-center">
-        {error && <Alert message={error} type="error" />}
+        {error && !isApiKeyValid && <div />} 
+        {error && isApiKeyValid && <Alert message={error} type="error" />}
         {infoMessage && <Alert message={infoMessage} type="info" />}
         {editingModal}
         {appState === AppState.GOAL_SET && verificationFeedback ? (

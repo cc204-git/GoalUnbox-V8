@@ -2,11 +2,10 @@
 import { GoogleGenAI, Type, Chat, Content } from "@google/genai";
 import { CompletedGoal } from "../types";
 
-// Always create a new instance to ensure the latest API key is used.
-function getAiClient(): GoogleGenAI {
-    const apiKey = process.env.API_KEY;
+// The client is now created with a user-provided key.
+function getAiClient(apiKey: string): GoogleGenAI {
     if (!apiKey) {
-        throw new Error("API Key not found. Please ensure the API_KEY environment variable is set.");
+        throw new Error("API Key is missing. Please provide a valid API key.");
     }
     return new GoogleGenAI({ apiKey });
 }
@@ -14,14 +13,18 @@ function getAiClient(): GoogleGenAI {
 const handleApiError = (error: unknown): Error => {
     console.error("Gemini API Error:", error);
     if (error instanceof Error) {
+        // Pass specific error messages from the Gemini API through.
+        if (error.message.includes('API key not valid')) {
+            return new Error('Your API key is not valid. Please check the key and try again.');
+        }
         return new Error(`An error occurred with the AI service: ${error.message}`);
     }
     return new Error("An unknown error occurred with the AI service. Please try again.");
 };
 
-export const extractCodeFromImage = async (base64Image: string, mimeType: string): Promise<string> => {
+export const extractCodeFromImage = async (base64Image: string, mimeType: string, apiKey: string): Promise<string> => {
   try {
-    const ai = getAiClient();
+    const ai = getAiClient(apiKey);
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: [{
@@ -81,9 +84,9 @@ const verificationSchema = {
     required: ["completed", "feedback"],
 };
 
-export const verifyGoalCompletion = async (goal: string, images: { base64: string, mimeType: string }[]): Promise<VerificationResult> => {
+export const verifyGoalCompletion = async (goal: string, images: { base64: string, mimeType: string }[], apiKey: string): Promise<VerificationResult> => {
     try {
-        const ai = getAiClient();
+        const ai = getAiClient(apiKey);
         const imageParts = images.map(image => ({ inlineData: { data: image.base64, mimeType: image.mimeType } }));
 
         const today = new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
@@ -105,8 +108,8 @@ export const verifyGoalCompletion = async (goal: string, images: { base64: strin
     }
 };
 
-export const createVerificationChat = (goal: string, images: { base64: string, mimeType: string }[], initialVerification: VerificationResult): Chat => {
-    const ai = getAiClient();
+export const createVerificationChat = (goal: string, images: { base64: string, mimeType: string }[], initialVerification: VerificationResult, apiKey: string): Chat => {
+    const ai = getAiClient(apiKey);
     const imageParts = images.map(image => ({ inlineData: { data: image.base64, mimeType: image.mimeType } }));
     
     const today = new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
@@ -122,20 +125,19 @@ export const createVerificationChat = (goal: string, images: { base64: string, m
     });
 };
 
-export const summarizeGoal = async (goal: string): Promise<string> => {
+export const summarizeGoal = async (goal: string, apiKey: string): Promise<string> => {
     const prompt = `Summarize the following user goal into a concise phrase of 3 to 5 words, suitable for a table entry. Goal: "${goal}"`;
     try {
-        const ai = getAiClient();
+        const ai = getAiClient(apiKey);
         const response = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt });
         return response.text.trim();
     } catch (error) {
-        // Fallback to simple truncation, no need to throw API key error here
         console.error("Error summarizing goal:", error);
         return goal.length > 50 ? goal.substring(0, 47) + '...' : goal;
     }
 };
 
-export const generateHistoryInsights = async (history: CompletedGoal[]): Promise<string> => {
+export const generateHistoryInsights = async (history: CompletedGoal[], apiKey: string): Promise<string> => {
     const prompt = `
         You are a productivity coach analyzing a user's goal history from the past week. Based on the following JSON data of their completed goals, provide a "Weekly Productivity Report" with actionable insights and encouraging feedback.
         Analyze their work patterns, subjects they focus on, goal completion times, and consistency.
@@ -147,7 +149,7 @@ export const generateHistoryInsights = async (history: CompletedGoal[]): Promise
         ${JSON.stringify(history, null, 2)}
     `;
     try {
-        const ai = getAiClient();
+        const ai = getAiClient(apiKey);
         const response = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt });
         return response.text.trim();
     } catch (error) {
@@ -186,8 +188,8 @@ const gatekeeperSystemInstruction = `You are a distraction gatekeeper, a firm bu
 5.  Keep your responses concise and conversational.`;
 
 
-export const createGatekeeperChat = (goal: string): Chat => {
-    const ai = getAiClient();
+export const createGatekeeperChat = (goal: string, apiKey: string): Chat => {
+    const ai = getAiClient(apiKey);
     const history: Content[] = [
         {
             role: 'user',

@@ -1,11 +1,10 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
 
-// Always create a new instance to ensure the latest API key is used.
-function getAiClient() {
-    const apiKey = process.env.API_KEY;
+// The client is now created with a user-provided key.
+function getAiClient(apiKey) {
     if (!apiKey) {
-        throw new Error("API Key not found. Please ensure the API_KEY environment variable is set.");
+        throw new Error("API Key is missing. Please provide a valid API key.");
     }
     return new GoogleGenAI({ apiKey });
 }
@@ -13,14 +12,18 @@ function getAiClient() {
 const handleApiError = (error) => {
     console.error("Gemini API Error:", error);
     if (error instanceof Error) {
+        // Pass specific error messages from the Gemini API through.
+        if (error.message.includes('API key not valid')) {
+            return new Error('Your API key is not valid. Please check the key and try again.');
+        }
         return new Error(`An error occurred with the AI service: ${error.message}`);
     }
     return new Error("An unknown error occurred with the AI service. Please try again.");
 };
 
-export const extractCodeFromImage = async (base64Image, mimeType) => {
+export const extractCodeFromImage = async (base64Image, mimeType, apiKey) => {
   try {
-    const ai = getAiClient();
+    const ai = getAiClient(apiKey);
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: [{
@@ -68,9 +71,9 @@ const verificationSchema = {
     required: ["completed", "feedback"],
 };
 
-export const verifyGoalCompletion = async (goal, images) => {
+export const verifyGoalCompletion = async (goal, images, apiKey) => {
     try {
-        const ai = getAiClient();
+        const ai = getAiClient(apiKey);
         const imageParts = images.map(image => ({ inlineData: { data: image.base64, mimeType: image.mimeType } }));
         
         const today = new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
@@ -87,8 +90,8 @@ export const verifyGoalCompletion = async (goal, images) => {
     }
 };
 
-export const createVerificationChat = (goal, images, initialVerification) => {
-    const ai = getAiClient();
+export const createVerificationChat = (goal, images, initialVerification, apiKey) => {
+    const ai = getAiClient(apiKey);
     const imageParts = images.map(image => ({ inlineData: { data: image.base64, mimeType: image.mimeType } }));
     
     const today = new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
@@ -103,10 +106,10 @@ export const createVerificationChat = (goal, images, initialVerification) => {
     });
 };
 
-export const summarizeGoal = async (goal) => {
+export const summarizeGoal = async (goal, apiKey) => {
     const prompt = `Summarize the following user goal into a concise phrase of 3 to 5 words, suitable for a table entry. Goal: "${goal}"`;
     try {
-        const ai = getAiClient();
+        const ai = getAiClient(apiKey);
         const response = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt });
         return response.text.trim();
     } catch (error) {
@@ -115,7 +118,7 @@ export const summarizeGoal = async (goal) => {
     }
 };
 
-export const generateHistoryInsights = async (history) => {
+export const generateHistoryInsights = async (history, apiKey) => {
     const prompt = `
         You are a productivity coach analyzing a user's goal history from the past week. Based on the following JSON data of their completed goals, provide a "Weekly Productivity Report" with actionable insights and encouraging feedback.
         Analyze their work patterns, subjects they focus on, goal completion times, and consistency.
@@ -127,7 +130,7 @@ export const generateHistoryInsights = async (history) => {
         ${JSON.stringify(history, null, 2)}
     `;
     try {
-        const ai = getAiClient();
+        const ai = getAiClient(apiKey);
         const response = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt });
         return response.text.trim();
     } catch (error) {
@@ -161,8 +164,8 @@ const gatekeeperSystemInstruction = `You are a distraction gatekeeper, a firm bu
 5.  Keep your responses concise and conversational.`;
 
 
-export const createGatekeeperChat = (goal) => {
-    const ai = getAiClient();
+export const createGatekeeperChat = (goal, apiKey) => {
+    const ai = getAiClient(apiKey);
     const history = [
         {
             role: 'user',

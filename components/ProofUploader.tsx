@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import Spinner from './Spinner';
 import CameraCapture from './CameraCapture';
@@ -15,6 +16,7 @@ interface ProofUploaderProps {
   skipsLeftThisWeek: number;
   lastCompletedCodeImage?: string | null;
   pdfAttachment?: { name: string; data: string; } | null;
+  apiKey: string;
 }
 
 interface ProofFile {
@@ -31,7 +33,7 @@ const PDFIcon = () => (
 );
 
 
-const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeLimitInMs, onSkipGoal, skipsLeftThisWeek, lastCompletedCodeImage, pdfAttachment }) => {
+const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeLimitInMs, onSkipGoal, skipsLeftThisWeek, lastCompletedCodeImage, pdfAttachment, apiKey }) => {
   const [proofFiles, setProofFiles] = useState<ProofFile[]>([]);
   const [showCamera, setShowCamera] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -43,7 +45,6 @@ const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit,
   const [showGatekeeper, setShowGatekeeper] = useState(false);
   const [showPrayerModal, setShowPrayerModal] = useState(true);
 
-  // Effect for the elapsed time count-up timer
   useEffect(() => {
     if (!goalSetTime || isLoading) return;
 
@@ -53,7 +54,6 @@ const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit,
       setElapsedTime(formatCountdown(elapsed > 0 ? elapsed : 0));
     }, 1000);
 
-    // Set initial value immediately to avoid 1s delay
     const now = Date.now();
     const elapsed = now - goalSetTime;
     setElapsedTime(formatCountdown(elapsed > 0 ? elapsed : 0));
@@ -61,13 +61,11 @@ const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit,
     return () => clearInterval(interval);
   }, [goalSetTime, isLoading]);
 
-  // Effect for countdowns and consequences
   useEffect(() => {
-    if (isLoading) return; // Pause timers during verification
+    if (isLoading) return; 
 
     let consequenceInterval: number | undefined;
 
-    // Consequence Timer Logic
     if (timeLimitInMs && goalSetTime) {
       const deadline = goalSetTime + timeLimitInMs;
 
@@ -80,10 +78,10 @@ const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit,
           if (!isTimeUp) {
             setIsTimeUp(true);
           }
-          return true; // Time is up
+          return true;
         } else {
           setTimeLeft(formatCountdown(remaining));
-          return false; // Time is not up
+          return false;
         }
       };
 
@@ -130,7 +128,7 @@ const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit,
                setProofFiles(prev => [...prev, {
                   id: `${file.name}-${file.lastModified}`,
                   file: file,
-                  preview: '', // No preview for PDFs
+                  preview: '', 
                   type: 'pdf',
               }]);
           }
@@ -209,6 +207,7 @@ const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit,
             onSkipGoal();
           }}
           onCancel={() => setShowGatekeeper(false)}
+          apiKey={apiKey}
         />
       )}
       <div className="relative glass-panel p-8 rounded-2xl shadow-2xl w-full max-w-2xl text-center animate-fade-in">

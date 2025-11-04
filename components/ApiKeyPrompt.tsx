@@ -1,5 +1,4 @@
 
-
 import React, { useState } from 'react';
 import Spinner from './Spinner';
 
@@ -20,23 +19,24 @@ const ApiKeyPrompt: React.FC<ApiKeyPromptProps> = ({ onSubmit, error: initialErr
             return;
         }
         setIsLoading(true);
-        // The key is passed up to the main app, which will handle validation on first use.
         onSubmit(apiKey.trim());
-        // No need for setIsLoading(false) as the component will unmount upon success.
     };
 
     return (
         <div className="glass-panel p-8 rounded-2xl shadow-2xl w-full max-w-md text-center animate-fade-in">
             <h2 className="text-2xl font-semibold mb-2 text-cyan-300">Enter Your API Key</h2>
             <p className="text-slate-400 mb-6">
-                Your Google Gemini API key is required to use this application. It is stored securely in your browser's local storage and never leaves your device.
+                Your Google Gemini API key is required. It's stored in your browser's local storage and never leaves your device.
             </p>
             {error && <div className="p-4 rounded-md text-sm mb-6 bg-red-900/30 border border-red-500/30 text-red-300">{error}</div>}
              <form onSubmit={handleSubmit} className="space-y-4">
                 <input
                     type="password"
                     value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
+                    onChange={(e) => {
+                        setApiKey(e.target.value);
+                        setError(null);
+                    }}
                     placeholder="Enter your Gemini API Key"
                     required
                     className="form-input w-full rounded-lg p-3 text-slate-200 placeholder-slate-500 transition"
@@ -51,7 +51,7 @@ const ApiKeyPrompt: React.FC<ApiKeyPromptProps> = ({ onSubmit, error: initialErr
                 </button>
             </form>
              <p className="text-xs text-slate-500 mt-4">
-                You can get your API key from <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:underline">Google AI Studio</a>.
+                Get your API key from <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:underline">Google AI Studio</a>.
             </p>
         </div>
     );
