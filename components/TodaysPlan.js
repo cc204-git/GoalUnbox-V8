@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import GoalSetter from './GoalSetter.js';
 import { formatDuration } from '../utils/timeUtils.js';
@@ -24,7 +23,7 @@ const TodaysPlan = ({
     }, [initialPlan]);
 
     const handleToggleExpand = (goalId) => {
-        setExpandedGoal(prevId => (prevId === goalId ? null : goalId));
+        setExpandedGoalId(prevId => (prevId === goalId ? null : goalId));
     };
 
     const handleUpdateTodos = (newTodos) => {
@@ -43,6 +42,7 @@ const TodaysPlan = ({
             startTime: payload.startTime,
             endTime: payload.endTime,
             status: 'pending',
+            pdfAttachment: payload.pdfAttachment || undefined,
         };
         const updatedPlan = { ...plan, goals: [...plan.goals, newGoal] };
         setPlan(updatedPlan);

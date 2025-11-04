@@ -15,7 +15,7 @@ import {
 } from 'firebase/firestore';
 import { ActiveGoalState, CompletedGoal, StreakData, TodaysPlan } from '../types';
 import { getISODateString, getStartOfWeekISOString } from '../utils/timeUtils';
-import { getDefaultGoalsForDay } from '../utils/defaultSchedule';
+import { defaultWeeklyPlan } from '../utils/defaultSchedule';
 
 // Helper to get document references
 const getRefs = (userId: string) => {
@@ -83,44 +83,41 @@ export const loadWeeklyPlans = async (userId: string, weekStartDate: Date): Prom
     }
 
     const results = await Promise.all(promises);
+    const plansToSave: TodaysPlan[] = [];
 
     results.forEach((plan, i) => {
         const date = new Date(weekStartDate);
         date.setDate(weekStartDate.getDate() + i);
+        const dateString = getISODateString(date);
+
         if (plan) {
             plans.push(plan);
         } else {
-            // Create an empty plan if one doesn't exist for a day in the week
-            plans.push({ date: getISODateString(date), goals: [] });
+            // Create a default plan if one doesn't exist for a day in the week
+            const dayIndex = (date.getDay() + 6) % 7; // Monday = 0
+            const defaultDayPlanData = defaultWeeklyPlan[dayIndex];
+            
+            const newPlan: TodaysPlan = {
+                date: dateString,
+                goals: defaultDayPlanData.goals.map(goal => ({
+                    ...goal,
+                    id: `${dateString}-${goal.startTime}-${Math.random()}`,
+                    status: 'pending',
+                })),
+                todos: [],
+            };
+            plans.push(newPlan);
+            plansToSave.push(newPlan); // Mark for saving
         }
     });
 
+    // Save the newly created default plans to Firestore so they persist
+    if (plansToSave.length > 0) {
+        await Promise.all(plansToSave.map(p => savePlan(userId, p)));
+    }
+
     return plans;
 };
-
-export const createDefaultWeeklyPlan = async (userId: string, dateInWeek: Date) => {
-    const startOfWeek = new Date(getStartOfWeekISOString(dateInWeek));
-    const promises: Promise<void>[] = [];
-
-    for (let i = 0; i < 7; i++) {
-        const date = new Date(startOfWeek);
-        date.setDate(date.getDate() + i);
-        
-        const dayOfWeek = date.getDay(); // Sunday: 0, Monday: 1, etc.
-        const goals = getDefaultGoalsForDay(dayOfWeek);
-        
-        // Only create a plan if there are default goals for that day
-        if (goals.length > 0) {
-            const plan: TodaysPlan = {
-                date: getISODateString(date),
-                goals: goals
-            };
-            promises.push(savePlan(userId, plan));
-        }
-    }
-    await Promise.all(promises);
-};
-
 
 // Streak Data
 export const saveStreakData = (userId: string, data: StreakData) => {

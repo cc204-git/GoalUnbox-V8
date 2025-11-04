@@ -49,6 +49,7 @@ const TodaysPlan: React.FC<TodaysPlanProps> = ({
             startTime: payload.startTime,
             endTime: payload.endTime,
             status: 'pending',
+            pdfAttachment: payload.pdfAttachment || undefined,
         };
         const updatedPlan = { ...plan, goals: [...plan.goals, newGoal] };
         setPlan(updatedPlan);

@@ -6,7 +6,7 @@ import Spinner from './Spinner.js';
 const CameraCapture = ({ onCapture, onCancel }) => {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
-  const [stream, setStream] = useState(null);
+  const streamRef = useRef(null);
   const [capturedImage, setCapturedImage] = useState(null);
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -15,43 +15,56 @@ const CameraCapture = ({ onCapture, onCancel }) => {
   const [timeLeft, setTimeLeft] = useState(120);
   const [timerFailed, setTimerFailed] = useState(false);
   const timerIntervalRef = useRef(null);
+  const [isStreamActive, setIsStreamActive] = useState(false);
+
+  const stopStream = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    setIsStreamActive(false);
+  }, []);
 
   const startCamera = useCallback(async () => {
     setIsLoading(true);
     setError(null);
-    if (stream) {
-      stream.getTracks().forEach(track => track.stop());
+    setCapturedImage(null);
+    setTimerFailed(false);
+
+    if (streamRef.current) {
+        stopStream();
     }
+    
     try {
       const mediaStream = await navigator.mediaDevices.getUserMedia({ 
         video: { facingMode: 'environment' } 
       });
-      setStream(mediaStream);
+      streamRef.current = mediaStream;
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
       }
+      setIsStreamActive(true);
     } catch (err) {
       console.error("Error accessing camera:", err);
       setError("Could not access the camera. Please ensure you have given permission and are not using it elsewhere.");
+      setIsStreamActive(false);
     } finally {
       setIsLoading(false);
     }
-  }, [stream]);
+  }, [stopStream]);
 
   useEffect(() => {
     startCamera();
     return () => {
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
-      }
+      stopStream();
       if (timerIntervalRef.current) {
         clearInterval(timerIntervalRef.current);
       }
     };
-  }, [startCamera]);
+  }, [startCamera, stopStream]);
 
   useEffect(() => {
-    if (capturedImage || timerFailed || isLoading || !stream) {
+    if (!isStreamActive || capturedImage || timerFailed) {
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
       return;
     }
@@ -63,10 +76,7 @@ const CameraCapture = ({ onCapture, onCancel }) => {
         if (prevTime <= 1) {
           if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
           setTimerFailed(true);
-          if (stream) {
-            stream.getTracks().forEach(track => track.stop());
-          }
-          setStream(null);
+          stopStream();
           return 0;
         }
         return prevTime - 1;
@@ -76,7 +86,7 @@ const CameraCapture = ({ onCapture, onCancel }) => {
     return () => {
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
     };
-  }, [stream, capturedImage, timerFailed, isLoading]);
+  }, [isStreamActive, capturedImage, timerFailed, stopStream]);
 
   const handleCapture = useCallback(() => {
     if (videoRef.current && canvasRef.current) {
@@ -90,12 +100,10 @@ const CameraCapture = ({ onCapture, onCancel }) => {
         context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
         const dataUrl = canvas.toDataURL('image/jpeg');
         setCapturedImage(dataUrl);
-        if (stream) {
-          stream.getTracks().forEach(track => track.stop());
-        }
+        stopStream();
       }
     }
-  }, [stream]);
+  }, [stopStream]);
 
   const handleConfirm = () => {
     if (capturedImage) {
@@ -107,13 +115,10 @@ const CameraCapture = ({ onCapture, onCancel }) => {
   };
   
   const handleTryAgain = () => {
-      setTimerFailed(false);
-      setCapturedImage(null);
       startCamera();
   };
 
   const handleRetake = () => {
-    setCapturedImage(null);
     startCamera();
   };
 
@@ -145,11 +150,11 @@ const CameraCapture = ({ onCapture, onCancel }) => {
         autoPlay: true,
         playsInline: true,
         className: `w-full h-full object-contain ${capturedImage ? 'hidden' : 'block'}`,
-        onCanPlay: () => setIsLoading(false),
+        onCanPlay: () => !isLoading && setIsLoading(false),
       }),
       React.createElement('canvas', { ref: canvasRef, className: 'hidden' }),
       capturedImage && React.createElement('img', { src: capturedImage, alt: 'Captured', className: 'w-full h-full object-contain' }),
-      !capturedImage && !isLoading && stream && React.createElement('div', { className: "absolute top-2 left-1/2 -translate-x-1/2 bg-black/60 text-white font-mono text-lg py-1 px-3 rounded-full" },
+      !capturedImage && !isLoading && isStreamActive && React.createElement('div', { className: "absolute top-2 left-1/2 -translate-x-1/2 bg-black/60 text-white font-mono text-lg py-1 px-3 rounded-full" },
           formatCountdown(timeLeft * 1000).substring(3)
       )
     ),
@@ -160,7 +165,7 @@ const CameraCapture = ({ onCapture, onCancel }) => {
         ? React.createElement(
             React.Fragment,
             null,
-            React.createElement('button', { onClick: handleCapture, disabled: isLoading || !!error, className: 'bg-cyan-500 text-slate-900 font-bold py-3 px-6 rounded-lg hover:bg-cyan-400 transition-colors disabled:bg-slate-700 disabled:cursor-not-allowed' }, 'Capture'),
+            React.createElement('button', { onClick: handleCapture, disabled: isLoading || !!error || !isStreamActive, className: 'bg-cyan-500 text-slate-900 font-bold py-3 px-6 rounded-lg hover:bg-cyan-400 transition-colors disabled:bg-slate-700 disabled:cursor-not-allowed' }, 'Capture'),
             React.createElement('button', { onClick: onCancel, className: 'bg-slate-700 text-white font-bold py-3 px-6 rounded-lg hover:bg-slate-600 transition-colors' }, 'Cancel')
           )
         : React.createElement(

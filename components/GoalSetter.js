@@ -1,8 +1,7 @@
-
-
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import Spinner from './Spinner.js';
 import Alert from './Alert.js';
+import { fileToBase64 } from '../utils/fileUtils.js';
 
 const GoalSetter = ({ onGoalSubmit, isLoading, submitButtonText = 'Set My Goal', onCancel, initialData }) => {
   const [goal, setGoal] = useState(initialData?.goal || '');
@@ -25,6 +24,10 @@ const GoalSetter = ({ onGoalSubmit, isLoading, submitButtonText = 'Set My Goal',
   const [endTime, setEndTime] = useState(initialData?.endTime || '');
   const [timeError, setTimeError] = useState(null);
 
+  const [pdfFile, setPdfFile] = useState(null);
+  const [existingPdfName, setExistingPdfName] = useState(initialData?.pdfAttachment?.name || '');
+  const [pdfRemoved, setPdfRemoved] = useState(false);
+
   useEffect(() => {
     if (initialData) {
         setGoal(initialData.goal || '');
@@ -42,6 +45,9 @@ const GoalSetter = ({ onGoalSubmit, isLoading, submitButtonText = 'Set My Goal',
             setHours('');
             setMinutes('');
         }
+        setExistingPdfName(initialData?.pdfAttachment?.name || '');
+        setPdfFile(null);
+        setPdfRemoved(false);
     }
   }, [initialData]);
 
@@ -78,8 +84,14 @@ const GoalSetter = ({ onGoalSubmit, isLoading, submitButtonText = 'Set My Goal',
     }
 
     const lowerCaseSubject = subject.toLowerCase();
-    const isSpecialSubject = lowerCaseSubject.includes('analyse') || lowerCaseSubject.includes('algebre');
-    const timePerQuestion = isSpecialSubject ? 10.5 : 8.0;
+    let timePerQuestion;
+    if (lowerCaseSubject.includes('analyse') || lowerCaseSubject.includes('algebre')) {
+        timePerQuestion = 18.0;
+    } else if (lowerCaseSubject.includes('chimie')) {
+        timePerQuestion = 8.0;
+    } else {
+        timePerQuestion = 12.0;
+    }
     const estimatedMinutes = totalQuestions * timePerQuestion;
     const numSubQuestions = Number(subQuestions) || 0;
     const subQuestionBonusMinutes = numSubQuestions * 4;
@@ -125,22 +137,33 @@ const GoalSetter = ({ onGoalSubmit, isLoading, submitButtonText = 'Set My Goal',
 
 
   const handleUseTemplate = () => {
-    const today = new Date();
-    const dd = String(today.getDate()).padStart(2, '0');
-    const mm = String(today.getMonth() + 1).padStart(2, '0');
-    const formattedDate = `${dd}/${mm}/25`;
-
     const template = `I will submit my homework on separate, numbered papers.
-Each paper will have the date ${formattedDate} written at the top.
-I will also send a screenshot of timer in forest showing the time approximately equal to the time spent on goal (uncertainty 10 mins +- 10 mins)
+Each paper will have the date DD/MM/YY written at the top.
+I will also send a screenshot of timer showing the time approximately equal to the time spent on goal (uncertainty 10 mins +- 10 mins)
 My homework will include:
 Exercise X: Y Questions
 I will make sure that all exercises and questions are clearly highlighted on each paper.`;
     setGoal(template);
   };
 
+  const handlePdfChange = (e) => {
+    const file = e.target.files?.[0];
+    if (file && file.type === 'application/pdf') {
+        setPdfFile(file);
+        setExistingPdfName(''); // new file overrides old one
+        setPdfRemoved(false);
+    } else {
+        setPdfFile(null);
+    }
+  };
 
-  const handleSubmit = useCallback(() => {
+  const handleRemovePdf = () => {
+    setPdfFile(null);
+    setExistingPdfName('');
+    setPdfRemoved(true);
+  };
+
+  const handleSubmit = useCallback(async () => {
     const totalMinutes = (Number(hours) || 0) * 60 + (Number(minutes) || 0);
     if (goal.trim() && subject.trim() && totalMinutes > 0 && startTime && endTime) {
       let finalGoal = goal.trim();
@@ -150,18 +173,57 @@ I will make sure that all exercises and questions are clearly highlighted on eac
           finalGoal += `\n\n(Note for verifier: This assignment includes ${numSubQuestions} sub-questions in total that need to be completed.)`;
       }
 
+      let pdfPayload = undefined;
+        if (pdfFile) {
+            try {
+                const base64Data = await fileToBase64(pdfFile);
+                pdfPayload = { name: pdfFile.name, data: base64Data };
+            } catch (error) {
+                console.error("Error converting PDF to base64", error);
+                setTimeError("Could not process the PDF file. Please try re-selecting it.");
+                return;
+            }
+        } else if (pdfRemoved) {
+            pdfPayload = null; // Signal for deletion
+        }
+
       const payload = {
             goal: finalGoal,
             subject: subject.trim(),
             timeLimit: { hours: Number(hours) || 0, minutes: Number(minutes) || 0 },
             startTime,
             endTime,
+            pdfAttachment: pdfPayload,
         };
       onGoalSubmit(payload);
     }
-  }, [goal, subject, onGoalSubmit, hours, minutes, subQuestions, startTime, endTime]);
+  }, [goal, subject, onGoalSubmit, hours, minutes, subQuestions, startTime, endTime, pdfFile, pdfRemoved]);
 
   const canSubmit = !goal.trim() || !subject.trim() || !(Number(hours) > 0 || Number(minutes) > 0) || !!timeError || isLoading || !startTime || !endTime;
+  const isCrmGoal = subject.toLowerCase().includes('crm');
+  
+  const pdfUploader = isCrmGoal && React.createElement('div', { className: "text-left mb-6" },
+    React.createElement('label', { className: "block text-sm font-medium text-slate-400 mb-2" }, "PDF Attachment for Correction"),
+    React.createElement('div', { className: "mt-1 flex items-center justify-center px-6 py-4 border-2 border-slate-600 border-dashed rounded-md bg-slate-900/20" },
+        React.createElement('div', { className: "space-y-1 text-center" },
+            React.createElement('svg', { className: "mx-auto h-12 w-12 text-slate-500", stroke: "currentColor", fill: "none", viewBox: "0 0 48 48", 'aria-hidden': "true" }, React.createElement('path', { d: "M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" })),
+            pdfFile || existingPdfName ? (
+                 React.createElement('div', { className: "text-sm text-green-400 flex items-center gap-4" },
+                    React.createElement('p', null, pdfFile?.name || existingPdfName),
+                    React.createElement('button', { type: "button", onClick: handleRemovePdf, className: "font-medium text-red-400 hover:text-red-300" }, "Remove")
+                )
+            ) : (
+                React.createElement('div', { className: "flex text-sm text-slate-500" },
+                    React.createElement('label', { htmlFor: "pdf-upload", className: "relative cursor-pointer bg-slate-700 rounded-md font-medium text-cyan-300 hover:text-cyan-200 px-3 py-1" },
+                        React.createElement('span', null, "Upload a file"),
+                        React.createElement('input', { id: "pdf-upload", name: "pdf-upload", type: "file", className: "sr-only", accept: ".pdf", onChange: handlePdfChange })
+                    )
+                )
+            ),
+            React.createElement('p', { className: "text-xs text-slate-500" }, "PDF only")
+        )
+    )
+  );
 
   return React.createElement(
     'div', { className: 'bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full max-w-lg text-center animate-fade-in' },
@@ -190,6 +252,7 @@ I will make sure that all exercises and questions are clearly highlighted on eac
       className: 'w-full h-40 bg-slate-900 border border-slate-600 rounded-lg p-4 text-white placeholder-slate-500 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 transition mb-6',
       disabled: isLoading
     }),
+    pdfUploader,
     React.createElement('div', { className: 'border-t border-slate-700 pt-6 mb-6 text-left space-y-4' },
       React.createElement('h3', { className: 'text-slate-300 font-semibold text-lg' }, 'Set Time Range'),
       React.createElement('div', null,

@@ -11,56 +11,68 @@ interface CameraCaptureProps {
 const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, onCancel }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [stream, setStream] = useState<MediaStream | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // New state for the timer
   const [timeLeft, setTimeLeft] = useState(120); // 2 minutes in seconds
   const [timerFailed, setTimerFailed] = useState(false);
   const timerIntervalRef = useRef<number | null>(null);
+  const [isStreamActive, setIsStreamActive] = useState(false);
+
+
+  const stopStream = useCallback(() => {
+    if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+    }
+    setIsStreamActive(false);
+  }, []);
 
   const startCamera = useCallback(async () => {
     setIsLoading(true);
     setError(null);
-    if (stream) {
-      stream.getTracks().forEach(track => track.stop());
+    setCapturedImage(null);
+    setTimerFailed(false);
+
+    if (streamRef.current) {
+        stopStream();
     }
+    
     try {
       const mediaStream = await navigator.mediaDevices.getUserMedia({ 
         video: { facingMode: 'environment' }
       });
-      setStream(mediaStream);
+      streamRef.current = mediaStream;
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
       }
+      setIsStreamActive(true);
     } catch (err) {
       console.error("Error accessing camera:", err);
       setError("Could not access the camera. Please ensure you have given permission and are not using it elsewhere.");
+      setIsStreamActive(false);
     } finally {
       setIsLoading(false);
     }
-  }, [stream]);
+  }, [stopStream]);
 
-  // Effect to start camera on mount
+  // Effect to start camera on mount and cleanup on unmount
   useEffect(() => {
     startCamera();
     
     return () => {
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
-      }
+      stopStream();
       if (timerIntervalRef.current) {
         clearInterval(timerIntervalRef.current);
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); 
+  }, [startCamera, stopStream]); 
 
   // Effect for the countdown timer
   useEffect(() => {
-    if (capturedImage || timerFailed || isLoading || !stream) {
+    if (!isStreamActive || capturedImage || timerFailed) {
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
       return;
     }
@@ -72,10 +84,7 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, onCancel }) =>
         if (prevTime <= 1) {
           if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
           setTimerFailed(true);
-          if (stream) {
-            stream.getTracks().forEach(track => track.stop());
-          }
-          setStream(null);
+          stopStream();
           return 0;
         }
         return prevTime - 1;
@@ -85,7 +94,7 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, onCancel }) =>
     return () => {
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
     };
-  }, [stream, capturedImage, timerFailed, isLoading]);
+  }, [isStreamActive, capturedImage, timerFailed, stopStream]);
 
 
   const handleCapture = useCallback(() => {
@@ -100,12 +109,10 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, onCancel }) =>
         context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
         const dataUrl = canvas.toDataURL('image/jpeg');
         setCapturedImage(dataUrl);
-        if (stream) {
-          stream.getTracks().forEach(track => track.stop());
-        }
+        stopStream();
       }
     }
-  }, [stream]);
+  }, [stopStream]);
 
   const handleConfirm = () => {
     if (capturedImage) {
@@ -117,13 +124,10 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, onCancel }) =>
   };
   
   const handleTryAgain = () => {
-      setTimerFailed(false);
-      setCapturedImage(null);
       startCamera();
   };
 
   const handleRetake = () => {
-    setCapturedImage(null);
     startCamera();
   };
   
@@ -159,13 +163,13 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, onCancel }) =>
                 autoPlay
                 playsInline
                 className={`w-full h-full object-contain ${capturedImage ? 'hidden' : 'block'}`}
-                onCanPlay={() => setIsLoading(false)}
+                onCanPlay={() => !isLoading && setIsLoading(false)}
             />
             <canvas ref={canvasRef} className="hidden" />
             {capturedImage && (
                 <img src={capturedImage} alt="Captured" className="w-full h-full object-contain" />
             )}
-            {!capturedImage && !isLoading && stream && (
+            {!capturedImage && !isLoading && isStreamActive && (
                 <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-black/60 text-white font-mono text-lg py-1 px-3 rounded-full">
                    {formatCountdown(timeLeft * 1000).substring(3)}
                 </div>
@@ -175,7 +179,7 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, onCancel }) =>
         <div className="mt-6 flex gap-4">
             {!capturedImage ? (
                 <>
-                    <button onClick={handleCapture} disabled={isLoading || !!error} className="bg-cyan-500 text-slate-900 font-bold py-3 px-6 rounded-lg hover:bg-cyan-400 transition-colors disabled:bg-slate-700 disabled:cursor-not-allowed button-glow-cyan">
+                    <button onClick={handleCapture} disabled={isLoading || !!error || !isStreamActive} className="bg-cyan-500 text-slate-900 font-bold py-3 px-6 rounded-lg hover:bg-cyan-400 transition-colors disabled:bg-slate-700 disabled:cursor-not-allowed button-glow-cyan">
                         Capture
                     </button>
                     <button onClick={onCancel} className="bg-slate-700 text-white font-bold py-3 px-6 rounded-lg hover:bg-slate-600 transition-colors">

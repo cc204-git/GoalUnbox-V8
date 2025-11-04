@@ -31,6 +31,7 @@ export interface ActiveGoalState {
     subject: string;
     goalSetTime: number;
     timeLimitInMs: number | null;
+    pdfAttachment?: { name: string; data: string; };
 }
 
 export interface StreakData {
@@ -51,6 +52,7 @@ export interface PlannedGoal {
   startTime: string; // "HH:mm"
   endTime: string; // "HH:mm"
   status: 'pending' | 'completed' | 'skipped';
+  pdfAttachment?: { name: string; data: string; };
 }
 
 export interface TodoItem {

@@ -1,10 +1,9 @@
-
-
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import Spinner from './Spinner';
 import CameraCapture from './CameraCapture';
 import { formatCountdown } from '../utils/timeUtils';
 import DistractionGatekeeper from './DistractionGatekeeper';
+import { base64ToBlob } from '../utils/fileUtils';
 
 interface ProofUploaderProps {
   goal: string;
@@ -15,6 +14,7 @@ interface ProofUploaderProps {
   onSkipGoal: () => void;
   skipsLeftThisWeek: number;
   lastCompletedCodeImage?: string | null;
+  pdfAttachment?: { name: string; data: string; } | null;
 }
 
 interface ProofFile {
@@ -31,7 +31,7 @@ const PDFIcon = () => (
 );
 
 
-const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeLimitInMs, onSkipGoal, skipsLeftThisWeek, lastCompletedCodeImage }) => {
+const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeLimitInMs, onSkipGoal, skipsLeftThisWeek, lastCompletedCodeImage, pdfAttachment }) => {
   const [proofFiles, setProofFiles] = useState<ProofFile[]>([]);
   const [showCamera, setShowCamera] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -159,6 +159,23 @@ const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit,
     }
   }, [proofFiles, onProofImageSubmit]);
 
+  const handleDownloadPdf = () => {
+    if (!pdfAttachment) return;
+    try {
+        const blob = base64ToBlob(pdfAttachment.data, 'application/pdf');
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = pdfAttachment.name;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    } catch (error) {
+        console.error("Failed to download PDF:", error);
+    }
+  };
+
   return (
     <>
       {showPrayerModal && (
@@ -227,6 +244,18 @@ const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit,
         <div className={`bg-slate-900/50 p-4 rounded-lg my-6 border ${isTimeUp ? 'border-red-500/50' : 'border-slate-700'}`}>
           <p className="text-slate-300 text-lg whitespace-pre-wrap text-left">"{displayGoal}"</p>
         </div>
+
+        {pdfAttachment && (
+            <div className="mb-6">
+                <button
+                    onClick={handleDownloadPdf}
+                    className="w-full bg-indigo-600/50 border border-indigo-500/50 text-indigo-300 font-semibold py-3 px-4 rounded-lg hover:bg-indigo-600/70 transition-colors flex items-center justify-center gap-3"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V7.414A2 2 0 0015.414 6L12 2.586A2 2 0 0010.586 2H6zm5 6a1 1 0 10-2 0v3.586l-1.293-1.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 11.586V8z" clipRule="evenodd" /></svg>
+                    Download Attached PDF: {pdfAttachment.name}
+                </button>
+            </div>
+        )}
 
         <p className="text-slate-400 mb-6">When you're done, upload pictures or a PDF as proof of completion.</p>
 

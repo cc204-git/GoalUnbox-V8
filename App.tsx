@@ -15,6 +15,7 @@ import * as authService from './services/authService';
 import * as dataService from './services/dataService';
 import { fileToBase64 } from './utils/fileUtils';
 import { formatDuration, getISODateString, formatCountdown, getStartOfWeekISOString } from './utils/timeUtils';
+import { defaultWeeklyPlan } from './utils/defaultSchedule';
 
 import Header from './components/Header';
 import CodeUploader from './components/CodeUploader';
@@ -197,7 +198,6 @@ const App: React.FC = () => {
                 weekStartDate: currentWeekStart,
                 breakTimeTax: 0,
             };
-            await dataService.createDefaultWeeklyPlan(uid, today);
         }
         
         const todayStr = getISODateString(today);
@@ -231,7 +231,17 @@ const App: React.FC = () => {
         // Ensure today's plan exists for all users
         const todaysDocument = await dataService.loadPlan(uid, today);
         if (!todaysDocument) {
-            const newPlan = { date: getISODateString(today), goals: [] };
+            const dayIndex = (today.getDay() + 6) % 7; // Monday = 0
+            const defaultDayPlanData = defaultWeeklyPlan[dayIndex];
+            const newPlan: TodaysPlan = {
+                date: getISODateString(today),
+                goals: defaultDayPlanData.goals.map(goal => ({
+                    ...goal,
+                    id: `${getISODateString(today)}-${goal.startTime}-${Math.random()}`,
+                    status: 'pending',
+                })),
+                todos: [],
+            };
             await dataService.savePlan(uid, newPlan);
         }
     }).catch(err => {
@@ -344,7 +354,7 @@ const App: React.FC = () => {
         
         const activeState: ActiveGoalState = { 
             secretCode: code, secretCodeImage: tempSecretCodeImage!, goal, subject, 
-            goalSetTime: goalStartTime, timeLimitInMs
+            goalSetTime: goalStartTime, timeLimitInMs, pdfAttachment: activePlannedGoal?.pdfAttachment
         };
         await dataService.saveActiveGoal(currentUser.uid, activeState);
     } catch (err) {
@@ -353,7 +363,7 @@ const App: React.FC = () => {
     } finally {
         setIsLoading(false);
     }
-  }, [handleApiError, goal, subject, timeLimitInMs, currentUser]);
+  }, [handleApiError, goal, subject, timeLimitInMs, currentUser, activePlannedGoal]);
 
   const getEffectiveGoal = useCallback(() => {
     return goal;
@@ -662,6 +672,7 @@ const App: React.FC = () => {
     if (!editingGoalInfo || !currentUser) return;
     const { plan, goal } = editingGoalInfo;
     const totalMs = (payload.timeLimit.hours * 3600 + payload.timeLimit.minutes * 60) * 1000;
+    
     const updatedGoal: PlannedGoal = {
         ...goal,
         goal: payload.goal,
@@ -670,6 +681,13 @@ const App: React.FC = () => {
         startTime: payload.startTime,
         endTime: payload.endTime,
     };
+
+    if (payload.pdfAttachment === null) {
+      delete (updatedGoal as Partial<PlannedGoal>).pdfAttachment;
+    } else if (payload.pdfAttachment) {
+      updatedGoal.pdfAttachment = payload.pdfAttachment;
+    }
+
     const updatedGoals = plan.goals.map(g => g.id === updatedGoal.id ? updatedGoal : g);
     const updatedPlan = { ...plan, goals: updatedGoals };
 
@@ -749,6 +767,7 @@ const App: React.FC = () => {
             secretCode: completedSecretCode, secretCodeImage: completedSecretCodeImage,
             goal: nextPendingGoal.goal, subject: nextPendingGoal.subject,
             goalSetTime: nextGoalTime, timeLimitInMs: nextPendingGoal.timeLimitInMs,
+            pdfAttachment: nextPendingGoal.pdfAttachment,
         };
         await dataService.saveActiveGoal(currentUser.uid, activeState);
         setActivePlannedGoal(nextPendingGoal);
@@ -859,7 +878,7 @@ const App: React.FC = () => {
       case AppState.AWAITING_CODE: return <CodeUploader onCodeImageSubmit={handleCodeImageSubmit} isLoading={isLoading} onShowHistory={handleShowHistory} onLogout={handleLogout} currentUser={currentUser} streakData={streakData} onSetCommitment={handleSetDailyCommitment} onCompleteCommitment={handleCompleteDailyCommitment} />;
       case AppState.GOAL_SET: {
         const skipsLeft = 2 - (streakData?.skipsThisWeek ?? 0);
-        return <ProofUploader goal={goal} onProofImageSubmit={handleProofImageSubmit} isLoading={isLoading} goalSetTime={goalSetTime} timeLimitInMs={timeLimitInMs} onSkipGoal={handleSkipGoal} skipsLeftThisWeek={skipsLeft > 0 ? skipsLeft : 0} lastCompletedCodeImage={streakData?.lastCompletedCodeImage} />;
+        return <ProofUploader goal={goal} onProofImageSubmit={handleProofImageSubmit} isLoading={isLoading} goalSetTime={goalSetTime} timeLimitInMs={timeLimitInMs} onSkipGoal={handleSkipGoal} skipsLeftThisWeek={skipsLeft > 0 ? skipsLeft : 0} lastCompletedCodeImage={streakData?.lastCompletedCodeImage} pdfAttachment={activeGoal?.pdfAttachment} />;
       }
       case AppState.HISTORY_VIEW: return <GoalHistory onBack={handleHistoryBack} history={history} onDeleteHistoryItem={handleDeleteHistoryItem} />;
       case AppState.GOAL_COMPLETED: return <VerificationResult isSuccess={true} secretCodeImage={secretCodeImage || completedSecretCodeImage} feedback={verificationFeedback} onRetry={handleRetry} onReset={() => resetToStart(false)} completionDuration={completionDuration} completionReason={completionReason} />;

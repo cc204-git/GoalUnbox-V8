@@ -1,17 +1,16 @@
-
-
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import Spinner from './Spinner.js';
 import CameraCapture from './CameraCapture.js';
 import { formatCountdown } from '../utils/timeUtils.js';
 import DistractionGatekeeper from './DistractionGatekeeper.js';
+import { base64ToBlob } from '../utils/fileUtils.js';
 
 const PDFIcon = () => React.createElement(
     'svg', { xmlns: 'http://www.w3.org/2000/svg', className: 'h-8 w-8 text-red-400', viewBox: '0 0 20 20', fill: 'currentColor' },
     React.createElement('path', { fillRule: 'evenodd', d: 'M4 2a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V8.414a1 1 0 00-.293-.707l-4.414-4.414A1 1 0 0011.586 2H4zm6 6a1 1 0 100-2 1 1 0 000 2zM8 12a1 1 0 100-2 1 1 0 000 2zm2 1a1 1 0 011-1h.01a1 1 0 110 2H11a1 1 0 01-1-1z', clipRule: 'evenodd' })
 );
 
-const ProofUploader = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeLimitInMs, onSkipGoal, skipsLeftThisWeek, lastCompletedCodeImage }) => {
+const ProofUploader = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeLimitInMs, onSkipGoal, skipsLeftThisWeek, lastCompletedCodeImage, pdfAttachment }) => {
   const [proofFiles, setProofFiles] = useState([]);
   const [showCamera, setShowCamera] = useState(false);
   const fileInputRef = useRef(null);
@@ -134,6 +133,23 @@ const ProofUploader = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeL
     }
   }, [proofFiles, onProofImageSubmit]);
 
+    const handleDownloadPdf = () => {
+        if (!pdfAttachment) return;
+        try {
+            const blob = base64ToBlob(pdfAttachment.data, 'application/pdf');
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = pdfAttachment.name;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } catch (error) {
+            console.error("Failed to download PDF:", error);
+        }
+    };
+    
   const timerElements = [
     React.createElement(
         'div', { key: 'elapsed', className: 'flex-1 min-w-[150px] p-3 rounded-lg border bg-slate-900/50 border-slate-700 text-center' },
@@ -271,6 +287,14 @@ const ProofUploader = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeL
       React.createElement('div', { className: `bg-slate-900/50 p-4 rounded-lg my-6 border ${isTimeUp ? 'border-red-500/50' : 'border-slate-700'}` },
         React.createElement('p', { className: 'text-slate-300 text-lg whitespace-pre-wrap text-left' }, `"${displayGoal}"`)
       ),
+       pdfAttachment && React.createElement('div', { className: 'mb-6' },
+            React.createElement('button', {
+                onClick: handleDownloadPdf,
+                className: "w-full bg-indigo-600/50 border border-indigo-500/50 text-indigo-300 font-semibold py-3 px-4 rounded-lg hover:bg-indigo-600/70 transition-colors flex items-center justify-center gap-3"
+            },
+            React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", className: "h-5 w-5", viewBox: "0 0 20 20", fill: "currentColor" }, React.createElement('path', { "fill-rule": "evenodd", d: "M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V7.414A2 2 0 0015.414 6L12 2.586A2 2 0 0010.586 2H6zm5 6a1 1 0 10-2 0v3.586l-1.293-1.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 11.586V8z", "clip-rule": "evenodd" })),
+            `Download Attached PDF: ${pdfAttachment.name}`)
+       ),
       React.createElement('p', { className: 'text-slate-400 mb-6' }, "When you're done, upload pictures or a PDF as proof of completion."),
       React.createElement('input', {
         type: 'file',

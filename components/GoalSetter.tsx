@@ -1,9 +1,8 @@
-
-
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import Spinner from './Spinner';
 import Alert from './Alert';
 import { PlannedGoal } from '../types';
+import { fileToBase64 } from '../utils/fileUtils';
 
 interface TimeLimit {
     hours: number;
@@ -15,6 +14,7 @@ export interface GoalPayload {
     timeLimit: TimeLimit;
     startTime: string;
     endTime: string;
+    pdfAttachment?: { name: string; data: string; } | null;
 }
 
 interface GoalSetterProps {
@@ -46,6 +46,10 @@ const GoalSetter: React.FC<GoalSetterProps> = ({ onGoalSubmit, isLoading, submit
   const [endTime, setEndTime] = useState(initialData?.endTime || '');
   const [timeError, setTimeError] = useState<string | null>(null);
 
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [existingPdfName, setExistingPdfName] = useState(initialData?.pdfAttachment?.name || '');
+  const [pdfRemoved, setPdfRemoved] = useState(false);
+
   useEffect(() => {
     if (initialData) {
         setGoal(initialData.goal || '');
@@ -63,6 +67,9 @@ const GoalSetter: React.FC<GoalSetterProps> = ({ onGoalSubmit, isLoading, submit
             setHours('');
             setMinutes('');
         }
+        setExistingPdfName(initialData?.pdfAttachment?.name || '');
+        setPdfFile(null);
+        setPdfRemoved(false);
     }
   }, [initialData]);
 
@@ -81,7 +88,8 @@ const GoalSetter: React.FC<GoalSetterProps> = ({ onGoalSubmit, isLoading, submit
     const lowerCaseGoal = goal.toLowerCase();
     const hasExemptionKeyword = lowerCaseGoal.includes('devoir') || lowerCaseGoal.includes('probleme') || lowerCaseGoal.includes('serie');
 
-    if (hasExemptionKeyword) {
+    const lowerCaseSubject = subject.toLowerCase();
+    if (hasExemptionKeyword || lowerCaseSubject.includes('crm')) {
         setTimeError(null);
         return;
     }
@@ -98,9 +106,14 @@ const GoalSetter: React.FC<GoalSetterProps> = ({ onGoalSubmit, isLoading, submit
         return;
     }
 
-    const lowerCaseSubject = subject.toLowerCase();
-    const isSpecialSubject = lowerCaseSubject.includes('analyse') || lowerCaseSubject.includes('algebre');
-    const timePerQuestion = isSpecialSubject ? 10.5 : 8.0;
+    let timePerQuestion;
+    if (lowerCaseSubject.includes('analyse') || lowerCaseSubject.includes('algebre')) {
+        timePerQuestion = 18.0;
+    } else if (lowerCaseSubject.includes('chimie')) {
+        timePerQuestion = 8.0;
+    } else {
+        timePerQuestion = 12.0;
+    }
     const estimatedMinutes = totalQuestions * timePerQuestion;
     const numSubQuestions = Number(subQuestions) || 0;
     const subQuestionBonusMinutes = numSubQuestions * 4;
@@ -145,21 +158,33 @@ const GoalSetter: React.FC<GoalSetterProps> = ({ onGoalSubmit, isLoading, submit
   }, [goal, subject, hours, minutes, subQuestions, startTime, endTime]);
 
   const handleUseTemplate = () => {
-    const today = new Date();
-    const dd = String(today.getDate()).padStart(2, '0');
-    const mm = String(today.getMonth() + 1).padStart(2, '0');
-    const formattedDate = `${dd}/${mm}/25`;
-
     const template = `I will submit my homework on separate, numbered papers.
-Each paper will have the date ${formattedDate} written at the top.
-I will also send a screenshot of timer in forest showing the time approximately equal to the time spent on goal (uncertainty 10 mins +- 10 mins)
+Each paper will have the date DD/MM/YY written at the top.
+I will also send a screenshot of timer showing the time approximately equal to the time spent on goal (uncertainty 10 mins +- 10 mins)
 My homework will include:
 Exercise X: Y Questions
 I will make sure that all exercises and questions are clearly highlighted on each paper.`;
     setGoal(template);
   };
 
-  const handleSubmit = useCallback(() => {
+  const handlePdfChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && file.type === 'application/pdf') {
+        setPdfFile(file);
+        setExistingPdfName(''); // new file overrides old one
+        setPdfRemoved(false);
+    } else {
+        setPdfFile(null);
+    }
+  };
+
+  const handleRemovePdf = () => {
+    setPdfFile(null);
+    setExistingPdfName('');
+    setPdfRemoved(true);
+  };
+
+  const handleSubmit = useCallback(async () => {
     const totalMinutes = (Number(hours) || 0) * 60 + (Number(minutes) || 0);
     if (goal.trim() && subject.trim() && totalMinutes > 0 && startTime && endTime) {
       let finalGoal = goal.trim();
@@ -169,18 +194,34 @@ I will make sure that all exercises and questions are clearly highlighted on eac
           finalGoal += `\n\n(Note for verifier: This assignment includes ${numSubQuestions} sub-questions in total that need to be completed.)`;
       }
 
+      let pdfPayload: { name: string; data: string; } | null | undefined = undefined;
+        if (pdfFile) {
+            try {
+                const base64Data = await fileToBase64(pdfFile);
+                pdfPayload = { name: pdfFile.name, data: base64Data };
+            } catch (error) {
+                console.error("Error converting PDF to base64", error);
+                setTimeError("Could not process the PDF file. Please try re-selecting it.");
+                return;
+            }
+        } else if (pdfRemoved) {
+            pdfPayload = null; // Signal for deletion
+        }
+
       const payload: GoalPayload = {
             goal: finalGoal,
             subject: subject.trim(),
             timeLimit: { hours: Number(hours) || 0, minutes: Number(minutes) || 0 },
             startTime,
             endTime,
+            pdfAttachment: pdfPayload
         };
       onGoalSubmit(payload);
     }
-  }, [goal, subject, onGoalSubmit, hours, minutes, subQuestions, startTime, endTime]);
+  }, [goal, subject, onGoalSubmit, hours, minutes, subQuestions, startTime, endTime, pdfFile, pdfRemoved]);
 
   const canSubmit = !goal.trim() || !subject.trim() || !(Number(hours) > 0 || Number(minutes) > 0) || !!timeError || isLoading || !startTime || !endTime;
+  const isCrmGoal = subject.toLowerCase().includes('crm');
 
   return (
     <div className="glass-panel p-8 rounded-2xl shadow-2xl w-full max-w-lg text-center animate-fade-in">
@@ -214,69 +255,89 @@ I will make sure that all exercises and questions are clearly highlighted on eac
         disabled={isLoading}
       />
 
+      {isCrmGoal && (
+        <div className="text-left mb-6">
+            <label className="block text-sm font-medium text-slate-400 mb-2">PDF Attachment for Correction</label>
+            <div className="mt-1 flex items-center justify-center px-6 py-4 border-2 border-slate-600 border-dashed rounded-md bg-slate-900/20">
+                <div className="space-y-1 text-center">
+                    <svg className="mx-auto h-12 w-12 text-slate-500" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                    {pdfFile || existingPdfName ? (
+                         <div className="text-sm text-green-400 flex items-center gap-4">
+                            <p>{pdfFile?.name || existingPdfName}</p>
+                            <button type="button" onClick={handleRemovePdf} className="font-medium text-red-400 hover:text-red-300">Remove</button>
+                        </div>
+                    ) : (
+                        <div className="flex text-sm text-slate-500">
+                            <label htmlFor="pdf-upload" className="relative cursor-pointer bg-slate-700 rounded-md font-medium text-cyan-300 hover:text-cyan-200 px-3 py-1">
+                                <span>Upload a file</span>
+                                <input id="pdf-upload" name="pdf-upload" type="file" className="sr-only" accept=".pdf" onChange={handlePdfChange} />
+                            </label>
+                        </div>
+                    )}
+                    <p className="text-xs text-slate-500">PDF only</p>
+                </div>
+            </div>
+        </div>
+      )}
+
       <div className="border-t border-slate-700 pt-6 mb-6 text-left space-y-4">
         <h3 className="text-slate-300 font-semibold text-lg">Set Time Range</h3>
         <div>
-            <label className="block text-sm font-medium text-slate-400 mb-1">Time Range</label>
-            <div className="flex items-center gap-2">
-                <input 
-                    type="time"
-                    value={startTime}
-                    onChange={(e) => setStartTime(e.target.value)}
-                    className="form-input w-full rounded-lg p-2 text-slate-200 placeholder-slate-500"
-                />
-                <span className="text-slate-400">to</span>
-                 <input 
-                    type="time"
-                    value={endTime}
-                    onChange={(e) => setEndTime(e.target.value)}
-                    className="form-input w-full rounded-lg p-2 text-slate-200 placeholder-slate-500"
-                />
-            </div>
-        </div>
-        <div>
-            <label className="block text-sm font-medium text-slate-400 mb-1">Estimated Time to Complete</label>
-            <div className="flex items-center gap-2">
-                <input 
-                    type="number"
-                    value={hours}
-                    onChange={(e) => setHours(e.target.value)}
-                    placeholder="Hours"
-                    min="0"
-                    className="form-input w-full rounded-lg p-2 text-slate-200 placeholder-slate-500"
-                />
-                 <input 
-                    type="number"
-                    value={minutes}
-                    onChange={(e) => setMinutes(e.target.value)}
-                    placeholder="Minutes"
-                    min="0"
-                    max="59"
-                    className="form-input w-full rounded-lg p-2 text-slate-200 placeholder-slate-500"
-                />
-            </div>
-        </div>
-        <div>
-            <label htmlFor="sub-questions" className="block text-sm font-medium text-slate-400 mb-1">Number of Sub-questions (optional)</label>
-            <p className="text-xs text-slate-500 mb-2">For questions like 3a, 3b, etc. Each adds 4 mins to the time margin.</p>
+          <label className="block text-sm font-medium text-slate-400 mb-1">Time Range</label>
+          <div className="flex items-center gap-2">
             <input
-                id="sub-questions"
-                type="number"
-                value={subQuestions}
-                onChange={(e) => setSubQuestions(e.target.value)}
-                placeholder="e.g., 2"
-                min="0"
-                className="form-input w-full rounded-lg p-2 text-slate-200 placeholder-slate-500"
-                disabled={isLoading}
+              type="time"
+              value={startTime}
+              onChange={(e) => setStartTime(e.target.value)}
+              className="form-input w-full rounded-lg p-2 text-slate-200 placeholder-slate-500 transition"
             />
+            <span className="text-slate-400">to</span>
+            <input
+              type="time"
+              value={endTime}
+              onChange={(e) => setEndTime(e.target.value)}
+              className="form-input w-full rounded-lg p-2 text-slate-200 placeholder-slate-500 transition"
+            />
+          </div>
         </div>
-        {timeError && (
-            <div className="mt-2">
-                <Alert message={timeError} type="error" />
-            </div>
-        )}
+        <div>
+          <label className="block text-sm font-medium text-slate-400 mb-1">Estimated Time to Complete</label>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              value={hours}
+              onChange={(e) => setHours(e.target.value)}
+              placeholder="Hours"
+              min="0"
+              className="form-input w-full rounded-lg p-2 text-slate-200 placeholder-slate-500 transition"
+            />
+            <input
+              type="number"
+              value={minutes}
+              onChange={(e) => setMinutes(e.target.value)}
+              placeholder="Minutes"
+              min="0"
+              max="59"
+              className="form-input w-full rounded-lg p-2 text-slate-200 placeholder-slate-500 transition"
+            />
+          </div>
+        </div>
+        <div>
+          <label htmlFor="sub-questions" className="block text-sm font-medium text-slate-400 mb-1">Number of Sub-questions (optional)</label>
+          <p className="text-xs text-slate-500 mb-2">For questions like 3a, 3b, etc. Each adds 4 mins to the time margin.</p>
+          <input
+            id="sub-questions"
+            type="number"
+            value={subQuestions}
+            onChange={(e) => setSubQuestions(e.target.value)}
+            placeholder="e.g., 2"
+            min="0"
+            className="form-input w-full rounded-lg p-2 text-slate-200 placeholder-slate-500 transition"
+            disabled={isLoading}
+          />
+        </div>
+        {timeError && <div className="mt-2"><Alert message={timeError} type="error" /></div>}
       </div>
-
 
       <div className="flex gap-4">
         {onCancel && (
@@ -290,11 +351,11 @@ I will make sure that all exercises and questions are clearly highlighted on eac
             </button>
         )}
         <button
-            onClick={handleSubmit}
-            disabled={canSubmit}
-            className="w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed transition-all duration-300 flex items-center justify-center button-glow-cyan"
+          onClick={handleSubmit}
+          disabled={canSubmit}
+          className="w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed transition-all duration-300 flex items-center justify-center button-glow-cyan"
         >
-            {isLoading ? <Spinner /> : submitButtonText}
+          {isLoading ? <Spinner /> : submitButtonText}
         </button>
       </div>
     </div>

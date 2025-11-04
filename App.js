@@ -12,6 +12,7 @@ import * as authService from './services/authService.js';
 import * as dataService from './services/dataService.js';
 import { fileToBase64 } from './utils/fileUtils.js';
 import { formatDuration, getISODateString, formatCountdown, getStartOfWeekISOString } from './utils/timeUtils.js';
+import { defaultWeeklyPlan } from './utils/defaultSchedule.js';
 
 import Header from './components/Header.js';
 import CodeUploader from './components/CodeUploader.js';
@@ -184,7 +185,6 @@ const App = () => {
                 weekStartDate: currentWeekStart,
                 breakTimeTax: 0,
             };
-            await dataService.createDefaultWeeklyPlan(uid, today);
         }
         
         const todayStr = getISODateString(today);
@@ -218,7 +218,17 @@ const App = () => {
         // Ensure today's plan exists for all users
         const todaysDocument = await dataService.loadPlan(uid, today);
         if (!todaysDocument) {
-            const newPlan = { date: getISODateString(today), goals: [] };
+            const dayIndex = (today.getDay() + 6) % 7; // Monday = 0
+            const defaultDayPlanData = defaultWeeklyPlan[dayIndex];
+            const newPlan = {
+                date: getISODateString(today),
+                goals: defaultDayPlanData.goals.map(goal => ({
+                    ...goal,
+                    id: `${getISODateString(today)}-${goal.startTime}-${Math.random()}`,
+                    status: 'pending',
+                })),
+                todos: [],
+            };
             await dataService.savePlan(uid, newPlan);
         }
     }).catch(err => {
@@ -331,7 +341,7 @@ const App = () => {
         
         const activeState = { 
             secretCode: code, secretCodeImage: tempSecretCodeImage, goal, subject, 
-            goalSetTime: goalStartTime, timeLimitInMs
+            goalSetTime: goalStartTime, timeLimitInMs, pdfAttachment: activePlannedGoal?.pdfAttachment
         };
         await dataService.saveActiveGoal(currentUser.uid, activeState);
     } catch (err) {
@@ -340,7 +350,7 @@ const App = () => {
     } finally {
         setIsLoading(false);
     }
-  }, [handleApiError, goal, subject, timeLimitInMs, currentUser]);
+  }, [handleApiError, goal, subject, timeLimitInMs, currentUser, activePlannedGoal]);
 
   const getEffectiveGoal = useCallback(() => {
     return goal;
@@ -657,6 +667,13 @@ const App = () => {
         startTime: payload.startTime,
         endTime: payload.endTime,
     };
+    
+    if (payload.pdfAttachment === null) {
+      delete updatedGoal.pdfAttachment;
+    } else if (payload.pdfAttachment !== undefined) {
+      updatedGoal.pdfAttachment = payload.pdfAttachment;
+    }
+
     const updatedGoals = plan.goals.map(g => g.id === updatedGoal.id ? updatedGoal : g);
     const updatedPlan = { ...plan, goals: updatedGoals };
 
@@ -736,6 +753,7 @@ const App = () => {
             secretCode: completedSecretCode, secretCodeImage: completedSecretCodeImage,
             goal: nextPendingGoal.goal, subject: nextPendingGoal.subject,
             goalSetTime: nextGoalTime, timeLimitInMs: nextPendingGoal.timeLimitInMs,
+            pdfAttachment: nextPendingGoal.pdfAttachment,
         };
         await dataService.saveActiveGoal(currentUser.uid, activeState);
         setActivePlannedGoal(nextPendingGoal);
@@ -846,7 +864,7 @@ const App = () => {
       case AppState.AWAITING_CODE: return React.createElement(CodeUploader, { onCodeImageSubmit: handleCodeImageSubmit, isLoading: isLoading, onShowHistory: handleShowHistory, onLogout: handleLogout, currentUser: currentUser, streakData: streakData, onSetCommitment: handleSetDailyCommitment, onCompleteCommitment: handleCompleteDailyCommitment });
       case AppState.GOAL_SET: {
         const skipsLeft = 2 - (streakData?.skipsThisWeek ?? 0);
-        return React.createElement(ProofUploader, { goal: goal, onProofImageSubmit: handleProofImageSubmit, isLoading: isLoading, goalSetTime: goalSetTime, timeLimitInMs: timeLimitInMs, onSkipGoal: handleSkipGoal, skipsLeftThisWeek: skipsLeft > 0 ? skipsLeft : 0, lastCompletedCodeImage: streakData?.lastCompletedCodeImage });
+        return React.createElement(ProofUploader, { goal: goal, onProofImageSubmit: handleProofImageSubmit, isLoading: isLoading, goalSetTime: goalSetTime, timeLimitInMs: timeLimitInMs, onSkipGoal: handleSkipGoal, skipsLeftThisWeek: skipsLeft > 0 ? skipsLeft : 0, lastCompletedCodeImage: streakData?.lastCompletedCodeImage, pdfAttachment: activeGoal?.pdfAttachment });
       }
       case AppState.HISTORY_VIEW: return React.createElement(GoalHistory, { onBack: handleHistoryBack, history: history, onDeleteHistoryItem: handleDeleteHistoryItem });
       case AppState.GOAL_COMPLETED: return React.createElement(VerificationResult, { isSuccess: true, secretCodeImage: secretCodeImage || completedSecretCodeImage, feedback: verificationFeedback, onRetry: handleRetry, onReset: () => resetToStart(false), completionDuration: completionDuration, completionReason: completionReason });
