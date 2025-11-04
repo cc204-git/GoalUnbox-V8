@@ -23,9 +23,10 @@ interface GoalSetterProps {
   submitButtonText?: string;
   onCancel?: () => void;
   initialData?: PlannedGoal;
+  planDate?: string;
 }
 
-const GoalSetter: React.FC<GoalSetterProps> = ({ onGoalSubmit, isLoading, submitButtonText = 'Set My Goal', onCancel, initialData }) => {
+const GoalSetter: React.FC<GoalSetterProps> = ({ onGoalSubmit, isLoading, submitButtonText = 'Set My Goal', onCancel, initialData, planDate }) => {
   const [goal, setGoal] = useState(initialData?.goal || '');
   const [subject, setSubject] = useState(initialData?.subject || '');
   
@@ -158,8 +159,31 @@ const GoalSetter: React.FC<GoalSetterProps> = ({ onGoalSubmit, isLoading, submit
   }, [goal, subject, hours, minutes, subQuestions, startTime, endTime]);
 
   const handleUseTemplate = () => {
-    const template = `I will submit my homework on separate, numbered papers.
-Each paper will have the date DD/MM/YY written at the top.
+    let goalDate;
+    if (planDate) {
+        const [year, month, day] = planDate.split('-').map(Number);
+        goalDate = new Date(year, month - 1, day);
+    } else {
+        goalDate = new Date();
+    }
+
+    const day = String(goalDate.getDate()).padStart(2, '0');
+    const month = String(goalDate.getMonth() + 1).padStart(2, '0');
+    const year = String(goalDate.getFullYear()).slice(-2);
+    const formattedDate = `${day}/${month}/${year}`;
+    
+    const isCrmGoal = subject.toLowerCase().includes('crm');
+
+    const template = isCrmGoal ?
+`I will submit my homework on separate, numbered papers.
+Each paper will have the date ${formattedDate} written at the top.
+I will also send a screenshot of timer showing the time approximately equal to the time spent on goal (uncertainty 10 mins +- 10 mins)
+My homework will include:
+Repeat 1 and Repeat 2 that are copies of the pdf attached below.
+I will make sure that all exercises Repeat and questions are clearly highlighted on each paper.`
+    :
+`I will submit my homework on separate, numbered papers.
+Each paper will have the date ${formattedDate} written at the top.
 I will also send a screenshot of timer showing the time approximately equal to the time spent on goal (uncertainty 10 mins +- 10 mins)
 My homework will include:
 Exercise X: Y Questions

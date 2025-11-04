@@ -153,7 +153,12 @@ export const listenToHistory = (userId, callback) => {
         querySnapshot.forEach((doc) => {
             const data = doc.data();
             const item = {
-                ...data,
+                id: data.id,
+                goalSummary: data.goalSummary,
+                fullGoal: data.fullGoal,
+                subject: data.subject,
+                duration: data.duration,
+                completionReason: data.completionReason,
                 firestoreId: doc.id,
                 startTime: data.startTime.toMillis(),
                 endTime: data.endTime.toMillis(),

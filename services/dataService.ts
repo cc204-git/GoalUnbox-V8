@@ -97,10 +97,16 @@ export const loadWeeklyPlans = async (userId: string, weekStartDate: Date): Prom
             const dayIndex = (date.getDay() + 6) % 7; // Monday = 0
             const defaultDayPlanData = defaultWeeklyPlan[dayIndex];
             
+            const day = String(date.getDate()).padStart(2, '0');
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const year = String(date.getFullYear()).slice(-2);
+            const formattedDate = `${day}/${month}/${year}`;
+
             const newPlan: TodaysPlan = {
                 date: dateString,
                 goals: defaultDayPlanData.goals.map(goal => ({
                     ...goal,
+                    goal: goal.subject.toLowerCase().includes('crm') ? goal.goal.replace(/DD\/MM\/YY/g, formattedDate) : goal.goal,
                     id: `${dateString}-${goal.startTime}-${Math.random()}`,
                     status: 'pending',
                 })),
@@ -156,7 +162,12 @@ export const listenToHistory = (userId: string, callback: (history: CompletedGoa
         querySnapshot.forEach((doc) => {
             const data = doc.data();
             const item: CompletedGoal = {
-                ...data as any,
+                id: data.id,
+                goalSummary: data.goalSummary,
+                fullGoal: data.fullGoal,
+                subject: data.subject,
+                duration: data.duration,
+                completionReason: data.completionReason,
                 firestoreId: doc.id,
                 startTime: (data.startTime as Timestamp).toMillis(),
                 endTime: (data.endTime as Timestamp).toMillis(),
