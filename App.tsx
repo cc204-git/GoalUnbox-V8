@@ -1,7 +1,9 @@
 
+
 import React, { useState, useCallback, useEffect } from 'react';
 import { User, onAuthStateChanged } from 'firebase/auth';
 import { Unsubscribe } from 'firebase/firestore';
+import { Chat } from '@google/genai';
 import { AppState, CompletedGoal, ActiveGoalState, StreakData, TodaysPlan, PlannedGoal } from './types';
 import { 
     extractCodeFromImage, 
@@ -30,9 +32,6 @@ import GoalHistory from './components/GoalHistory';
 import Auth from './components/Auth';
 import Spinner from './components/Spinner';
 import ApiKeyPrompt from './components/ApiKeyPrompt';
-import { Chat } from '@google/genai';
-
-type CompletionReason = 'verified' | 'skipped';
 
 const calculateBreakFromSchedule = (completedGoal: PlannedGoal, allGoalsInPlan: PlannedGoal[]): number => {
     if (!completedGoal || !allGoalsInPlan) return 0;
@@ -62,6 +61,16 @@ const calculateBreakFromSchedule = (completedGoal: PlannedGoal, allGoalsInPlan: 
     return 0;
 };
 
+
+interface NextGoal {
+    goal: string;
+    subject: string;
+    timeLimitInMs: number | null;
+    plannedGoalId: string;
+    secretCode?: string;
+    secretCodeImage?: string;
+  }
+
 const App: React.FC = () => {
   const [appState, setAppState] = useState<AppState>(AppState.TODAYS_PLAN);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -74,7 +83,7 @@ const App: React.FC = () => {
   const [goal, setGoal] = useState<string>('');
   const [subject, setSubject] = useState<string>('');
   const [verificationFeedback, setVerificationFeedback] = useState<VerificationFeedback | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true); // Start true until auth state is known
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
   
@@ -82,7 +91,7 @@ const App: React.FC = () => {
   const [completionDuration, setCompletionDuration] = useState<string | null>(null);
   const [timeLimitInMs, setTimeLimitInMs] = useState<number | null>(null);
   
-  const [completionReason, setCompletionReason] = useState<CompletionReason | null>(null);
+  const [completionReason, setCompletionReason] = useState<'verified' | 'skipped' | null>(null);
   const [activePlannedGoal, setActivePlannedGoal] = useState<PlannedGoal | null>(null);
   const [skippedGoalForReflection, setSkippedGoalForReflection] = useState<PlannedGoal | null>(null);
 
@@ -91,46 +100,40 @@ const App: React.FC = () => {
   const [breakEndTime, setBreakEndTime] = useState<number | null>(null);
   const [completedSecretCode, setCompletedSecretCode] = useState<string | null>(null);
   const [completedSecretCodeImage, setCompletedSecretCodeImage] = useState<string | null>(null);
-  const [nextGoal, setNextGoal] = useState<{
-      secretCode?: string;
-      secretCodeImage?: string;
-      goal?: string;
-      subject?: string;
-      timeLimitInMs?: number | null;
-      plannedGoalId?: string;
-  } | null>(null);
-  const [currentTime, setCurrentTime] = useState(Date.now());
+  const [nextGoal, setNextGoal] = useState<NextGoal | null>(null);
+  const [currentTime, setCurrentTime] = useState<number>(Date.now());
 
   const [chat, setChat] = useState<Chat | null>(null);
-  const [chatMessages, setChatMessages] = useState<Array<{ text: string, role: 'user' | 'model' }>>([]);
+  const [chatMessages, setChatMessages] = useState<{ text: string; role: 'user' | 'model' }[]>([]);
   const [isChatLoading, setIsChatLoading] = useState<boolean>(false);
   const [history, setHistory] = useState<CompletedGoal[]>([]);
 
   const [streakData, setStreakData] = useState<StreakData | null>(null);
   const [todaysPlan, setTodaysPlan] = useState<TodaysPlan | null>(null);
   const [weekStartDate, setWeekStartDate] = useState<Date>(() => new Date(getStartOfWeekISOString(new Date())));
-  const [weeklyPlans, setWeeklyPlans] = useState<TodaysPlan[] | null>([]);
-  const [editingGoalInfo, setEditingGoalInfo] = useState<{ plan: TodaysPlan, goal: PlannedGoal } | null>(null);
+  const [weeklyPlans, setWeeklyPlans] = useState<TodaysPlan[] | null>(null);
+  const [editingGoalInfo, setEditingGoalInfo] = useState<{ plan: TodaysPlan; goal: PlannedGoal } | null>(null);
+  const [showUnlockedCodeModal, setShowUnlockedCodeModal] = useState<boolean>(false);
 
-
+  
   useEffect(() => {
-      const storedApiKey = localStorage.getItem('geminiApiKey');
-      if (storedApiKey) {
-          setApiKey(storedApiKey);
-          setIsApiKeyValid(true); // Assume valid until an API call fails
+    const storedApiKey = localStorage.getItem('geminiApiKey');
+    if (storedApiKey) {
+        setApiKey(storedApiKey);
+        setIsApiKeyValid(true); // Assume valid until an API call fails
+    }
+    const unsubscribe = onAuthStateChanged(auth, user => {
+      setCurrentUser(user);
+      if (!user) {
+        setIsLoading(false);
+        setHistory([]);
+        setStreakData(null);
+        setTodaysPlan(null);
+        setActiveGoal(null);
+        setWeeklyPlans(null);
       }
-      const unsubscribe = onAuthStateChanged(auth, user => {
-          setCurrentUser(user);
-          if (!user) {
-              setIsLoading(false);
-              setHistory([]);
-              setStreakData(null);
-              setTodaysPlan(null);
-              setActiveGoal(null);
-              setWeeklyPlans(null);
-          }
-      });
-      return () => unsubscribe();
+    });
+    return () => unsubscribe();
   }, []);
   
   useEffect(() => {
@@ -182,11 +185,11 @@ const App: React.FC = () => {
             });
         }
     }));
-
+    
     listeners.push(dataService.listenToPlan(uid, new Date(), (plan) => {
         setTodaysPlan(plan);
     }));
-    
+
     listeners.push(dataService.listenToHistory(uid, setHistory));
 
     dataService.getStreakData(uid).then(async (data) => {
@@ -235,7 +238,7 @@ const App: React.FC = () => {
 
         const todaysDocument = await dataService.loadPlan(uid, today);
         if (!todaysDocument) {
-            const dayIndex = (today.getDay() + 6) % 7; // Monday = 0
+            const dayIndex = (today.getDay() + 6) % 7;
             const defaultDayPlanData = defaultWeeklyPlan[dayIndex];
             const newPlan: TodaysPlan = {
                 date: getISODateString(today),
@@ -253,7 +256,7 @@ const App: React.FC = () => {
         setError("Could not load your streak data.");
         const today = new Date();
         const currentWeekStart = getStartOfWeekISOString(today);
-        const defaultStreak = { 
+        const defaultStreak: StreakData = { 
             currentStreak: 0, 
             lastCompletionDate: '', 
             commitment: null,
@@ -274,6 +277,20 @@ const App: React.FC = () => {
     };
 }, [currentUser]);
 
+  // This effect ensures that the activePlannedGoal state is correctly
+  // restored from Firestore data (via activeGoal), making the app resilient to reloads.
+  useEffect(() => {
+    if (activeGoal && activeGoal.plannedGoalId && todaysPlan) {
+        const foundGoal = todaysPlan.goals.find(g => g.id === activeGoal.plannedGoalId);
+        if (foundGoal) {
+            setActivePlannedGoal(foundGoal);
+        } else {
+            console.warn("Active goal's planned counterpart not found in today's plan.");
+            // Potentially reset or handle this state mismatch, but for now, we'll just log it.
+        }
+    }
+  }, [activeGoal, todaysPlan]);
+
   const handleSavePlan = (plan: TodaysPlan) => {
       if (!currentUser) return;
       if(plan.date === getISODateString(new Date())) {
@@ -292,11 +309,11 @@ const App: React.FC = () => {
                 updatedPlans[existingPlanIndex] = plan;
                 return updatedPlans;
             }
-            return [...prevPlans, plan].sort((a,b) => a.date.localeCompare(b.date));
+            return [...prevPlans, plan].sort((a, b) => a.date.localeCompare(b.date));
         });
     };
   
-  const handleApiError = useCallback((err: unknown) => {
+  const handleApiError = useCallback((err: any) => {
       const error = err as Error;
       if (error.message.includes('API key not valid')) {
         setError('Your API key is not valid. Please enter a correct key.');
@@ -308,7 +325,7 @@ const App: React.FC = () => {
       }
   }, []);
 
-  const resetToStart = useCallback((isLogout = false) => {
+  const resetToStart = useCallback((isLogout: boolean = false) => {
     if (currentUser) dataService.clearActiveGoal(currentUser.uid);
     if (isLogout) {
       authService.signOut();
@@ -356,17 +373,18 @@ const App: React.FC = () => {
         
         const activeState: ActiveGoalState = { 
             secretCode: code, 
-            secretCodeImage: tempSecretCodeImage!, 
+            secretCodeImage: tempSecretCodeImage as string, 
             goal, 
             subject, 
             goalSetTime: goalStartTime, 
-            timeLimitInMs
+            timeLimitInMs,
+            plannedGoalId: activePlannedGoal?.id,
         };
 
         if (activePlannedGoal?.pdfAttachment) {
             activeState.pdfAttachment = activePlannedGoal.pdfAttachment;
         }
-        
+
         await dataService.saveActiveGoal(currentUser.uid, activeState);
     } catch (err) {
         handleApiError(err);
@@ -380,7 +398,7 @@ const App: React.FC = () => {
     return goal;
   }, [goal]);
 
- const handleGoalSuccess = useCallback(async (feedback: VerificationFeedback | null, reason: CompletionReason) => {
+ const handleGoalSuccess = useCallback(async (feedback: VerificationFeedback | null, reason: 'verified' | 'skipped') => {
     if (!currentUser || !apiKey) return;
 
     if (subject === "Accountability Reflection") {
@@ -389,7 +407,7 @@ const App: React.FC = () => {
         const reflectionDuration = goalSetTime ? reflectionEndTime - goalSetTime : 0;
         try {
             const goalSummary = "Completed accountability reflection";
-            const reflectionEntry: Omit<CompletedGoal, 'firestoreId'> = { id: reflectionEndTime, goalSummary, fullGoal: goal, subject, startTime: goalSetTime!, endTime: reflectionEndTime, duration: reflectionDuration, completionReason: 'verified' };
+            const reflectionEntry: Omit<CompletedGoal, 'firestoreId'> = { id: reflectionEndTime, goalSummary, fullGoal: goal, subject, startTime: goalSetTime, endTime: reflectionEndTime, duration: reflectionDuration, completionReason: 'verified' };
             await dataService.addHistoryItem(currentUser.uid, reflectionEntry);
             await dataService.clearActiveGoal(currentUser.uid);
 
@@ -403,7 +421,7 @@ const App: React.FC = () => {
             setCompletedSecretCodeImage(secretCodeImage);
 
             if (breakDurationMs > 0) {
-                const nextPendingGoal = todaysPlan?.goals.filter(g => g.status === 'pending').sort((a, b) => a.startTime.localeCompare(b.startTime))[0];
+                 const nextPendingGoal = todaysPlan?.goals.filter(g => g.status === 'pending').sort((a, b) => a.startTime.localeCompare(b.startTime))[0];
                 if (nextPendingGoal) {
                     setNextGoal({
                         goal: nextPendingGoal.goal,
@@ -441,14 +459,14 @@ const App: React.FC = () => {
 
     try {
         const goalSummary = await summarizeGoal(finalGoal, apiKey);
-        const newEntry: Omit<CompletedGoal, 'firestoreId'> = { id: endTime, goalSummary, fullGoal: finalGoal, subject: subject, startTime: goalSetTime!, endTime, duration, completionReason: reason };
+        const newEntry: Omit<CompletedGoal, 'firestoreId'> = { id: endTime, goalSummary, fullGoal: finalGoal, subject: subject, startTime: goalSetTime, endTime, duration, completionReason: reason };
         await dataService.addHistoryItem(currentUser.uid, newEntry);
     } catch (e) { console.error("Failed to save goal:", e); }
 
     if (reason === 'verified' && secretCodeImage && streakData) {
         setCompletedSecretCode(secretCode);
         setCompletedSecretCodeImage(secretCodeImage);
-        const newData = { ...streakData, lastCompletedCodeImage: secretCodeImage };
+        const newData: StreakData = { ...streakData, lastCompletedCodeImage: secretCodeImage };
         setStreakData(newData); 
     }
 
@@ -474,7 +492,7 @@ const App: React.FC = () => {
             breakDurationMs = finalBreakDuration > 0 ? finalBreakDuration : 0;
             setInfoMessage(`A focus tax of ${formatDuration(tax)} was deducted from your break.`);
         }
-        const updatedStreakData = { ...streakData, breakTimeTax: 0, lastCompletedCodeImage: secretCodeImage || streakData.lastCompletedCodeImage };
+        const updatedStreakData: StreakData = { ...streakData, breakTimeTax: 0, lastCompletedCodeImage: secretCodeImage || streakData.lastCompletedCodeImage };
         await dataService.saveStreakData(currentUser.uid, updatedStreakData);
         setStreakData(updatedStreakData);
     }
@@ -549,8 +567,8 @@ const App: React.FC = () => {
 
     try {
         const response = await chat.sendMessage({ message });
-        const jsonResponse = JSON.parse(response.text) as VerificationResultType;
-        const newResult = jsonResponse;
+        const jsonResponse = JSON.parse(response.text);
+        const newResult = jsonResponse as VerificationResultType;
         
         if (newResult.completed) {
              setChatMessages(prev => [...prev, { role: 'model', text: newResult.feedback.summary + "\n\nGoal is now complete!" }]);
@@ -576,14 +594,27 @@ const App: React.FC = () => {
   };
   
   const handleSkipGoal = useCallback(async () => {
-    if (!currentUser || !activeGoal || !streakData || !todaysPlan || !activePlannedGoal) return;
+    const goalToSkip = todaysPlan?.goals.find(g => g.id === activeGoal?.plannedGoalId);
+
+    if (!currentUser || !activeGoal || !streakData || !todaysPlan || !goalToSkip) {
+        console.error("Could not skip goal. Required data is missing.", { 
+            hasUser: !!currentUser, 
+            hasActiveGoal: !!activeGoal, 
+            hasStreak: !!streakData,
+            hasPlan: !!todaysPlan,
+            foundGoal: !!goalToSkip 
+        });
+        setError("An error occurred while trying to skip the goal. Please try again.");
+        return;
+    }
+
     setIsLoading(true); setError(null);
     try {
-        const updatedStreakData = { ...streakData, skipsThisWeek: (streakData.skipsThisWeek ?? 0) + 1 };
+        const updatedStreakData: StreakData = { ...streakData, skipsThisWeek: (streakData.skipsThisWeek ?? 0) + 1 };
         await dataService.saveStreakData(currentUser.uid, updatedStreakData);
         setStreakData(updatedStreakData);
 
-        const updatedGoals = todaysPlan.goals.map(g => g.id === activePlannedGoal.id ? { ...g, status: 'skipped' } : g);
+        const updatedGoals = todaysPlan.goals.map(g => g.id === goalToSkip.id ? { ...g, status: 'skipped' } : g);
         const updatedPlan = { ...todaysPlan, goals: updatedGoals };
         await dataService.savePlan(currentUser.uid, updatedPlan);
         
@@ -597,7 +628,7 @@ const App: React.FC = () => {
             timeLimitInMs: 5 * 60 * 1000,
         };
         
-        setSkippedGoalForReflection(activePlannedGoal);
+        setSkippedGoalForReflection(goalToSkip);
         await dataService.saveActiveGoal(currentUser.uid, reflectionActiveState);
 
     } catch (err) {
@@ -605,7 +636,7 @@ const App: React.FC = () => {
     } finally {
         setIsLoading(false);
     }
-}, [currentUser, activeGoal, streakData, todaysPlan, activePlannedGoal, handleApiError]);
+}, [currentUser, activeGoal, streakData, todaysPlan, handleApiError]);
 
 
   const handleShowHistory = () => setAppState(AppState.HISTORY_VIEW);
@@ -615,7 +646,7 @@ const App: React.FC = () => {
       if (!currentUser || !streakData) return;
       const todayStr = getISODateString(new Date());
       const newCommitment = { date: todayStr, text, completed: false };
-      const newData = { ...streakData, commitment: newCommitment };
+      const newData: StreakData = { ...streakData, commitment: newCommitment };
       setStreakData(newData);
       dataService.saveStreakData(currentUser.uid, newData);
   };
@@ -624,7 +655,7 @@ const App: React.FC = () => {
       const todayStr = getISODateString(new Date());
       const newCommitment = { ...streakData.commitment, completed: true };
       const newStreak = streakData.lastCompletionDate === todayStr ? streakData.currentStreak : streakData.currentStreak + 1;
-      const newData = { ...streakData, commitment: newCommitment, currentStreak: newStreak, lastCompletionDate: todayStr };
+      const newData: StreakData = { ...streakData, commitment: newCommitment, currentStreak: newStreak, lastCompletionDate: todayStr };
       setStreakData(newData);
       dataService.saveStreakData(currentUser.uid, newData);
   };
@@ -638,7 +669,7 @@ const App: React.FC = () => {
     }
     setError(null);
 
-    const parseTime = (timeStr: string): Date => {
+    const parseTime = (timeStr: string) => {
         const [h, m] = timeStr.split(':').map(Number);
         const date = new Date();
         date.setHours(h, m, 0, 0);
@@ -690,7 +721,7 @@ const App: React.FC = () => {
                 setInfoMessage(prev => `${prev ? prev + ' ' : ''}Subsequent goals have been shifted.`);
             }
             
-            const newStreakData = { ...streakData, breakTimeTax: newTax };
+            const newStreakData: StreakData = { ...streakData, breakTimeTax: newTax };
             await dataService.saveStreakData(currentUser.uid, newStreakData);
             setStreakData(newStreakData);
         }
@@ -709,7 +740,6 @@ const App: React.FC = () => {
     if (!editingGoalInfo || !currentUser) return;
     const { plan, goal } = editingGoalInfo;
     const totalMs = (payload.timeLimit.hours * 3600 + payload.timeLimit.minutes * 60) * 1000;
-    
     const updatedGoal: PlannedGoal = {
         ...goal,
         goal: payload.goal,
@@ -718,10 +748,10 @@ const App: React.FC = () => {
         startTime: payload.startTime,
         endTime: payload.endTime,
     };
-
+    
     if (payload.pdfAttachment === null) {
-      delete (updatedGoal as Partial<PlannedGoal>).pdfAttachment;
-    } else if (payload.pdfAttachment) {
+      delete (updatedGoal as any).pdfAttachment;
+    } else if (payload.pdfAttachment !== undefined) {
       updatedGoal.pdfAttachment = payload.pdfAttachment;
     }
 
@@ -745,7 +775,7 @@ const App: React.FC = () => {
             reader.onload = () => {
                 const dataUrl = reader.result as string;
                 extractCodeFromImage(base64, file.type, apiKey).then(code => {
-                    setNextGoal(prev => ({ ...prev, secretCode: code, secretCodeImage: dataUrl }));
+                    setNextGoal(prev => ({ ...prev!, secretCode: code, secretCodeImage: dataUrl }));
                     setIsLoading(false);
                 }).catch(err => { handleApiError(err); setIsLoading(false); });
             };
@@ -759,8 +789,11 @@ const App: React.FC = () => {
         }
         const nextGoalTime = Date.now();
         const activeState: ActiveGoalState = {
-            secretCode: nextGoal.secretCode, secretCodeImage: nextGoal.secretCodeImage, 
-            goal: nextGoal.goal, subject: nextGoal.subject, goalSetTime: nextGoalTime, 
+            secretCode: nextGoal.secretCode, 
+            secretCodeImage: nextGoal.secretCodeImage, 
+            goal: nextGoal.goal, 
+            subject: nextGoal.subject, 
+            goalSetTime: nextGoalTime, 
             timeLimitInMs: nextGoal.timeLimitInMs || null,
         };
         await dataService.saveActiveGoal(currentUser.uid, activeState);
@@ -814,10 +847,15 @@ const App: React.FC = () => {
             setIsLoading(false);
         }
     };
-
+    
     const handleSkipBreak = () => {
         setInfoMessage("Break skipped. You can start your next goal when you're ready.");
         resetToStart();
+    };
+
+    const handleGoHomeFromBreak = () => {
+        setAppState(AppState.TODAYS_PLAN);
+        setInfoMessage("You can view your unlocked code using the button in the corner.");
     };
 
     const handleApiKeySubmit = (submittedKey: string) => {
@@ -834,14 +872,32 @@ const App: React.FC = () => {
 
     switch (appState) {
       case AppState.TODAYS_PLAN:
-        return todaysPlan ? <TodaysPlanComponent 
-            initialPlan={todaysPlan} 
-            onSavePlan={handleSavePlan} 
-            onStartGoal={handleStartPlannedGoal} 
-            onShowHistory={handleShowHistory}
-            onShowWeeklyView={handleShowWeeklyView}
-            onEditGoal={handleEditGoal}
-        /> : <div className="flex justify-center items-center p-8"><Spinner /></div>;
+        const viewCodeButton = completedSecretCodeImage && (
+            <button
+                onClick={() => setShowUnlockedCodeModal(true)}
+                className="fixed bottom-4 right-4 bg-cyan-500 text-slate-900 font-bold py-3 px-5 rounded-full shadow-lg hover:bg-cyan-400 transition-all z-10 flex items-center gap-2 animate-fade-in button-glow-cyan"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor"><path d="M10 2a5 5 0 00-5 5v2a2 2 0 00-2 2v5a2 2 0 002 2h10a2 2 0 002-2v-5a2 2 0 00-2-2V7a5 5 0 00-5-5zm0 2a3 3 0 00-3 3v2h6V7a3 3 0 00-3-3z" /></svg>
+                View Code
+            </button>
+        );
+
+        const todaysPlanContent = todaysPlan ? (
+            <TodaysPlanComponent
+                initialPlan={todaysPlan}
+                onSavePlan={handleSavePlan}
+                onStartGoal={handleStartPlannedGoal}
+                onShowHistory={handleShowHistory}
+                onShowWeeklyView={handleShowWeeklyView}
+                onEditGoal={handleEditGoal}
+            />
+        ) : <div className="flex justify-center items-center p-8"><Spinner /></div>;
+        
+        return <>
+            {todaysPlanContent}
+            {viewCodeButton}
+        </>;
+
       case AppState.WEEKLY_PLAN_VIEW:
           return weeklyPlans ? <WeeklyPlanView
             initialPlans={weeklyPlans}
@@ -856,37 +912,71 @@ const App: React.FC = () => {
       case AppState.AWAITING_CODE: return <CodeUploader onCodeImageSubmit={handleCodeImageSubmit} isLoading={isLoading} onShowHistory={handleShowHistory} onLogout={handleLogout} currentUser={currentUser} streakData={streakData} onSetCommitment={handleSetDailyCommitment} onCompleteCommitment={handleCompleteDailyCommitment} />;
       case AppState.GOAL_SET: {
         const skipsLeft = 2 - (streakData?.skipsThisWeek ?? 0);
-        return <ProofUploader goal={goal} onProofImageSubmit={handleProofImageSubmit} isLoading={isLoading} goalSetTime={goalSetTime} timeLimitInMs={timeLimitInMs} onSkipGoal={handleSkipGoal} skipsLeftThisWeek={skipsLeft > 0 ? skipsLeft : 0} lastCompletedCodeImage={streakData?.lastCompletedCodeImage} pdfAttachment={activeGoal?.pdfAttachment} />;
+        return <ProofUploader goal={goal} subject={subject} onProofImageSubmit={handleProofImageSubmit} isLoading={isLoading} goalSetTime={goalSetTime} timeLimitInMs={timeLimitInMs} onSkipGoal={handleSkipGoal} skipsLeftThisWeek={skipsLeft > 0 ? skipsLeft : 0} lastCompletedCodeImage={streakData?.lastCompletedCodeImage} pdfAttachment={activeGoal?.pdfAttachment} apiKey={apiKey!} />;
       }
-      case AppState.HISTORY_VIEW: return <GoalHistory onBack={handleHistoryBack} history={history} onDeleteHistoryItem={handleDeleteHistoryItem} />;
+      case AppState.HISTORY_VIEW: return <GoalHistory onBack={handleHistoryBack} history={history} onDeleteHistoryItem={handleDeleteHistoryItem} apiKey={apiKey!} />;
       case AppState.GOAL_COMPLETED: return <VerificationResult isSuccess={true} secretCodeImage={secretCodeImage || completedSecretCodeImage} feedback={verificationFeedback} onRetry={handleRetry} onReset={() => resetToStart(false)} completionDuration={completionDuration} completionReason={completionReason} />;
       
       case AppState.BREAK_ACTIVE: {
             const timeLeft = breakEndTime ? breakEndTime - currentTime : 0;
             const codeSubmitted = !!nextGoal?.secretCode;
-            const codeUploader = codeSubmitted ? 
-                <div className="glass-panel p-8 rounded-2xl shadow-2xl w-full h-full flex flex-col justify-center items-center text-center"><svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-green-400" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg><h3 className="text-xl font-semibold text-green-400 mt-4">Next Code Accepted!</h3><p className="text-slate-300 mt-2">Enjoy the rest of your break. The next goal will start automatically.</p><button onClick={handleFinishBreakAndStartNextGoal} className="mt-6 w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400 transition-all button-glow-cyan">Start Next Goal Now</button></div>
-                : <CodeUploader onCodeImageSubmit={handleNextCodeImageSubmit} isLoading={isLoading} onShowHistory={() => {}} onLogout={() => {}} currentUser={null} streakData={null} onSetCommitment={() => {}} onCompleteCommitment={() => {}} />;
+            const isLongBreak = availableBreakTime && availableBreakTime > 20 * 60 * 1000;
 
-            return (
-                <div className="w-full max-w-2xl flex flex-col items-center gap-6">
-                    <div className="w-full text-center bg-slate-900/80 backdrop-blur-sm p-3 rounded-lg border border-slate-700"><p className="text-sm text-slate-400 uppercase tracking-wider">Break Ends In</p><p className={`text-3xl font-mono ${timeLeft < 60000 ? 'text-red-400' : 'text-cyan-300'}`}>{formatCountdown(timeLeft > 0 ? timeLeft : 0)}</p></div>
-                    <div className="w-full flex flex-wrap justify-center items-start gap-6">
-                        {completedSecretCodeImage && <div className="text-center flex-1 min-w-[280px]"><p className="text-slate-400 text-sm mb-2">Unlocked Code:</p><img src={completedSecretCodeImage} alt="Sequestered code" className="rounded-lg w-full border-2 border-green-500" /></div>}
-                        <div className="flex-1 min-w-[320px]">{codeUploader}</div>
-                    </div>
-                    {nextGoal?.goal && <div className="w-full max-w-lg glass-panel p-4 rounded-2xl shadow-2xl text-center"><h3 className="text-md font-semibold text-slate-300 mb-1">Up Next: <span className="font-bold text-white">{nextGoal.subject}</span></h3></div>}
-                     <button
-                        onClick={handleSkipBreak}
-                        className="mt-4 text-sm text-slate-500 hover:text-amber-400 transition-colors duration-300 flex items-center justify-center gap-2"
-                    >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                          <path d="M4.555 5.168A1 1 0 003 6v8a1 1 0 001.555.832L10 11.202V14a1 1 0 001.555.832l6-4a1 1 0 000-1.664l-6-4A1 1 0 0010 6v2.798L4.555 5.168z" />
-                        </svg>
-                        Skip Break & Return to Plan
-                    </button>
+            const codeUploader = codeSubmitted ? (
+                <div className="glass-panel p-8 rounded-2xl shadow-2xl w-full h-full flex flex-col justify-center items-center text-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-green-400" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>
+                    <h3 className="text-xl font-semibold text-green-400 mt-4">Next Code Accepted!</h3>
+                    <p className="text-slate-300 mt-2">Enjoy the rest of your break. The next goal will start automatically.</p>
+                    <button onClick={handleFinishBreakAndStartNextGoal} className="mt-6 w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400 transition-all button-glow-cyan">Start Next Goal Now</button>
                 </div>
+                ) : <CodeUploader onCodeImageSubmit={handleNextCodeImageSubmit} isLoading={isLoading} onShowHistory={() => {}} onLogout={() => {}} currentUser={null} streakData={null} onSetCommitment={() => {}} onCompleteCommitment={() => {}} />;
+
+            const skipBreakButton = (
+                <button
+                    onClick={handleSkipBreak}
+                    className="text-sm text-slate-500 hover:text-amber-400 transition-colors duration-300 flex items-center justify-center gap-2"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M4.555 5.168A1 1 0 003 6v8a1 1 0 001.555.832L10 11.202V14a1 1 0 001.555.832l6-4a1 1 0 000-1.664l-6-4A1 1 0 0010 6v2.798L4.555 5.168z" /></svg>
+                    Skip Break & Return to Plan
+                </button>
             );
+
+            const goHomeButton = isLongBreak && (
+                <button
+                    onClick={handleGoHomeFromBreak}
+                    className="mt-2 text-sm text-cyan-400 hover:text-cyan-300 transition-colors duration-300 flex items-center justify-center gap-2"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" /></svg>
+                    Go Home & View Code
+                </button>
+            );
+
+            return <div className="w-full max-w-2xl flex flex-col items-center gap-6">
+                <div className="w-full text-center bg-slate-900/80 backdrop-blur-sm p-3 rounded-lg border border-slate-700">
+                    <p className="text-sm text-slate-400 uppercase tracking-wider">Break Ends In</p>
+                    <p className={`text-3xl font-mono ${timeLeft < 60000 ? 'text-red-400' : 'text-cyan-300'}`}>{formatCountdown(timeLeft > 0 ? timeLeft : 0)}</p>
+                </div>
+                <div className="w-full flex flex-wrap justify-center items-start gap-6">
+                    {completedSecretCodeImage && (
+                        <div className="text-center flex-1 min-w-[280px]">
+                            <p className="text-slate-400 text-sm mb-2">Unlocked Code:</p>
+                            <img src={completedSecretCodeImage} alt="Sequestered code" className="rounded-lg w-full border-2 border-green-500" />
+                        </div>
+                    )}
+                    <div className="flex-1 min-w-[320px]">
+                        {codeUploader}
+                    </div>
+                </div>
+                {nextGoal?.goal && (
+                    <div className="glass-panel p-4 rounded-2xl shadow-2xl text-center">
+                        <h3 className="text-md font-semibold text-slate-300 mb-1">Up Next: <span className="font-bold text-white">{nextGoal.subject}</span></h3>
+                    </div>
+                )}
+                <div className='flex flex-col items-center'>
+                    {skipBreakButton}
+                    {goHomeButton}
+                </div>
+            </div>;
         }
 
        default: return <div className="flex justify-center items-center p-8"><Spinner /></div>;
@@ -912,23 +1002,49 @@ const App: React.FC = () => {
         </div>
     </div>
   );
+  
+  const unlockedCodeModal = showUnlockedCodeModal && completedSecretCodeImage && (
+    <div
+        className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in p-4"
+        onClick={() => setShowUnlockedCodeModal(false)}
+    >
+        <div className="relative" onClick={e => e.stopPropagation()}>
+            <p className="text-white text-center mb-2 font-semibold">Your Unlocked Code</p>
+            <img
+                src={completedSecretCodeImage}
+                alt="Unlocked secret code"
+                className="rounded-lg max-h-[80vh] max-w-[90vw] object-contain"
+            />
+            <button
+                    onClick={() => setShowUnlockedCodeModal(false)}
+                    className="absolute -top-3 -right-3 bg-slate-800 text-white rounded-full p-1.5 leading-none hover:bg-slate-700 transition-colors"
+                    aria-label="Close image view"
+                >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+        </div>
+    </div>
+  );
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-4">
       <Header />
       <main className="w-full flex flex-col items-center justify-center">
-        {error && !isApiKeyValid && <div />} 
-        {error && isApiKeyValid && <Alert message={error} type="error" />}
-        {infoMessage && <Alert message={infoMessage} type="info" />}
-        {editingModal}
-        {appState === AppState.GOAL_SET && verificationFeedback ? (
-            <div className="w-full max-w-lg mb-4 flex justify-center">
-              <VerificationResult isSuccess={false} secretCodeImage={null} feedback={verificationFeedback} onRetry={handleRetry} onReset={() => resetToStart(false)} chatMessages={chatMessages} onSendChatMessage={handleSendChatMessage} isChatLoading={isChatLoading} />
-            </div>
-        ) : (
-          renderContent()
-        )}
+          {error && !isApiKeyValid && <div />}
+          {error && isApiKeyValid && <Alert message={error} type="error" />}
+          {infoMessage && <Alert message={infoMessage} type="info" />}
+          {appState === AppState.GOAL_SET && verificationFeedback ? (
+              <div className="w-full max-w-lg mb-4 flex justify-center">
+                  <VerificationResult isSuccess={false} secretCodeImage={null} feedback={verificationFeedback} onRetry={handleRetry} onReset={() => resetToStart(false)} chatMessages={chatMessages} onSendChatMessage={handleSendChatMessage} isChatLoading={isChatLoading} />
+              </div>
+          ) : (
+            renderContent()
+          )}
       </main>
+      {editingModal}
+      {unlockedCodeModal}
     </div>
   );
 };

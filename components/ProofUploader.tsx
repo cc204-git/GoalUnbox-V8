@@ -1,4 +1,5 @@
 
+
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import Spinner from './Spinner';
 import CameraCapture from './CameraCapture';
@@ -8,6 +9,7 @@ import { base64ToBlob } from '../utils/fileUtils';
 
 interface ProofUploaderProps {
   goal: string;
+  subject: string;
   onProofImageSubmit: (files: File[]) => void;
   isLoading: boolean;
   goalSetTime: number | null;
@@ -33,7 +35,7 @@ const PDFIcon = () => (
 );
 
 
-const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeLimitInMs, onSkipGoal, skipsLeftThisWeek, lastCompletedCodeImage, pdfAttachment, apiKey }) => {
+const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, subject, onProofImageSubmit, isLoading, goalSetTime, timeLimitInMs, onSkipGoal, skipsLeftThisWeek, lastCompletedCodeImage, pdfAttachment, apiKey }) => {
   const [proofFiles, setProofFiles] = useState<ProofFile[]>([]);
   const [showCamera, setShowCamera] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -44,6 +46,8 @@ const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit,
   const [showPreviousCodeModal, setShowPreviousCodeModal] = useState(false);
   const [showGatekeeper, setShowGatekeeper] = useState(false);
   const [showPrayerModal, setShowPrayerModal] = useState(true);
+
+  const isReflectionGoal = subject === "Accountability Reflection";
 
   useEffect(() => {
     if (!goalSetTime || isLoading) return;
@@ -173,6 +177,12 @@ const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit,
         console.error("Failed to download PDF:", error);
     }
   };
+
+  const skipTitle = isReflectionGoal
+    ? "Accountability reflections cannot be skipped."
+    : skipsLeftThisWeek > 0
+        ? `Skip this goal. You have ${skipsLeftThisWeek} skips left this week.`
+        : 'You have no skips left for this week.';
 
   return (
     <>
@@ -328,9 +338,9 @@ const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, onProofImageSubmit,
             <div className="flex flex-col items-center">
                 <button
                     onClick={() => setShowGatekeeper(true)}
-                    disabled={isLoading || skipsLeftThisWeek <= 0}
+                    disabled={isLoading || skipsLeftThisWeek <= 0 || isReflectionGoal}
                     className="text-sm text-slate-500 hover:text-amber-400 transition-colors duration-300 flex items-center justify-center gap-2 disabled:text-slate-600 disabled:hover:text-slate-600 disabled:cursor-not-allowed"
-                    title={skipsLeftThisWeek > 0 ? `Skip this goal. You have ${skipsLeftThisWeek} skips left this week.` : 'You have no skips left for this week.'}
+                    title={skipTitle}
                 >
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
                         <path d="M4.555 5.168A1 1 0 003 6v8a1 1 0 001.555.832L10 11.202V14a1 1 0 001.555.832l6-4a1 1 0 000-1.664l-6-4A1 1 0 0010 6v2.798L4.555 5.168z" />

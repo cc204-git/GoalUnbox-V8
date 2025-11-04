@@ -1,4 +1,5 @@
 
+
 import { GoogleGenAI, Type, Chat, Content } from "@google/genai";
 import { CompletedGoal } from "../types";
 
@@ -138,6 +139,15 @@ export const summarizeGoal = async (goal: string, apiKey: string): Promise<strin
 };
 
 export const generateHistoryInsights = async (history: CompletedGoal[], apiKey: string): Promise<string> => {
+    // Create a new array of plain objects to ensure no circular references.
+    const cleanHistory = history.map(item => ({
+        goalSummary: item.goalSummary,
+        subject: item.subject,
+        endTime: new Date(item.endTime).toISOString(),
+        durationInMinutes: Math.round(item.duration / 60000),
+        completionReason: item.completionReason,
+    }));
+
     const prompt = `
         You are a productivity coach analyzing a user's goal history from the past week. Based on the following JSON data of their completed goals, provide a "Weekly Productivity Report" with actionable insights and encouraging feedback.
         Analyze their work patterns, subjects they focus on, goal completion times, and consistency.
@@ -146,7 +156,7 @@ export const generateHistoryInsights = async (history: CompletedGoal[], apiKey: 
         Keep the tone positive and motivational. Format the output as a concise, easy-to-read summary. Use markdown for formatting, like bullet points and bold text.
 
         Here is the user's goal history for the week:
-        ${JSON.stringify(history, null, 2)}
+        ${JSON.stringify(cleanHistory, null, 2)}
     `;
     try {
         const ai = getAiClient(apiKey);

@@ -23,10 +23,9 @@ const DistractionGatekeeper: React.FC<DistractionGatekeeperProps> = ({ goal, onC
         try {
             const chatSession = createGatekeeperChat(goal, apiKey);
             setChat(chatSession);
-            chatSession.getHistory().then(history => {
-                 const initialModelMessage = JSON.parse(history[1].parts[0].text!) as GatekeeperResponse;
-                 setMessages([{ role: 'model', text: initialModelMessage.response_text }]);
-            });
+            const history = chatSession.getHistory();
+            const initialModelMessage = JSON.parse(history[1].parts[0].text!) as GatekeeperResponse;
+            setMessages([{ role: 'model', text: initialModelMessage.response_text }]);
         } catch (e) {
             console.error(e);
             setMessages([{ role: 'model', text: "Sorry, I'm having trouble connecting right now. Please try again later." }]);

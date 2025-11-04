@@ -32,6 +32,7 @@ export interface ActiveGoalState {
     goalSetTime: number;
     timeLimitInMs: number | null;
     pdfAttachment?: { name: string; data: string; };
+    plannedGoalId?: string;
 }
 
 export interface StreakData {

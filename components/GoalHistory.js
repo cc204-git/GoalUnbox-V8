@@ -1,11 +1,12 @@
 
+
 import React, { useMemo, useState } from 'react';
 import { formatDuration } from '../utils/timeUtils.js';
 import { generateHistoryInsights } from '../services/geminiService.js';
 import Spinner from './Spinner.js';
 import Alert from './Alert.js';
 
-const GoalHistory = ({ onBack, history, onDeleteHistoryItem }) => {
+const GoalHistory = ({ onBack, history, onDeleteHistoryItem, apiKey }) => {
 
     const sortedHistory = useMemo(() => 
         [...history].sort((a, b) => b.endTime - a.endTime), 
@@ -50,7 +51,7 @@ const GoalHistory = ({ onBack, history, onDeleteHistoryItem }) => {
                 return;
             }
 
-            const result = await generateHistoryInsights(weeklyHistory);
+            const result = await generateHistoryInsights(weeklyHistory, apiKey);
             setInsights(result);
         } catch (err) {
             setInsightsError(err.message);
@@ -128,7 +129,6 @@ const GoalHistory = ({ onBack, history, onDeleteHistoryItem }) => {
                     React.createElement('tr', null,
                         React.createElement('th', { className: 'p-3' }, 'Goal'),
                         React.createElement('th', { className: 'p-3' }, 'Subject'),
-                        React.createElement('th', { className: 'p-3' }, 'Started'),
                         React.createElement('th', { className: 'p-3' }, 'Completed'),
                         React.createElement('th', { className: 'p-3 text-right' }, 'Duration'),
                         React.createElement('th', { className: 'p-3 text-right' }, 'Actions')
@@ -149,7 +149,6 @@ const GoalHistory = ({ onBack, history, onDeleteHistoryItem }) => {
                             )
                         ),
                         React.createElement('td', { className: 'p-3 text-slate-300' }, item.subject),
-                        React.createElement('td', { className: 'p-3 text-slate-400' }, formatDateTime(item.startTime)),
                         React.createElement('td', { className: 'p-3 text-slate-400' }, formatDateTime(item.endTime)),
                         React.createElement('td', { className: 'p-3 text-right text-cyan-300 font-mono' }, formatDuration(item.duration)),
                         React.createElement('td', { className: 'p-3 text-right' }, 
@@ -166,7 +165,7 @@ const GoalHistory = ({ onBack, history, onDeleteHistoryItem }) => {
                 totalDuration !== '0s' && React.createElement(
                     'tfoot', { className: 'border-t-2 border-slate-500 font-bold' },
                     React.createElement('tr', null,
-                        React.createElement('td', { colSpan: 4, className: 'p-3 text-right text-slate-300' }, 'Total Focused Time'),
+                        React.createElement('td', { colSpan: 3, className: 'p-3 text-right text-slate-300' }, 'Total Focused Time'),
                         React.createElement('td', { className: 'p-3 text-right text-cyan-300 font-mono text-lg' }, totalDuration),
                         React.createElement('td', null)
                     )

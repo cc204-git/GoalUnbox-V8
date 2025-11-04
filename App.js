@@ -1,4 +1,6 @@
 
+
+
 import React, { useState, useCallback, useEffect } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { AppState } from './types.js';
@@ -98,6 +100,7 @@ const App = () => {
   const [weekStartDate, setWeekStartDate] = useState(() => new Date(getStartOfWeekISOString(new Date())));
   const [weeklyPlans, setWeeklyPlans] = useState(null);
   const [editingGoalInfo, setEditingGoalInfo] = useState(null);
+  const [showUnlockedCodeModal, setShowUnlockedCodeModal] = useState(false);
 
   
   useEffect(() => {
@@ -261,6 +264,20 @@ const App = () => {
     };
 }, [currentUser]);
 
+  // This effect ensures that the activePlannedGoal state is correctly
+  // restored from Firestore data (via activeGoal), making the app resilient to reloads.
+  useEffect(() => {
+    if (activeGoal && activeGoal.plannedGoalId && todaysPlan) {
+        const foundGoal = todaysPlan.goals.find(g => g.id === activeGoal.plannedGoalId);
+        if (foundGoal) {
+            setActivePlannedGoal(foundGoal);
+        } else {
+            console.warn("Active goal's planned counterpart not found in today's plan.");
+            // Potentially reset or handle this state mismatch, but for now, we'll just log it.
+        }
+    }
+  }, [activeGoal, todaysPlan]);
+
   const handleSavePlan = (plan) => {
       if (!currentUser) return;
       if(plan.date === getISODateString(new Date())) {
@@ -348,6 +365,7 @@ const App = () => {
             subject, 
             goalSetTime: goalStartTime, 
             timeLimitInMs,
+            plannedGoalId: activePlannedGoal?.id,
         };
 
         if (activePlannedGoal?.pdfAttachment) {
@@ -563,14 +581,27 @@ const App = () => {
   };
   
   const handleSkipGoal = useCallback(async () => {
-    if (!currentUser || !activeGoal || !streakData || !todaysPlan || !activePlannedGoal) return;
+    const goalToSkip = todaysPlan?.goals.find(g => g.id === activeGoal?.plannedGoalId);
+
+    if (!currentUser || !activeGoal || !streakData || !todaysPlan || !goalToSkip) {
+        console.error("Could not skip goal. Required data is missing.", { 
+            hasUser: !!currentUser, 
+            hasActiveGoal: !!activeGoal, 
+            hasStreak: !!streakData,
+            hasPlan: !!todaysPlan,
+            foundGoal: !!goalToSkip 
+        });
+        setError("An error occurred while trying to skip the goal. Please try again.");
+        return;
+    }
+
     setIsLoading(true); setError(null);
     try {
         const updatedStreakData = { ...streakData, skipsThisWeek: (streakData.skipsThisWeek ?? 0) + 1 };
         await dataService.saveStreakData(currentUser.uid, updatedStreakData);
         setStreakData(updatedStreakData);
 
-        const updatedGoals = todaysPlan.goals.map(g => g.id === activePlannedGoal.id ? { ...g, status: 'skipped' } : g);
+        const updatedGoals = todaysPlan.goals.map(g => g.id === goalToSkip.id ? { ...g, status: 'skipped' } : g);
         const updatedPlan = { ...todaysPlan, goals: updatedGoals };
         await dataService.savePlan(currentUser.uid, updatedPlan);
         
@@ -584,7 +615,7 @@ const App = () => {
             timeLimitInMs: 5 * 60 * 1000,
         };
         
-        setSkippedGoalForReflection(activePlannedGoal);
+        setSkippedGoalForReflection(goalToSkip);
         await dataService.saveActiveGoal(currentUser.uid, reflectionActiveState);
 
     } catch (err) {
@@ -592,7 +623,7 @@ const App = () => {
     } finally {
         setIsLoading(false);
     }
-}, [currentUser, activeGoal, streakData, todaysPlan, activePlannedGoal, handleApiError]);
+}, [currentUser, activeGoal, streakData, todaysPlan, handleApiError]);
 
 
   const handleShowHistory = () => setAppState(AppState.HISTORY_VIEW);
@@ -806,6 +837,11 @@ const App = () => {
         resetToStart();
     };
 
+    const handleGoHomeFromBreak = () => {
+        setAppState(AppState.TODAYS_PLAN);
+        setInfoMessage("You can view your unlocked code using the button in the corner.");
+    };
+
     const handleApiKeySubmit = (submittedKey) => {
         localStorage.setItem('geminiApiKey', submittedKey);
         setApiKey(submittedKey);
@@ -820,7 +856,15 @@ const App = () => {
 
     switch (appState) {
       case AppState.TODAYS_PLAN:
-        return todaysPlan ? React.createElement(TodaysPlanComponent, { 
+        const viewCodeButton = completedSecretCodeImage && React.createElement('button', {
+            onClick: () => setShowUnlockedCodeModal(true),
+            className: "fixed bottom-4 right-4 bg-cyan-500 text-slate-900 font-bold py-3 px-5 rounded-full shadow-lg hover:bg-cyan-400 transition-all z-10 flex items-center gap-2 animate-fade-in button-glow-cyan"
+        },
+            React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", className: "h-6 w-6", viewBox: "0 0 20 20", fill: "currentColor" }, React.createElement('path', { d: "M10 2a5 5 0 00-5 5v2a2 2 0 00-2 2v5a2 2 0 002 2h10a2 2 0 002-2v-5a2 2 0 00-2-2V7a5 5 0 00-5-5zm0 2a3 3 0 00-3 3v2h6V7a3 3 0 00-3-3z" })),
+            "View Code"
+        );
+
+        const todaysPlanContent = todaysPlan ? React.createElement(TodaysPlanComponent, { 
             initialPlan: todaysPlan, 
             onSavePlan: handleSavePlan, 
             onStartGoal: handleStartPlannedGoal, 
@@ -828,6 +872,12 @@ const App = () => {
             onShowWeeklyView: handleShowWeeklyView,
             onEditGoal: handleEditGoal
         }) : React.createElement('div', { className: "flex justify-center items-center p-8" }, React.createElement(Spinner, null));
+        
+        return React.createElement(React.Fragment, null,
+            todaysPlanContent,
+            viewCodeButton
+        );
+
       case AppState.WEEKLY_PLAN_VIEW:
           return weeklyPlans ? React.createElement(WeeklyPlanView, {
             initialPlans: weeklyPlans,
@@ -842,24 +892,34 @@ const App = () => {
       case AppState.AWAITING_CODE: return React.createElement(CodeUploader, { onCodeImageSubmit: handleCodeImageSubmit, isLoading: isLoading, onShowHistory: handleShowHistory, onLogout: handleLogout, currentUser: currentUser, streakData: streakData, onSetCommitment: handleSetDailyCommitment, onCompleteCommitment: handleCompleteDailyCommitment });
       case AppState.GOAL_SET: {
         const skipsLeft = 2 - (streakData?.skipsThisWeek ?? 0);
-        return React.createElement(ProofUploader, { goal: goal, onProofImageSubmit: handleProofImageSubmit, isLoading: isLoading, goalSetTime: goalSetTime, timeLimitInMs: timeLimitInMs, onSkipGoal: handleSkipGoal, skipsLeftThisWeek: skipsLeft > 0 ? skipsLeft : 0, lastCompletedCodeImage: streakData?.lastCompletedCodeImage, pdfAttachment: activeGoal?.pdfAttachment });
+        return React.createElement(ProofUploader, { goal: goal, subject: subject, onProofImageSubmit: handleProofImageSubmit, isLoading: isLoading, goalSetTime: goalSetTime, timeLimitInMs: timeLimitInMs, onSkipGoal: handleSkipGoal, skipsLeftThisWeek: skipsLeft > 0 ? skipsLeft : 0, lastCompletedCodeImage: streakData?.lastCompletedCodeImage, pdfAttachment: activeGoal?.pdfAttachment, apiKey: apiKey });
       }
-      case AppState.HISTORY_VIEW: return React.createElement(GoalHistory, { onBack: handleHistoryBack, history: history, onDeleteHistoryItem: handleDeleteHistoryItem });
+      case AppState.HISTORY_VIEW: return React.createElement(GoalHistory, { onBack: handleHistoryBack, history: history, onDeleteHistoryItem: handleDeleteHistoryItem, apiKey: apiKey });
       case AppState.GOAL_COMPLETED: return React.createElement(VerificationResult, { isSuccess: true, secretCodeImage: secretCodeImage || completedSecretCodeImage, feedback: verificationFeedback, onRetry: handleRetry, onReset: () => resetToStart(false), completionDuration: completionDuration, completionReason: completionReason });
       
       case AppState.BREAK_ACTIVE: {
             const timeLeft = breakEndTime ? breakEndTime - currentTime : 0;
             const codeSubmitted = !!nextGoal?.secretCode;
+            const isLongBreak = availableBreakTime && availableBreakTime > 20 * 60 * 1000;
+
             const codeUploader = codeSubmitted ? 
                 React.createElement('div', { className: "glass-panel p-8 rounded-2xl shadow-2xl w-full h-full flex flex-col justify-center items-center text-center" }, React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", className: "h-16 w-16 text-green-400", viewBox: "0 0 20 20", fill: "currentColor" }, React.createElement('path', { fillRule: "evenodd", d: "M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z", clipRule: "evenodd" })), React.createElement('h3', { className: "text-xl font-semibold text-green-400 mt-4" }, "Next Code Accepted!"), React.createElement('p', { className: "text-slate-300 mt-2" }, "Enjoy the rest of your break. The next goal will start automatically."), React.createElement('button', { onClick: handleFinishBreakAndStartNextGoal, className: "mt-6 w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400 transition-all button-glow-cyan" }, "Start Next Goal Now"))
                 : React.createElement(CodeUploader, { onCodeImageSubmit: handleNextCodeImageSubmit, isLoading: isLoading, onShowHistory: () => {}, onLogout: () => {}, currentUser: null, streakData: null, onSetCommitment: () => {}, onCompleteCommitment: () => {} });
 
             const skipBreakButton = React.createElement('button', {
                 onClick: handleSkipBreak,
-                className: "mt-4 text-sm text-slate-500 hover:text-amber-400 transition-colors duration-300 flex items-center justify-center gap-2"
+                className: "text-sm text-slate-500 hover:text-amber-400 transition-colors duration-300 flex items-center justify-center gap-2"
             },
                 React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", className: "h-4 w-4", viewBox: "0 0 20 20", fill: "currentColor" }, React.createElement('path', { d: "M4.555 5.168A1 1 0 003 6v8a1 1 0 001.555.832L10 11.202V14a1 1 0 001.555.832l6-4a1 1 0 000-1.664l-6-4A1 1 0 0010 6v2.798L4.555 5.168z" })),
                 "Skip Break & Return to Plan"
+            );
+
+            const goHomeButton = isLongBreak && React.createElement('button', {
+                onClick: handleGoHomeFromBreak,
+                className: "mt-2 text-sm text-cyan-400 hover:text-cyan-300 transition-colors duration-300 flex items-center justify-center gap-2"
+            },
+                React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", className: "h-4 w-4", viewBox: "0 0 20 20", fill: "currentColor" }, React.createElement('path', { d: "M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" })),
+                "Go Home & View Code"
             );
 
             return React.createElement('div', { className: "w-full max-w-2xl flex flex-col items-center gap-6" },
@@ -869,7 +929,10 @@ const App = () => {
                     React.createElement('div', { className: "flex-1 min-w-[320px]" }, codeUploader)
                 ),
                 nextGoal?.goal && React.createElement('div', { className: "glass-panel p-4 rounded-2xl shadow-2xl text-center" }, React.createElement('h3', { className: "text-md font-semibold text-slate-300 mb-1" }, "Up Next: ", React.createElement('span', { className: "font-bold text-white" }, nextGoal.subject))),
-                skipBreakButton
+                React.createElement('div', { className: 'flex flex-col items-center' },
+                    skipBreakButton,
+                    goHomeButton
+                )
             );
         }
 
@@ -894,6 +957,29 @@ const App = () => {
         )
     )
   );
+  
+  const unlockedCodeModal = showUnlockedCodeModal && completedSecretCodeImage && React.createElement('div', {
+        className: "fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in p-4",
+        onClick: () => setShowUnlockedCodeModal(false)
+    },
+    React.createElement('div', { className: "relative", onClick: e => e.stopPropagation() },
+        React.createElement('p', { className: "text-white text-center mb-2 font-semibold" }, "Your Unlocked Code"),
+        React.createElement('img', {
+            src: completedSecretCodeImage,
+            alt: "Unlocked secret code",
+            className: "rounded-lg max-h-[80vh] max-w-[90vw] object-contain"
+        }),
+        React.createElement('button', {
+                onClick: () => setShowUnlockedCodeModal(false),
+                className: "absolute -top-3 -right-3 bg-slate-800 text-white rounded-full p-1.5 leading-none hover:bg-slate-700 transition-colors",
+                'aria-label': "Close image view"
+            },
+            React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", className: "h-6 w-6", fill: "none", viewBox: "0 0 24 24", stroke: "currentColor", strokeWidth: "2" },
+                React.createElement('path', { strokeLinecap: "round", strokeLinejoin: "round", d: "M6 18L18 6M6 6l12 12" })
+            )
+        )
+    )
+  );
 
   return React.createElement(
     'div', { className: "min-h-screen flex flex-col items-center justify-center p-4" },
@@ -902,13 +988,14 @@ const App = () => {
         error && !isApiKeyValid && React.createElement('div', null),
         error && isApiKeyValid && React.createElement(Alert, { message: error, type: "error" }),
         infoMessage && React.createElement(Alert, { message: infoMessage, type: "info" }),
-        editingModal,
         appState === AppState.GOAL_SET && verificationFeedback ? React.createElement('div', { className: "w-full max-w-lg mb-4 flex justify-center" },
             React.createElement(VerificationResult, { isSuccess: false, secretCodeImage: null, feedback: verificationFeedback, onRetry: handleRetry, onReset: () => resetToStart(false), chatMessages: chatMessages, onSendChatMessage: handleSendChatMessage, isChatLoading: isChatLoading })
         ) : (
           renderContent()
         )
-    )
+    ),
+    editingModal,
+    unlockedCodeModal
   );
 };
 

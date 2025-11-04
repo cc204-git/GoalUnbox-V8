@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import Spinner from './Spinner.js';
 import CameraCapture from './CameraCapture.js';
@@ -10,7 +11,7 @@ const PDFIcon = () => React.createElement(
     React.createElement('path', { fillRule: 'evenodd', d: 'M4 2a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V8.414a1 1 0 00-.293-.707l-4.414-4.414A1 1 0 0011.586 2H4zm6 6a1 1 0 100-2 1 1 0 000 2zM8 12a1 1 0 100-2 1 1 0 000 2zm2 1a1 1 0 011-1h.01a1 1 0 110 2H11a1 1 0 01-1-1z', clipRule: 'evenodd' })
 );
 
-const ProofUploader = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeLimitInMs, onSkipGoal, skipsLeftThisWeek, lastCompletedCodeImage, pdfAttachment }) => {
+const ProofUploader = ({ goal, subject, onProofImageSubmit, isLoading, goalSetTime, timeLimitInMs, onSkipGoal, skipsLeftThisWeek, lastCompletedCodeImage, pdfAttachment, apiKey }) => {
   const [proofFiles, setProofFiles] = useState([]);
   const [showCamera, setShowCamera] = useState(false);
   const fileInputRef = useRef(null);
@@ -21,6 +22,8 @@ const ProofUploader = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeL
   const [showPreviousCodeModal, setShowPreviousCodeModal] = useState(false);
   const [showGatekeeper, setShowGatekeeper] = useState(false);
   const [showPrayerModal, setShowPrayerModal] = useState(true);
+
+  const isReflectionGoal = subject === "Accountability Reflection";
 
   useEffect(() => {
     if (!goalSetTime || isLoading) return;
@@ -167,6 +170,12 @@ const ProofUploader = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeL
       )
     );
   }
+  
+    const skipTitle = isReflectionGoal
+        ? "Accountability reflections cannot be skipped."
+        : skipsLeftThisWeek > 0
+            ? `Skip this goal. You have ${skipsLeftThisWeek} skips left this week.`
+            : 'You have no skips left for this week.';
 
     const actionButtons = React.createElement('div', { className: 'mt-8 text-center flex items-center justify-center gap-6' },
         React.createElement('div', { className: 'flex flex-col items-center' },
@@ -174,9 +183,9 @@ const ProofUploader = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeL
                 'button',
                 {
                     onClick: () => setShowGatekeeper(true),
-                    disabled: isLoading || skipsLeftThisWeek <= 0,
+                    disabled: isLoading || skipsLeftThisWeek <= 0 || isReflectionGoal,
                     className: 'text-sm text-slate-500 hover:text-amber-400 transition-colors duration-300 flex items-center justify-center gap-2 disabled:text-slate-600 disabled:hover:text-slate-600 disabled:cursor-not-allowed',
-                    title: skipsLeftThisWeek > 0 ? `Skip this goal. You have ${skipsLeftThisWeek} skips left this week.` : 'You have no skips left for this week.'
+                    title: skipTitle,
                 },
                 React.createElement(
                     'svg',
@@ -273,7 +282,8 @@ const ProofUploader = ({ goal, onProofImageSubmit, isLoading, goalSetTime, timeL
             setShowGatekeeper(false);
             onSkipGoal();
         },
-        onCancel: () => setShowGatekeeper(false)
+        onCancel: () => setShowGatekeeper(false),
+        apiKey: apiKey,
     }),
     React.createElement(
       'div',
