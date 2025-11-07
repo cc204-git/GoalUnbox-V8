@@ -49,9 +49,7 @@ export interface PlannedGoal {
   id: string;
   goal: string;
   subject: string;
-  timeLimitInMs: number | null;
-  startTime: string; // "HH:mm"
-  endTime: string; // "HH:mm"
+  deadline: number | null; // Unix timestamp in ms
   status: 'pending' | 'completed' | 'skipped';
   pdfAttachment?: { name: string; data: string; };
 }

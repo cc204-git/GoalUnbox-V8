@@ -1,19 +1,12 @@
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import Spinner from './Spinner';
-import Alert from './Alert';
 import { PlannedGoal } from '../types';
 import { fileToBase64 } from '../utils/fileUtils';
 
-interface TimeLimit {
-    hours: number;
-    minutes: number;
-}
 export interface GoalPayload {
     goal: string;
     subject: string;
-    timeLimit: TimeLimit;
-    startTime: string;
-    endTime: string;
+    deadline: number;
     pdfAttachment?: { name: string; data: string; } | null;
 }
 
@@ -29,37 +22,18 @@ interface GoalSetterProps {
 const GoalSetter: React.FC<GoalSetterProps> = ({ onGoalSubmit, isLoading, submitButtonText = 'Set My Goal', onCancel, initialData, planDate }) => {
   const [goal, setGoal] = useState(initialData?.goal || '');
   const [subject, setSubject] = useState(initialData?.subject || '');
-  
-  const initialTimeLimit = useMemo(() => {
-    if (initialData?.timeLimitInMs) {
-        const totalMinutes = Math.floor(initialData.timeLimitInMs / 60000);
-        const h = Math.floor(totalMinutes / 60);
-        const m = totalMinutes % 60;
-        return { hours: h > 0 ? h.toString() : '', minutes: m > 0 ? m.toString() : '' };
-    }
-    return { hours: '', minutes: '' };
-  }, [initialData]);
-
-  const [hours, setHours] = useState(initialTimeLimit.hours);
-  const [minutes, setMinutes] = useState(initialTimeLimit.minutes);
-  const [subQuestions, setSubQuestions] = useState('');
-  const [startTime, setStartTime] = useState(initialData?.startTime || '');
-  const [endTime, setEndTime] = useState(initialData?.endTime || '');
-  const [timeError, setTimeError] = useState<string | null>(null);
+  const [deadline, setDeadline] = useState('');
 
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [existingPdfName, setExistingPdfName] = useState(initialData?.pdfAttachment?.name || '');
   const [pdfRemoved, setPdfRemoved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const resetForm = useCallback(() => {
     setGoal('');
     setSubject('');
-    setHours('');
-    setMinutes('');
-    setSubQuestions('');
-    setStartTime('');
-    setEndTime('');
-    setTimeError(null);
+    setDeadline('');
+    setError(null);
     setPdfFile(null);
     setExistingPdfName('');
     setPdfRemoved(false);
@@ -69,108 +43,23 @@ const GoalSetter: React.FC<GoalSetterProps> = ({ onGoalSubmit, isLoading, submit
     if (initialData) {
         setGoal(initialData.goal || '');
         setSubject(initialData.subject || '');
-        setStartTime(initialData.startTime || '');
-        setEndTime(initialData.endTime || '');
-
-        if (initialData.timeLimitInMs) {
-            const totalMinutes = Math.floor(initialData.timeLimitInMs / 60000);
-            const h = Math.floor(totalMinutes / 60);
-            const m = totalMinutes % 60;
-            setHours(h > 0 ? h.toString() : '');
-            setMinutes(m > 0 ? m.toString() : '');
+        if (initialData.deadline) {
+            const d = new Date(initialData.deadline);
+            // Format to YYYY-MM-DDTHH:mm which is required by datetime-local input
+            const year = d.getFullYear();
+            const month = (d.getMonth() + 1).toString().padStart(2, '0');
+            const day = d.getDate().toString().padStart(2, '0');
+            const hours = d.getHours().toString().padStart(2, '0');
+            const minutes = d.getMinutes().toString().padStart(2, '0');
+            setDeadline(`${year}-${month}-${day}T${hours}:${minutes}`);
         } else {
-            setHours('');
-            setMinutes('');
+            setDeadline('');
         }
         setExistingPdfName(initialData?.pdfAttachment?.name || '');
         setPdfFile(null);
         setPdfRemoved(false);
     }
   }, [initialData]);
-
-  useEffect(() => {
-    const formatMinutesToHM = (mins: number) => {
-        if (mins < 1) return "less than a minute";
-        const h = Math.floor(mins / 60);
-        const m = Math.round(mins % 60);
-        const hStr = h > 0 ? `${h}h` : '';
-        const mStr = m > 0 ? `${m}m` : '';
-        return [hStr, mStr].filter(Boolean).join(' ');
-    };
-
-    const userMinutes = (Number(hours) || 0) * 60 + (Number(minutes) || 0);
-
-    const lowerCaseGoal = goal.toLowerCase();
-    const hasExemptionKeyword = lowerCaseGoal.includes('devoir') || lowerCaseGoal.includes('probleme') || lowerCaseGoal.includes('serie');
-
-    const lowerCaseSubject = subject.toLowerCase();
-    if (hasExemptionKeyword || lowerCaseSubject.includes('crm')) {
-        setTimeError(null);
-        return;
-    }
-
-    const questionRegex = /(\d+)\s+questions?/gi;
-    const matches = [...goal.matchAll(questionRegex)];
-    let totalQuestions = 0;
-    if (matches.length > 0) {
-        totalQuestions = matches.reduce((sum, match) => sum + parseInt(match[1], 10), 0);
-    }
-    
-    if (totalQuestions === 0) {
-        setTimeError(null);
-        return;
-    }
-
-    let timePerQuestion;
-    if (lowerCaseSubject.includes('analyse') || lowerCaseSubject.includes('algebre')) {
-        timePerQuestion = 18.0;
-    } else if (lowerCaseSubject.includes('chimie')) {
-        timePerQuestion = 8.0;
-    } else {
-        timePerQuestion = 12.0;
-    }
-    const estimatedMinutes = totalQuestions * timePerQuestion;
-    const numSubQuestions = Number(subQuestions) || 0;
-    const subQuestionBonusMinutes = numSubQuestions * 4;
-    
-    const tolerance = 1.15;
-    const upperBoundMinutes = (estimatedMinutes * tolerance) + subQuestionBonusMinutes;
-
-    if (userMinutes > 0 && userMinutes > upperBoundMinutes) {
-        setTimeError(`Time limit is too high. For ${totalQuestions} question(s) in "${subject}", the maximum allowed time is ${formatMinutesToHM(upperBoundMinutes)}. (Estimated time: ~${formatMinutesToHM(estimatedMinutes)})`);
-        return;
-    }
-
-    let goalLengthMinutes = 0;
-    if (startTime && endTime) {
-        try {
-            const [startH, startM] = startTime.split(':').map(Number);
-            const [endH, endM] = endTime.split(':').map(Number);
-            
-            const startDate = new Date();
-            startDate.setHours(startH, startM, 0, 0);
-            const endDate = new Date();
-            endDate.setHours(endH, endM, 0, 0);
-
-            if (endDate < startDate) {
-                endDate.setDate(endDate.getDate() + 1);
-            }
-            goalLengthMinutes = (endDate.getTime() - startDate.getTime()) / 60000;
-        } catch (e) { /* Invalid time format, ignore */ }
-    }
-
-    if (goalLengthMinutes > 0) {
-        const timeDiffTolerance = goalLengthMinutes >= 120 ? 30 : 15;
-        const lowerBoundMinutes = goalLengthMinutes - timeDiffTolerance;
-
-        if (estimatedMinutes < lowerBoundMinutes) {
-            setTimeError(`The scheduled duration (${formatMinutesToHM(goalLengthMinutes)}) seems too long for the estimated work (~${formatMinutesToHM(estimatedMinutes)}). The schedule cannot exceed the estimate by more than ${timeDiffTolerance} minutes.`);
-            return;
-        }
-    }
-
-    setTimeError(null);
-  }, [goal, subject, hours, minutes, subQuestions, startTime, endTime]);
 
   const handleUseTemplate = () => {
     let goalDate;
@@ -223,14 +112,13 @@ I will make sure that all exercises and questions are clearly highlighted on eac
   };
 
   const handleSubmit = useCallback(async () => {
-    const totalMinutes = (Number(hours) || 0) * 60 + (Number(minutes) || 0);
-    if (goal.trim() && subject.trim() && totalMinutes > 0 && startTime && endTime) {
-      let finalGoal = goal.trim();
-      const numSubQuestions = Number(subQuestions) || 0;
-
-      if (numSubQuestions > 0) {
-          finalGoal += `\n\n(Note for verifier: This assignment includes ${numSubQuestions} sub-questions in total that need to be completed.)`;
+    if (goal.trim() && subject.trim() && deadline) {
+      const deadlineTimestamp = new Date(deadline).getTime();
+      if (deadlineTimestamp <= Date.now()) {
+          setError("Deadline must be in the future.");
+          return;
       }
+      setError(null);
 
       let pdfPayload: { name: string; data: string; } | null | undefined = undefined;
         if (pdfFile) {
@@ -239,7 +127,7 @@ I will make sure that all exercises and questions are clearly highlighted on eac
                 pdfPayload = { name: pdfFile.name, data: base64Data };
             } catch (error) {
                 console.error("Error converting PDF to base64", error);
-                setTimeError("Could not process the PDF file. Please try re-selecting it.");
+                setError("Could not process the PDF file. Please try re-selecting it.");
                 return;
             }
         } else if (pdfRemoved) {
@@ -247,11 +135,9 @@ I will make sure that all exercises and questions are clearly highlighted on eac
         }
 
       const payload: GoalPayload = {
-            goal: finalGoal,
+            goal: goal.trim(),
             subject: subject.trim(),
-            timeLimit: { hours: Number(hours) || 0, minutes: Number(minutes) || 0 },
-            startTime,
-            endTime,
+            deadline: deadlineTimestamp,
             pdfAttachment: pdfPayload
         };
       onGoalSubmit(payload);
@@ -259,9 +145,9 @@ I will make sure that all exercises and questions are clearly highlighted on eac
         resetForm();
       }
     }
-  }, [goal, subject, onGoalSubmit, hours, minutes, subQuestions, startTime, endTime, pdfFile, pdfRemoved, initialData, resetForm]);
+  }, [goal, subject, onGoalSubmit, deadline, pdfFile, pdfRemoved, initialData, resetForm]);
 
-  const canSubmit = !goal.trim() || !subject.trim() || !(Number(hours) > 0 || Number(minutes) > 0) || !!timeError || isLoading || !startTime || !endTime;
+  const canSubmit = !goal.trim() || !subject.trim() || !deadline || !!error || isLoading;
   const isCrmGoal = subject.toLowerCase().includes('crm');
 
   return (
@@ -322,62 +208,21 @@ I will make sure that all exercises and questions are clearly highlighted on eac
       )}
 
       <div className="border-t border-slate-700 pt-6 mb-6 text-left space-y-4">
-        <h3 className="text-slate-300 font-semibold text-lg">Set Time Range</h3>
+        <h3 className="text-slate-300 font-semibold text-lg">Set Deadline</h3>
         <div>
-          <label className="block text-sm font-medium text-slate-400 mb-1">Time Range</label>
-          <div className="flex items-center gap-2">
-            <input
-              type="time"
-              value={startTime}
-              onChange={(e) => setStartTime(e.target.value)}
-              className="form-input w-full rounded-lg p-2 text-slate-200 placeholder-slate-500 transition"
-            />
-            <span className="text-slate-400">to</span>
-            <input
-              type="time"
-              value={endTime}
-              onChange={(e) => setEndTime(e.target.value)}
-              className="form-input w-full rounded-lg p-2 text-slate-200 placeholder-slate-500 transition"
-            />
-          </div>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-slate-400 mb-1">Estimated Time to Complete</label>
-          <div className="flex items-center gap-2">
-            <input
-              type="number"
-              value={hours}
-              onChange={(e) => setHours(e.target.value)}
-              placeholder="Hours"
-              min="0"
-              className="form-input w-full rounded-lg p-2 text-slate-200 placeholder-slate-500 transition"
-            />
-            <input
-              type="number"
-              value={minutes}
-              onChange={(e) => setMinutes(e.target.value)}
-              placeholder="Minutes"
-              min="0"
-              max="59"
-              className="form-input w-full rounded-lg p-2 text-slate-200 placeholder-slate-500 transition"
-            />
-          </div>
-        </div>
-        <div>
-          <label htmlFor="sub-questions" className="block text-sm font-medium text-slate-400 mb-1">Number of Sub-questions (optional)</label>
-          <p className="text-xs text-slate-500 mb-2">For questions like 3a, 3b, etc. Each adds 4 mins to the time margin.</p>
+          <label htmlFor="deadline-input" className="block text-sm font-medium text-slate-400 mb-1">Deadline</label>
           <input
-            id="sub-questions"
-            type="number"
-            value={subQuestions}
-            onChange={(e) => setSubQuestions(e.target.value)}
-            placeholder="e.g., 2"
-            min="0"
+            id="deadline-input"
+            type="datetime-local"
+            value={deadline}
+            onChange={(e) => {
+                setDeadline(e.target.value);
+                setError(null);
+            }}
             className="form-input w-full rounded-lg p-2 text-slate-200 placeholder-slate-500 transition"
-            disabled={isLoading}
           />
         </div>
-        {timeError && <div className="mt-2"><Alert message={timeError} type="error" /></div>}
+        {error && <p className="text-red-400 text-sm mt-2">{error}</p>}
       </div>
 
       <div className="flex gap-4">

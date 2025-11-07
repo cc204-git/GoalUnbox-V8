@@ -1,7 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { PlannedGoal, TodaysPlan as TodaysPlanType, TodoItem } from '../types';
 import GoalSetter, { GoalPayload } from './GoalSetter';
-import { formatDuration } from '../utils/timeUtils';
 import TodoList from './TodoList';
 
 interface TodaysPlanProps {
@@ -40,14 +39,11 @@ const TodaysPlan: React.FC<TodaysPlanProps> = ({
     };
 
     const handleAddGoal = (payload: GoalPayload) => {
-        const totalMs = (payload.timeLimit.hours * 3600 + payload.timeLimit.minutes * 60) * 1000;
         const newGoal: PlannedGoal = {
             id: Date.now().toString(),
             goal: payload.goal,
             subject: payload.subject,
-            timeLimitInMs: totalMs > 0 ? totalMs : null,
-            startTime: payload.startTime,
-            endTime: payload.endTime,
+            deadline: payload.deadline,
             status: 'pending',
         };
         
@@ -63,12 +59,11 @@ const TodaysPlan: React.FC<TodaysPlanProps> = ({
     
     const sortGoals = (goals: PlannedGoal[]) => {
         return [...goals].sort((a, b) => {
-            const aHasTime = a.startTime && a.endTime;
-            const bHasTime = b.startTime && b.endTime;
-            if (aHasTime && !bHasTime) return -1;
-            if (!aHasTime && bHasTime) return 1;
-            if (aHasTime && bHasTime) return a.startTime.localeCompare(b.startTime);
-            return a.id.localeCompare(b.id);
+            if (a.status !== 'pending') return 1;
+            if (b.status !== 'pending') return -1;
+            if (!a.deadline) return 1;
+            if (!b.deadline) return -1;
+            return a.deadline - b.deadline;
         });
     };
     
@@ -130,12 +125,18 @@ const TodaysPlan: React.FC<TodaysPlanProps> = ({
             <div key={goal.id} className={`bg-slate-900/50 border border-slate-700 rounded-xl p-4 transition-all duration-300 ${isDone ? 'opacity-60' : 'hover:border-cyan-500/50 hover:bg-slate-800/50'}`}>
                 <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
                     <div className="flex-shrink-0 text-center sm:text-left w-full sm:w-32">
-                        {goal.startTime && goal.endTime ? (
-                            <p className={`font-mono text-lg ${isDone ? 'text-slate-500' : 'text-cyan-300'} ${isSkipped ? 'line-through' : ''}`}>{goal.startTime} - {goal.endTime}</p>
+                        {goal.deadline ? (
+                            <>
+                                <p className={`font-mono text-lg ${isDone ? 'text-slate-500' : 'text-cyan-300'} ${isSkipped ? 'line-through' : ''}`}>
+                                    {new Date(goal.deadline).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </p>
+                                <p className={`text-xs ${isDone ? 'text-slate-600' : 'text-slate-400'} ${isSkipped ? 'line-through' : ''}`}>
+                                    {new Date(goal.deadline).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}
+                                </p>
+                            </>
                         ) : (
-                            <p className={`font-mono text-lg ${isDone ? 'text-slate-500' : 'text-slate-400'} ${isSkipped ? 'line-through' : ''}`}>Unscheduled</p>
+                            <p className={`font-mono text-lg ${isDone ? 'text-slate-500' : 'text-slate-400'} ${isSkipped ? 'line-through' : ''}`}>No Deadline</p>
                         )}
-                        {goal.timeLimitInMs && <p className={`text-xs ${isDone ? 'text-slate-600' : 'text-slate-400'} ${isSkipped ? 'line-through' : ''}`}>({formatDuration(goal.timeLimitInMs)})</p>}
                     </div>
                     <div className="flex-1 text-left w-full cursor-pointer" onClick={() => handleToggleExpand(goal.id)}>
                         <p className={`font-bold text-lg ${isCompleted ? 'text-slate-500 line-through' : isSkipped ? 'text-red-400/90 line-through' : 'text-white'}`}>{goal.subject}</p>

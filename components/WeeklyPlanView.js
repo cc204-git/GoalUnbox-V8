@@ -37,14 +37,11 @@ const WeeklyPlanView = ({
     const handleAddGoal = (payload) => {
         if (!editingDate) return;
 
-        const totalMs = (payload.timeLimit.hours * 3600 + payload.timeLimit.minutes * 60) * 1000;
         const newGoal = {
             id: Date.now().toString(),
             goal: payload.goal,
             subject: payload.subject,
-            timeLimitInMs: totalMs > 0 ? totalMs : null,
-            startTime: payload.startTime,
-            endTime: payload.endTime,
+            deadline: payload.deadline,
             status: 'pending',
         };
 
@@ -87,7 +84,7 @@ const WeeklyPlanView = ({
     : React.createElement('div', { className: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-4" },
         ...weekDays.map(day => {
             const dayPlan = plans.find(p => p.date === day.toISOString().split('T')[0]) || { date: day.toISOString().split('T')[0], goals: [] };
-            const sortedGoals = [...dayPlan.goals].sort((a,b) => a.startTime.localeCompare(b.startTime));
+            const sortedGoals = [...dayPlan.goals].sort((a,b) => (a.deadline || 0) - (b.deadline || 0));
             const isToday = day.toDateString() === new Date().toDateString();
 
             return React.createElement('div', { key: day.toISOString(), className: `glass-panel rounded-lg flex flex-col ${isToday ? 'border-cyan-500/50' : 'border-slate-700'}` },
@@ -108,7 +105,7 @@ const WeeklyPlanView = ({
 
                         return React.createElement('div', { key: goal.id, className: "p-2 bg-slate-900/60 rounded-md border border-slate-700 cursor-pointer", onClick: handleGoalClick },
                             React.createElement('p', { className: "font-bold text-sm text-slate-200 truncate" }, goal.subject),
-                            React.createElement('p', { className: "text-xs text-slate-400" }, `${goal.startTime} - ${goal.endTime}`),
+                            React.createElement('p', { className: "text-xs text-slate-400" }, goal.deadline ? `Due: ${new Date(goal.deadline).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'No deadline'),
                             isExpanded && React.createElement('div', { className: "mt-2 pt-2 border-t border-slate-600" },
                                 React.createElement('p', { className: "text-xs text-slate-300 whitespace-pre-wrap" }, goal.goal || "No description."),
                                 goal.status === 'pending' && React.createElement('div', { className: "flex gap-4 mt-2" },

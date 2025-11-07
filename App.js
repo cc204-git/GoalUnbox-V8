@@ -13,7 +13,7 @@ import { auth } from './services/firebaseService.js';
 import * as authService from './services/authService.js';
 import * as dataService from './services/dataService.js';
 import { fileToBase64 } from './utils/fileUtils.js';
-import { formatDuration, getISODateString, formatCountdown, getStartOfWeekISOString } from './utils/timeUtils.js';
+import { formatDuration, getISODateString, getStartOfWeekISOString } from './utils/timeUtils.js';
 import { defaultWeeklyPlan } from './utils/defaultSchedule.js';
 
 import Header from './components/Header.js';
@@ -28,34 +28,6 @@ import GoalHistory from './components/GoalHistory.js';
 import Auth from './components/Auth.js';
 import Spinner from './components/Spinner.js';
 import ApiKeyPrompt from './components/ApiKeyPrompt.js';
-
-const calculateBreakFromSchedule = (completedGoal, allGoalsInPlan) => {
-    if (!completedGoal || !allGoalsInPlan) return 0;
-
-    const sortedPendingGoals = allGoalsInPlan
-        .filter(g => g.status === 'pending' && g.startTime)
-        .sort((a, b) => a.startTime.localeCompare(b.startTime));
-
-    const nextPlannedGoal = sortedPendingGoals[0];
-
-    if (nextPlannedGoal && completedGoal.endTime) {
-        try {
-            const [endH, endM] = completedGoal.endTime.split(':').map(Number);
-            const [startH, startM] = nextPlannedGoal.startTime.split(':').map(Number);
-            
-            const now = new Date();
-            const endTimeToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), endH, endM);
-            const startTimeToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), startH, startM);
-
-            if (startTimeToday > endTimeToday) {
-                return startTimeToday.getTime() - endTimeToday.getTime();
-            }
-        } catch (e) {
-            console.error("Error calculating break time from schedule:", e);
-        }
-    }
-    return 0;
-};
 
 const App = () => {
   const [appState, setAppState] = useState(AppState.TODAYS_PLAN);
@@ -81,12 +53,7 @@ const App = () => {
   const [activePlannedGoal, setActivePlannedGoal] = useState(null);
   const [skippedGoalForReflection, setSkippedGoalForReflection] = useState(null);
 
-  const [availableBreakTime, setAvailableBreakTime] = useState(null);
-  const [appliedBreakTax, setAppliedBreakTax] = useState(0);
-  const [breakEndTime, setBreakEndTime] = useState(null);
-  const [completedSecretCode, setCompletedSecretCode] = useState(null);
   const [completedSecretCodeImage, setCompletedSecretCodeImage] = useState(null);
-  const [nextGoal, setNextGoal] = useState(null);
   const [currentTime, setCurrentTime] = useState(Date.now());
 
   const [chat, setChat] = useState(null);
@@ -155,20 +122,8 @@ const App = () => {
             setGoalSetTime(goalState.goalSetTime);
             setTimeLimitInMs(goalState.timeLimitInMs);
             setAppState(AppState.GOAL_SET);
-        } else {
-            setAppState(currentState => {
-                 if (
-                    currentState !== AppState.GOAL_COMPLETED &&
-                    currentState !== AppState.AWAITING_BREAK &&
-                    currentState !== AppState.AWAITING_CODE &&
-                    currentState !== AppState.BREAK_ACTIVE &&
-                    currentState !== AppState.HISTORY_VIEW &&
-                    currentState !== AppState.WEEKLY_PLAN_VIEW
-                ) {
-                    return AppState.TODAYS_PLAN;
-                }
-                return currentState;
-            });
+        } else if (appState !== AppState.GOAL_COMPLETED) { // Prevent reverting to plan after completion
+             setAppState(AppState.TODAYS_PLAN);
         }
     }));
     
@@ -230,8 +185,9 @@ const App = () => {
                 date: getISODateString(today),
                 goals: defaultDayPlanData.goals.map(goal => ({
                     ...goal,
-                    id: `${getISODateString(today)}-${goal.startTime}-${Math.random()}`,
+                    id: `${getISODateString(today)}-${Math.random()}`,
                     status: 'pending',
+                    deadline: null,
                 })),
                 todos: [],
             };
@@ -272,7 +228,6 @@ const App = () => {
             setActivePlannedGoal(foundGoal);
         } else {
             console.warn("Active goal's planned counterpart not found in today's plan.");
-            // Potentially reset or handle this state mismatch, but for now, we'll just log it.
         }
     }
   }, [activeGoal, todaysPlan]);
@@ -323,8 +278,8 @@ const App = () => {
     setChat(null); setChatMessages([]); setIsChatLoading(false);
     setGoalSetTime(null); setCompletionDuration(null); setTimeLimitInMs(null);
     setCompletionReason(null); setActivePlannedGoal(null);
-    setAvailableBreakTime(null); setBreakEndTime(null); setCompletedSecretCode(null); setCompletedSecretCodeImage(null);
-    setNextGoal(null); setSkippedGoalForReflection(null);
+    setSkippedGoalForReflection(null);
+    // completedSecretCodeImage is preserved to show the last unlocked code
   }, [currentUser]);
 
   const handleLogout = () => {
@@ -387,57 +342,6 @@ const App = () => {
  const handleGoalSuccess = useCallback(async (feedback, reason) => {
     if (!currentUser || !apiKey) return;
 
-    if (subject === "Accountability Reflection") {
-        setIsLoading(true);
-        const reflectionEndTime = Date.now();
-        const reflectionDuration = goalSetTime ? reflectionEndTime - goalSetTime : 0;
-        try {
-            const goalSummary = "Completed accountability reflection";
-            const reflectionEntry = { id: reflectionEndTime, goalSummary, fullGoal: goal, subject, startTime: goalSetTime, endTime: reflectionEndTime, duration: reflectionDuration, completionReason: 'verified' };
-            await dataService.addHistoryItem(currentUser.uid, reflectionEntry);
-            await dataService.clearActiveGoal(currentUser.uid);
-
-            let breakDurationMs = 0;
-            if (skippedGoalForReflection && todaysPlan) {
-                breakDurationMs = calculateBreakFromSchedule(skippedGoalForReflection, todaysPlan.goals);
-            }
-            setSkippedGoalForReflection(null);
-
-            setCompletedSecretCode(secretCode);
-            setCompletedSecretCodeImage(secretCodeImage);
-
-            if (breakDurationMs > 0) {
-                 const nextPendingGoal = todaysPlan?.goals.filter(g => g.status === 'pending').sort((a, b) => a.startTime.localeCompare(b.startTime))[0];
-                if (nextPendingGoal) {
-                    setNextGoal({
-                        goal: nextPendingGoal.goal,
-                        subject: nextPendingGoal.subject,
-                        timeLimitInMs: nextPendingGoal.timeLimitInMs,
-                        plannedGoalId: nextPendingGoal.id,
-                    });
-                    setAvailableBreakTime(breakDurationMs);
-                    setBreakEndTime(Date.now() + breakDurationMs);
-                    setAppState(AppState.BREAK_ACTIVE);
-                } else {
-                    setCompletionDuration(null);
-                    setCompletionReason('skipped');
-                    setVerificationFeedback(null);
-                    setAppState(AppState.GOAL_COMPLETED);
-                }
-            } else {
-                setCompletionDuration(null);
-                setCompletionReason('skipped');
-                setVerificationFeedback(null);
-                setAppState(AppState.GOAL_COMPLETED);
-            }
-        } catch (err) {
-            handleApiError(err);
-        } finally {
-            setIsLoading(false);
-        }
-        return;
-    }
-
     setIsLoading(true);
     const endTime = Date.now();
     const duration = goalSetTime ? endTime - goalSetTime : 0;
@@ -450,7 +354,6 @@ const App = () => {
     } catch (e) { console.error("Failed to save goal:", e); }
 
     if (reason === 'verified' && secretCodeImage && streakData) {
-        setCompletedSecretCode(secretCode);
         setCompletedSecretCodeImage(secretCodeImage);
         const newData = { ...streakData, lastCompletedCodeImage: secretCodeImage };
         setStreakData(newData); 
@@ -458,61 +361,19 @@ const App = () => {
 
     await dataService.clearActiveGoal(currentUser.uid);
 
-    let breakDurationMs = 0;
     if (activePlannedGoal && todaysPlan) {
         const updatedGoals = todaysPlan.goals.map(g => g.id === activePlannedGoal.id ? { ...g, status: 'completed' } : g);
         const updatedPlan = { ...todaysPlan, goals: updatedGoals };
         await dataService.savePlan(currentUser.uid, updatedPlan);
-        
-        if (reason === 'verified') {
-            breakDurationMs = calculateBreakFromSchedule(activePlannedGoal, updatedPlan.goals);
-        }
         setActivePlannedGoal(null);
     }
-
-    if (reason === 'verified' && streakData) {
-        const tax = streakData.breakTimeTax || 0;
-        if (tax > 0) {
-            const finalBreakDuration = breakDurationMs - tax;
-            setAppliedBreakTax(tax);
-            breakDurationMs = finalBreakDuration > 0 ? finalBreakDuration : 0;
-            setInfoMessage(`A focus tax of ${formatDuration(tax)} was deducted from your break.`);
-        }
-        const updatedStreakData = { ...streakData, breakTimeTax: 0, lastCompletedCodeImage: secretCodeImage || streakData.lastCompletedCodeImage };
-        await dataService.saveStreakData(currentUser.uid, updatedStreakData);
-        setStreakData(updatedStreakData);
-    }
-
-    if (reason === 'verified' && breakDurationMs > 0) {
-        setCompletionDuration(formatDuration(duration));
-        setVerificationFeedback(feedback);
-        setCompletionReason('verified');
-
-        const nextPendingGoal = todaysPlan?.goals.filter(g => g.status === 'pending').sort((a, b) => a.startTime.localeCompare(b.startTime))[0];
-
-        if (nextPendingGoal) {
-            setNextGoal({
-                goal: nextPendingGoal.goal,
-                subject: nextPendingGoal.subject,
-                timeLimitInMs: nextPendingGoal.timeLimitInMs,
-                plannedGoalId: nextPendingGoal.id,
-            });
-            setAvailableBreakTime(breakDurationMs);
-            setBreakEndTime(Date.now() + breakDurationMs);
-            setAppState(AppState.BREAK_ACTIVE);
-        } else {
-            setAppState(AppState.GOAL_COMPLETED);
-        }
-        setIsLoading(false);
-        return;
-    }
-
+    
     setCompletionDuration(formatDuration(duration));
     setCompletionReason(reason);
     setVerificationFeedback(feedback);
     setAppState(AppState.GOAL_COMPLETED);
     setIsLoading(false);
-}, [currentUser, goal, goalSetTime, getEffectiveGoal, secretCode, secretCodeImage, subject, activePlannedGoal, todaysPlan, streakData, skippedGoalForReflection, handleApiError, apiKey]);
+}, [currentUser, goal, goalSetTime, getEffectiveGoal, secretCode, secretCodeImage, subject, activePlannedGoal, todaysPlan, streakData, apiKey]);
 
   const handleProofImageSubmit = useCallback(async (files) => {
     if (!apiKey) return;
@@ -678,68 +539,18 @@ const handleAbandonGoal = useCallback(async () => {
         window.scrollTo(0, 0);
         return;
     }
+    if (!goalToStart.deadline) {
+        setError("Please edit the goal to add a deadline before starting.");
+        window.scrollTo(0, 0);
+        return;
+    }
     setError(null);
 
-    const parseTime = (timeStr) => {
-        const [h, m] = timeStr.split(':').map(Number);
-        const date = new Date();
-        date.setHours(h, m, 0, 0);
-        return date;
-    };
-
-    if (goalToStart.startTime && streakData && todaysPlan) {
-        const now = new Date();
-        const scheduledStartTime = parseTime(goalToStart.startTime);
-        const delay = now.getTime() - scheduledStartTime.getTime();
-
-        if (delay > 60000) {
-            const tax = Math.round(delay * 0.25);
-            const newTax = (streakData.breakTimeTax || 0) + tax;
-            
-            setInfoMessage(`You're starting ${formatDuration(delay)} late. A ${formatDuration(tax)} 'focus tax' will be deducted from your next break.`);
-            
-            const goalDuration = goalToStart.timeLimitInMs ?? (parseTime(goalToStart.endTime).getTime() - parseTime(goalToStart.startTime).getTime());
-            let lastEndTime = new Date(now.getTime() + goalDuration);
-            const updatedGoals = [...todaysPlan.goals];
-            let planWasUpdated = false;
-
-            const goalsAfterThis = updatedGoals
-                .filter(g => g.startTime > goalToStart.startTime && g.status === 'pending')
-                .sort((a, b) => a.startTime.localeCompare(b.startTime));
-
-            for (const nextGoal of goalsAfterThis) {
-                const nextScheduledStartTime = parseTime(nextGoal.startTime);
-                if (nextScheduledStartTime < lastEndTime) {
-                    const nextDuration = parseTime(nextGoal.endTime).getTime() - parseTime(nextGoal.startTime).getTime();
-                    const newStartTime = lastEndTime;
-                    const newEndTime = new Date(newStartTime.getTime() + nextDuration);
-                    const formatTime = (date) => `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
-                    
-                    const goalIndexInPlan = updatedGoals.findIndex(g => g.id === nextGoal.id);
-                    if (goalIndexInPlan !== -1) {
-                        updatedGoals[goalIndexInPlan] = { ...updatedGoals[goalIndexInPlan], startTime: formatTime(newStartTime), endTime: formatTime(newEndTime) };
-                        lastEndTime = newEndTime;
-                        planWasUpdated = true;
-                    }
-                } else {
-                    break;
-                }
-            }
-            
-            if (planWasUpdated) {
-                const updatedPlan = { ...todaysPlan, goals: updatedGoals };
-                await dataService.savePlan(currentUser.uid, updatedPlan);
-                setInfoMessage(prev => `${prev ? prev + ' ' : ''}Subsequent goals have been shifted.`);
-            }
-            
-            const newStreakData = { ...streakData, breakTimeTax: newTax };
-            await dataService.saveStreakData(currentUser.uid, newStreakData);
-            setStreakData(newStreakData);
-        }
-    }
+    const timeLimit = goalToStart.deadline - Date.now();
+    
     setGoal(goalToStart.goal);
     setSubject(goalToStart.subject);
-    setTimeLimitInMs(goalToStart.timeLimitInMs);
+    setTimeLimitInMs(timeLimit > 0 ? timeLimit : 0);
     setActivePlannedGoal(goalToStart);
     setAppState(AppState.AWAITING_CODE);
 };
@@ -750,14 +561,11 @@ const handleAbandonGoal = useCallback(async () => {
   const handleSaveEditedGoal = (payload) => {
     if (!editingGoalInfo || !currentUser) return;
     const { plan, goal } = editingGoalInfo;
-    const totalMs = (payload.timeLimit.hours * 3600 + payload.timeLimit.minutes * 60) * 1000;
     const updatedGoal = {
         ...goal,
         goal: payload.goal,
         subject: payload.subject,
-        timeLimitInMs: totalMs > 0 ? totalMs : null,
-        startTime: payload.startTime,
-        endTime: payload.endTime,
+        deadline: payload.deadline,
     };
     
     if (payload.pdfAttachment === null) {
@@ -776,55 +584,6 @@ const handleAbandonGoal = useCallback(async () => {
     }
     setEditingGoalInfo(null);
   };
-  const handleNextCodeImageSubmit = async (file) => {
-        if (!apiKey) return;
-        setIsLoading(true); setError(null);
-        try {
-            const base64 = await fileToBase64(file);
-            const reader = new FileReader();
-            reader.readAsDataURL(file);
-            reader.onload = () => {
-                const dataUrl = reader.result;
-                extractCodeFromImage(base64, file.type, apiKey).then(code => {
-                    setNextGoal(prev => ({ ...prev, secretCode: code, secretCodeImage: dataUrl }));
-                    setIsLoading(false);
-                }).catch(err => { handleApiError(err); setIsLoading(false); });
-            };
-        } catch (err) { handleApiError(err); setIsLoading(false); }
-  };
-  const handleFinishBreakAndStartNextGoal = useCallback(async () => {
-        if (!currentUser || !nextGoal?.goal || !nextGoal?.subject || !nextGoal?.secretCode || !nextGoal.secretCodeImage) {
-            setError("Could not start next goal. Information was missing.");
-            resetToStart();
-            return;
-        }
-        const nextGoalTime = Date.now();
-        const activeState = {
-            secretCode: nextGoal.secretCode, secretCodeImage: nextGoal.secretCodeImage, 
-            goal: nextGoal.goal, subject: nextGoal.subject, goalSetTime: nextGoalTime, 
-            timeLimitInMs: nextGoal.timeLimitInMs || null,
-        };
-        await dataService.saveActiveGoal(currentUser.uid, activeState);
-        
-        if (nextGoal.plannedGoalId && todaysPlan) {
-            const plannedGoal = todaysPlan.goals.find(g => g.id === nextGoal.plannedGoalId);
-            setActivePlannedGoal(plannedGoal || null);
-        } else { setActivePlannedGoal(null); }
-        
-        setBreakEndTime(null); setAvailableBreakTime(null); setNextGoal(null);
-        setVerificationFeedback(null); setChat(null); setChatMessages([]);
-  }, [nextGoal, currentUser, todaysPlan, resetToStart]);
-
-  useEffect(() => {
-        if (appState === AppState.BREAK_ACTIVE && breakEndTime && breakEndTime - currentTime <= 0) {
-            if (nextGoal?.secretCode && nextGoal?.secretCodeImage) {
-                handleFinishBreakAndStartNextGoal();
-            } else {
-                setError("Break is over. A new lock code was not set in time. Please start your next goal from the plan.");
-                resetToStart();
-            }
-        }
-  }, [appState, breakEndTime, currentTime, handleFinishBreakAndStartNextGoal, nextGoal, resetToStart]);
 
     const handleShowWeeklyView = async () => {
         if (!currentUser) return;
@@ -854,16 +613,6 @@ const handleAbandonGoal = useCallback(async () => {
         } finally {
             setIsLoading(false);
         }
-    };
-    
-    const handleSkipBreak = () => {
-        setInfoMessage("Break skipped. You can start your next goal when you're ready.");
-        resetToStart();
-    };
-
-    const handleGoHomeFromBreak = () => {
-        setAppState(AppState.TODAYS_PLAN);
-        setInfoMessage("You can view your unlocked code using the button in the corner.");
     };
 
     const handleApiKeySubmit = (submittedKey) => {
@@ -921,45 +670,6 @@ const handleAbandonGoal = useCallback(async () => {
       case AppState.HISTORY_VIEW: return React.createElement(GoalHistory, { onBack: handleHistoryBack, history: history, onDeleteHistoryItem: handleDeleteHistoryItem, apiKey: apiKey });
       case AppState.GOAL_COMPLETED: return React.createElement(VerificationResult, { isSuccess: true, secretCodeImage: secretCodeImage || completedSecretCodeImage, feedback: verificationFeedback, onRetry: handleRetry, onReset: () => resetToStart(false), completionDuration: completionDuration, completionReason: completionReason });
       
-      case AppState.BREAK_ACTIVE: {
-            const timeLeft = breakEndTime ? breakEndTime - currentTime : 0;
-            const codeSubmitted = !!nextGoal?.secretCode;
-            const isLongBreak = availableBreakTime && availableBreakTime > 20 * 60 * 1000;
-
-            const codeUploader = codeSubmitted ? 
-                React.createElement('div', { className: "glass-panel p-8 rounded-2xl shadow-2xl w-full h-full flex flex-col justify-center items-center text-center" }, React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", className: "h-16 w-16 text-green-400", viewBox: "0 0 20 20", fill: "currentColor" }, React.createElement('path', { fillRule: "evenodd", d: "M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z", clipRule: "evenodd" })), React.createElement('h3', { className: "text-xl font-semibold text-green-400 mt-4" }, "Next Code Accepted!"), React.createElement('p', { className: "text-slate-300 mt-2" }, "Enjoy the rest of your break. The next goal will start automatically."), React.createElement('button', { onClick: handleFinishBreakAndStartNextGoal, className: "mt-6 w-full bg-cyan-500 text-slate-900 font-bold py-3 px-4 rounded-lg hover:bg-cyan-400 transition-all button-glow-cyan" }, "Start Next Goal Now"))
-                : React.createElement(CodeUploader, { onCodeImageSubmit: handleNextCodeImageSubmit, isLoading: isLoading, onShowHistory: () => {}, onLogout: () => {}, currentUser: null, streakData: null, onSetCommitment: () => {}, onCompleteCommitment: () => {} });
-
-            const skipBreakButton = React.createElement('button', {
-                onClick: handleSkipBreak,
-                className: "text-sm text-slate-500 hover:text-amber-400 transition-colors duration-300 flex items-center justify-center gap-2"
-            },
-                React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", className: "h-4 w-4", viewBox: "0 0 20 20", fill: "currentColor" }, React.createElement('path', { d: "M4.555 5.168A1 1 0 003 6v8a1 1 0 001.555.832L10 11.202V14a1 1 0 001.555.832l6-4a1 1 0 000-1.664l-6-4A1 1 0 0010 6v2.798L4.555 5.168z" })),
-                "Skip Break & Return to Plan"
-            );
-
-            const goHomeButton = isLongBreak && React.createElement('button', {
-                onClick: handleGoHomeFromBreak,
-                className: "mt-2 text-sm text-cyan-400 hover:text-cyan-300 transition-colors duration-300 flex items-center justify-center gap-2"
-            },
-                React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", className: "h-4 w-4", viewBox: "0 0 20 20", fill: "currentColor" }, React.createElement('path', { d: "M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" })),
-                "Go Home & View Code"
-            );
-
-            return React.createElement('div', { className: "w-full max-w-2xl flex flex-col items-center gap-6" },
-                React.createElement('div', { className: "w-full text-center bg-slate-900/80 backdrop-blur-sm p-3 rounded-lg border border-slate-700" }, React.createElement('p', { className: "text-sm text-slate-400 uppercase tracking-wider" }, "Break Ends In"), React.createElement('p', { className: `text-3xl font-mono ${timeLeft < 60000 ? 'text-red-400' : 'text-cyan-300'}` }, formatCountdown(timeLeft > 0 ? timeLeft : 0))),
-                React.createElement('div', { className: "w-full flex flex-wrap justify-center items-start gap-6" },
-                    completedSecretCodeImage && React.createElement('div', { className: "text-center flex-1 min-w-[280px]" }, React.createElement('p', { className: "text-slate-400 text-sm mb-2" }, "Unlocked Code:"), React.createElement('img', { src: completedSecretCodeImage, alt: "Sequestered code", className: "rounded-lg w-full border-2 border-green-500" })),
-                    React.createElement('div', { className: "flex-1 min-w-[320px]" }, codeUploader)
-                ),
-                nextGoal?.goal && React.createElement('div', { className: "glass-panel p-4 rounded-2xl shadow-2xl text-center" }, React.createElement('h3', { className: "text-md font-semibold text-slate-300 mb-1" }, "Up Next: ", React.createElement('span', { className: "font-bold text-white" }, nextGoal.subject))),
-                React.createElement('div', { className: 'flex flex-col items-center' },
-                    skipBreakButton,
-                    goHomeButton
-                )
-            );
-        }
-
        default: return React.createElement('div', { className: "flex justify-center items-center p-8" }, React.createElement(Spinner, null));
     }
   };

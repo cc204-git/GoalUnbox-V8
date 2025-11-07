@@ -1,7 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { PlannedGoal, TodaysPlan } from '../types';
 import GoalSetter, { GoalPayload } from './GoalSetter';
-import { formatDuration } from '../utils/timeUtils';
 import Spinner from './Spinner';
 
 interface WeeklyPlanViewProps {
@@ -46,14 +45,11 @@ const WeeklyPlanView: React.FC<WeeklyPlanViewProps> = ({
     const handleAddGoal = (payload: GoalPayload) => {
         if (!editingDate) return;
 
-        const totalMs = (payload.timeLimit.hours * 3600 + payload.timeLimit.minutes * 60) * 1000;
         const newGoal: PlannedGoal = {
             id: Date.now().toString(),
             goal: payload.goal,
             subject: payload.subject,
-            timeLimitInMs: totalMs > 0 ? totalMs : null,
-            startTime: payload.startTime,
-            endTime: payload.endTime,
+            deadline: payload.deadline,
             status: 'pending',
         };
         
@@ -107,7 +103,7 @@ const WeeklyPlanView: React.FC<WeeklyPlanViewProps> = ({
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-4">
                     {weekDays.map(day => {
                         const dayPlan = plans.find(p => p.date === day.toISOString().split('T')[0]) || { date: day.toISOString().split('T')[0], goals: [] };
-                        const sortedGoals = [...dayPlan.goals].sort((a,b) => a.startTime.localeCompare(b.startTime));
+                        const sortedGoals = [...dayPlan.goals].sort((a,b) => (a.deadline || 0) - (b.deadline || 0));
                         const isToday = day.toDateString() === new Date().toDateString();
 
                         return (
@@ -131,7 +127,9 @@ const WeeklyPlanView: React.FC<WeeklyPlanViewProps> = ({
                                         return(
                                         <div key={goal.id} className="p-2 bg-slate-900/60 rounded-md border border-slate-700 cursor-pointer" onClick={handleGoalClick}>
                                             <p className="font-bold text-sm text-slate-200 truncate">{goal.subject}</p>
-                                            <p className="text-xs text-slate-400">{goal.startTime} - {goal.endTime}</p>
+                                            <p className="text-xs text-slate-400">
+                                                {goal.deadline ? `Due: ${new Date(goal.deadline).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'No deadline'}
+                                            </p>
                                             {isExpanded && 
                                                 <div className="mt-2 pt-2 border-t border-slate-600">
                                                     <p className="text-xs text-slate-300 whitespace-pre-wrap">{goal.goal || "No description."}</p>

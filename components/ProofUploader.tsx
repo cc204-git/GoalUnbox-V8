@@ -1,5 +1,6 @@
 
 
+
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import Spinner from './Spinner';
 import CameraCapture from './CameraCapture';
@@ -26,20 +27,11 @@ interface ProofFile {
     id: string;
     file: File;
     preview: string;
-    type: 'image' | 'pdf';
 }
-
-const PDFIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-        <path fillRule="evenodd" d="M4 2a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V8.414a1 1 0 00-.293-.707l-4.414-4.414A1 1 0 0011.586 2H4zm6 6a1 1 0 100-2 1 1 0 000 2zM8 12a1 1 0 100-2 1 1 0 000 2zm2 1a1 1 0 011-1h.01a1 1 0 110 2H11a1 1 0 01-1-1z" clipRule="evenodd" />
-    </svg>
-);
-
 
 const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, subject, onProofImageSubmit, isLoading, goalSetTime, timeLimitInMs, onSkipGoal, onAbandonGoal, skipsLeftThisWeek, lastCompletedCodeImage, pdfAttachment, apiKey }) => {
   const [proofFiles, setProofFiles] = useState<ProofFile[]>([]);
   const [showCamera, setShowCamera] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const [displayGoal, setDisplayGoal] = useState(goal);
   const [timeLeft, setTimeLeft] = useState<string | null>(null);
   const [isTimeUp, setIsTimeUp] = useState(false);
@@ -107,48 +99,24 @@ const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, subject, onProofIma
   }, [goal, goalSetTime, timeLimitInMs, isTimeUp, isLoading]);
 
 
-  const addFiles = (newFiles: File[]) => {
-      const uniqueNewFiles = newFiles.filter(newFile => 
-        !proofFiles.some(existingProofFile => 
-            existingProofFile.file.name === newFile.name &&
-            existingProofFile.file.size === newFile.size &&
-            existingProofFile.file.lastModified === newFile.lastModified
-        )
-      );
-
-      uniqueNewFiles.forEach(file => {
-          const isImage = file.type.startsWith('image/');
-          if (isImage) {
-              const reader = new FileReader();
-              reader.onloadend = () => {
-                  setProofFiles(prev => [...prev, {
-                      id: `${file.name}-${file.lastModified}`,
-                      file: file,
-                      preview: reader.result as string,
-                      type: 'image',
-                  }]);
-              };
-              reader.readAsDataURL(file);
-          } else {
-               setProofFiles(prev => [...prev, {
-                  id: `${file.name}-${file.lastModified}`,
-                  file: file,
-                  preview: '', 
-                  type: 'pdf',
-              }]);
-          }
-      });
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFiles = e.target.files;
-    if (selectedFiles && selectedFiles.length > 0) {
-      addFiles(Array.from(selectedFiles));
-    }
-  };
-  
   const handleCapture = (capturedFile: File) => {
-    addFiles([capturedFile]);
+    const isNew = !proofFiles.some(existingProofFile => 
+        existingProofFile.file.name === capturedFile.name &&
+        existingProofFile.file.size === capturedFile.size &&
+        existingProofFile.file.lastModified === capturedFile.lastModified
+    );
+
+    if (isNew) {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            setProofFiles(prev => [...prev, {
+                id: `${capturedFile.name}-${capturedFile.lastModified}`,
+                file: capturedFile,
+                preview: reader.result as string,
+            }]);
+        };
+        reader.readAsDataURL(capturedFile);
+    }
     setShowCamera(false);
   };
   
@@ -273,31 +241,14 @@ const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, subject, onProofIma
             </div>
         )}
 
-        <p className="text-slate-400 mb-6">When you're done, upload pictures or a PDF as proof of completion.</p>
-
-        <input
-          type="file"
-          accept="image/*,application/pdf"
-          onChange={handleFileChange}
-          className="hidden"
-          ref={fileInputRef}
-          disabled={isLoading}
-          multiple
-        />
+        <p className="text-slate-400 mb-6">When you're done, take pictures as proof of completion.</p>
 
         <div className="border-2 border-dashed border-slate-600 rounded-lg p-4 mb-6 min-h-[120px] flex items-center justify-center bg-slate-900/20">
             {proofFiles.length > 0 ? (
             <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
                 {proofFiles.map((pf) => (
                     <div key={pf.id} className="relative group">
-                        {pf.type === 'image' ? (
-                            <img src={pf.preview} alt={`Proof preview`} className="w-full h-24 object-cover rounded-md" />
-                        ) : (
-                            <div className="w-full h-24 bg-slate-700 rounded-md flex flex-col items-center justify-center p-2">
-                                <PDFIcon />
-                                <span className="text-xs text-slate-300 break-all text-center overflow-hidden line-clamp-2 mt-1">{pf.file.name}</span>
-                            </div>
-                        )}
+                        <img src={pf.preview} alt={`Proof preview`} className="w-full h-24 object-cover rounded-md" />
                         <button 
                             onClick={() => handleRemoveFile(pf.id)}
                             className="absolute top-1 right-1 bg-black/60 text-white rounded-full p-1 leading-none opacity-0 group-hover:opacity-100 transition-opacity"
@@ -311,24 +262,17 @@ const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, subject, onProofIma
                 ))}
             </div>
             ) : (
-            <p className="text-slate-500">Your proof images and PDFs will appear here.</p>
+            <p className="text-slate-500">Your proof images will appear here.</p>
             )}
         </div>
 
         <div className="flex flex-col sm:flex-row gap-4 mb-6">
             <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isLoading}
-                className="flex-1 bg-slate-700 text-white font-bold py-3 px-4 rounded-lg hover:bg-slate-600 transition-all duration-300 flex items-center justify-center"
-            >
-                Add from Files
-            </button>
-            <button
                 onClick={() => setShowCamera(true)}
                 disabled={isLoading}
-                className="flex-1 bg-slate-700 text-white font-bold py-3 px-4 rounded-lg hover:bg-slate-600 transition-all duration-300 flex items-center justify-center"
+                className="w-full bg-slate-700 text-white font-bold py-3 px-4 rounded-lg hover:bg-slate-600 transition-all duration-300 flex items-center justify-center"
             >
-                Add with Camera
+                Add Photo Proof
             </button>
         </div>
 

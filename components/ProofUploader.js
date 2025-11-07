@@ -1,5 +1,6 @@
 
 
+
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import Spinner from './Spinner.js';
 import CameraCapture from './CameraCapture.js';
@@ -7,15 +8,9 @@ import { formatCountdown } from '../utils/timeUtils.js';
 import DistractionGatekeeper from './DistractionGatekeeper.js';
 import { base64ToBlob } from '../utils/fileUtils.js';
 
-const PDFIcon = () => React.createElement(
-    'svg', { xmlns: 'http://www.w3.org/2000/svg', className: 'h-8 w-8 text-red-400', viewBox: '0 0 20 20', fill: 'currentColor' },
-    React.createElement('path', { fillRule: 'evenodd', d: 'M4 2a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V8.414a1 1 0 00-.293-.707l-4.414-4.414A1 1 0 0011.586 2H4zm6 6a1 1 0 100-2 1 1 0 000 2zM8 12a1 1 0 100-2 1 1 0 000 2zm2 1a1 1 0 011-1h.01a1 1 0 110 2H11a1 1 0 01-1-1z', clipRule: 'evenodd' })
-);
-
 const ProofUploader = ({ goal, subject, onProofImageSubmit, isLoading, goalSetTime, timeLimitInMs, onSkipGoal, onAbandonGoal, skipsLeftThisWeek, lastCompletedCodeImage, pdfAttachment, apiKey }) => {
   const [proofFiles, setProofFiles] = useState([]);
   const [showCamera, setShowCamera] = useState(false);
-  const fileInputRef = useRef(null);
   const [displayGoal, setDisplayGoal] = useState(goal);
   const [timeLeft, setTimeLeft] = useState(null);
   const [isTimeUp, setIsTimeUp] = useState(false);
@@ -82,48 +77,24 @@ const ProofUploader = ({ goal, subject, onProofImageSubmit, isLoading, goalSetTi
     };
   }, [goal, goalSetTime, timeLimitInMs, isTimeUp, isLoading]);
 
-  const addFiles = (newFiles) => {
-      const uniqueNewFiles = newFiles.filter(newFile => 
-        !proofFiles.some(existingProofFile => 
-            existingProofFile.file.name === newFile.name &&
-            existingProofFile.file.size === newFile.size &&
-            existingProofFile.file.lastModified === newFile.lastModified
-        )
-      );
-
-      uniqueNewFiles.forEach(file => {
-          const isImage = file.type.startsWith('image/');
-          if (isImage) {
-              const reader = new FileReader();
-              reader.onloadend = () => {
-                  setProofFiles(prev => [...prev, {
-                      id: `${file.name}-${file.lastModified}`,
-                      file: file,
-                      preview: reader.result,
-                      type: 'image',
-                  }]);
-              };
-              reader.readAsDataURL(file);
-          } else {
-               setProofFiles(prev => [...prev, {
-                  id: `${file.name}-${file.lastModified}`,
-                  file: file,
-                  preview: '', // No preview for PDFs
-                  type: 'pdf',
-              }]);
-          }
-      });
-  };
-
-  const handleFileChange = (e) => {
-    const selectedFiles = e.target.files;
-    if (selectedFiles && selectedFiles.length > 0) {
-      addFiles(Array.from(selectedFiles));
-    }
-  };
-  
   const handleCapture = (capturedFile) => {
-    addFiles([capturedFile]);
+    const isNew = !proofFiles.some(existingProofFile => 
+        existingProofFile.file.name === capturedFile.name &&
+        existingProofFile.file.size === capturedFile.size &&
+        existingProofFile.file.lastModified === capturedFile.lastModified
+    );
+
+    if (isNew) {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            setProofFiles(prev => [...prev, {
+                id: `${capturedFile.name}-${capturedFile.lastModified}`,
+                file: capturedFile,
+                preview: reader.result,
+            }]);
+        };
+        reader.readAsDataURL(capturedFile);
+    }
     setShowCamera(false);
   };
   
@@ -327,16 +298,7 @@ const ProofUploader = ({ goal, subject, onProofImageSubmit, isLoading, goalSetTi
             React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", className: "h-5 w-5", viewBox: "0 0 20 20", fill: "currentColor" }, React.createElement('path', { "fill-rule": "evenodd", d: "M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V7.414A2 2 0 0015.414 6L12 2.586A2 2 0 0010.586 2H6zm5 6a1 1 0 10-2 0v3.586l-1.293-1.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 11.586V8z", "clip-rule": "evenodd" })),
             `Download Attached PDF: ${pdfAttachment.name}`)
        ),
-      React.createElement('p', { className: 'text-slate-400 mb-6' }, "When you're done, upload pictures or a PDF as proof of completion."),
-      React.createElement('input', {
-        type: 'file',
-        accept: 'image/*,application/pdf',
-        onChange: handleFileChange,
-        className: 'hidden',
-        ref: fileInputRef,
-        disabled: isLoading,
-        multiple: true
-      }),
+      React.createElement('p', { className: 'text-slate-400 mb-6' }, "When you're done, take pictures as proof of completion."),
       React.createElement(
         'div',
         { className: 'border-2 border-dashed border-slate-600 rounded-lg p-4 mb-6 min-h-[120px] flex items-center justify-center' },
@@ -347,13 +309,7 @@ const ProofUploader = ({ goal, subject, onProofImageSubmit, isLoading, goalSetTi
               proofFiles.map((pf) =>
                 React.createElement(
                   'div', { key: pf.id, className: 'relative group' },
-                  pf.type === 'image'
-                    ? React.createElement('img', { src: pf.preview, alt: 'Proof preview', className: 'w-full h-24 object-cover rounded-md' })
-                    : React.createElement(
-                        'div', { className: 'w-full h-24 bg-slate-700 rounded-md flex flex-col items-center justify-center p-2' },
-                        React.createElement(PDFIcon, null),
-                        React.createElement('span', { className: 'text-xs text-slate-300 break-all text-center overflow-hidden line-clamp-2 mt-1' }, pf.file.name)
-                      ),
+                  React.createElement('img', { src: pf.preview, alt: 'Proof preview', className: 'w-full h-24 object-cover rounded-md' }),
                   React.createElement(
                     'button',
                     { onClick: () => handleRemoveFile(pf.id), className: 'absolute top-1 right-1 bg-black/60 text-white rounded-full p-1 leading-none opacity-0 group-hover:opacity-100 transition-opacity', 'aria-label': 'Remove file' },
@@ -365,12 +321,11 @@ const ProofUploader = ({ goal, subject, onProofImageSubmit, isLoading, goalSetTi
                 )
               )
             )
-          : React.createElement('p', { className: 'text-slate-500' }, 'Your proof images and PDFs will appear here.')
+          : React.createElement('p', { className: 'text-slate-500' }, 'Your proof images will appear here.')
       ),
       React.createElement(
         'div', { className: 'flex flex-col sm:flex-row gap-4 mb-6' },
-        React.createElement('button', { onClick: () => fileInputRef.current?.click(), disabled: isLoading, className: 'flex-1 bg-slate-700 text-white font-bold py-3 px-4 rounded-lg hover:bg-slate-600 transition-all duration-300 flex items-center justify-center' }, 'Add from Files'),
-        React.createElement('button', { onClick: () => setShowCamera(true), disabled: isLoading, className: 'flex-1 bg-slate-700 text-white font-bold py-3 px-4 rounded-lg hover:bg-slate-600 transition-all duration-300 flex items-center justify-center' }, 'Add with Camera')
+        React.createElement('button', { onClick: () => setShowCamera(true), disabled: isLoading, className: 'w-full bg-slate-700 text-white font-bold py-3 px-4 rounded-lg hover:bg-slate-600 transition-all duration-300 flex items-center justify-center' }, 'Add Photo Proof')
       ),
       React.createElement(
         'button',

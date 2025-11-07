@@ -13,7 +13,7 @@ import {
     query,
     orderBy
 } from 'firebase/firestore';
-import { ActiveGoalState, CompletedGoal, StreakData, TodaysPlan } from '../types';
+import { ActiveGoalState, CompletedGoal, StreakData, TodaysPlan, PlannedGoal } from '../types';
 import { getISODateString, getStartOfWeekISOString } from '../utils/timeUtils';
 import { defaultWeeklyPlan } from '../utils/defaultSchedule';
 
@@ -107,7 +107,8 @@ export const loadWeeklyPlans = async (userId: string, weekStartDate: Date): Prom
                 goals: defaultDayPlanData.goals.map(goal => ({
                     ...goal,
                     goal: goal.subject.toLowerCase().includes('crm') ? goal.goal.replace(/DD\/MM\/YY/g, formattedDate) : goal.goal,
-                    id: `${dateString}-${goal.startTime}-${Math.random()}`,
+                    // FIX: Changed goal.startTime to goal.subject as startTime does not exist on this object type.
+                    id: `${dateString}-${goal.subject}-${Math.random()}`,
                     status: 'pending',
                 })),
                 todos: [],

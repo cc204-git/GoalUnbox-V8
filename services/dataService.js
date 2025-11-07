@@ -94,11 +94,18 @@ export const loadWeeklyPlans = async (userId, weekStartDate) => {
             const dayIndex = (date.getDay() + 6) % 7; // Monday = 0
             const defaultDayPlanData = defaultWeeklyPlan[dayIndex];
             
+            const day = String(date.getDate()).padStart(2, '0');
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const year = String(date.getFullYear()).slice(-2);
+            const formattedDate = `${day}/${month}/${year}`;
+
             const newPlan = {
                 date: dateString,
                 goals: defaultDayPlanData.goals.map(goal => ({
                     ...goal,
-                    id: `${dateString}-${goal.startTime}-${Math.random()}`,
+                    goal: goal.subject.toLowerCase().includes('crm') ? goal.goal.replace(/DD\/MM\/YY/g, formattedDate) : goal.goal,
+                    // FIX: Changed goal.startTime to goal.subject as startTime does not exist on this object type.
+                    id: `${dateString}-${goal.subject}-${Math.random()}`,
                     status: 'pending',
                 })),
                 todos: [],

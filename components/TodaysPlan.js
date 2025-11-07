@@ -1,6 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import GoalSetter from './GoalSetter.js';
-import { formatDuration } from '../utils/timeUtils.js';
 import TodoList from './TodoList.js';
 
 
@@ -33,14 +32,11 @@ const TodaysPlan = ({
     };
 
     const handleAddGoal = (payload) => {
-        const totalMs = (payload.timeLimit.hours * 3600 + payload.timeLimit.minutes * 60) * 1000;
         const newGoal = {
             id: Date.now().toString(),
             goal: payload.goal,
             subject: payload.subject,
-            timeLimitInMs: totalMs > 0 ? totalMs : null,
-            startTime: payload.startTime,
-            endTime: payload.endTime,
+            deadline: payload.deadline,
             status: 'pending',
         };
 
@@ -56,12 +52,11 @@ const TodaysPlan = ({
 
     const sortGoals = (goals) => {
         return [...goals].sort((a, b) => {
-            const aHasTime = a.startTime && a.endTime;
-            const bHasTime = b.startTime && b.endTime;
-            if (aHasTime && !bHasTime) return -1;
-            if (!aHasTime && bHasTime) return 1;
-            if (aHasTime && bHasTime) return a.startTime.localeCompare(b.startTime);
-            return a.id.localeCompare(b.id);
+            if (a.status !== 'pending') return 1;
+            if (b.status !== 'pending') return -1;
+            if (!a.deadline) return 1;
+            if (!b.deadline) return -1;
+            return a.deadline - b.deadline;
         });
     };
     
@@ -102,29 +97,34 @@ const TodaysPlan = ({
                 ),
                 React.createElement('button', {
                     onClick: (e) => { e.stopPropagation(); onStartGoal(goal); },
-                    className: 'bg-cyan-500 text-slate-900 font-bold py-2 px-4 rounded-lg hover:bg-cyan-400 transition-colors disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed',
+                    className: 'bg-cyan-500 text-slate-900 font-bold py-2 px-4 rounded-lg hover:bg-cyan-400 transition-colors disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed button-glow-cyan',
                     title: "Start this goal"
                 }, 'Start Goal')
             );
         }
 
+        const deadlineDisplay = goal.deadline ? React.createElement(React.Fragment, null,
+            React.createElement('p', { className: `font-mono text-lg ${isDone ? 'text-slate-500' : 'text-cyan-300'} ${isSkipped ? 'line-through' : ''}` },
+                new Date(goal.deadline).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            ),
+            React.createElement('p', { className: `text-xs ${isDone ? 'text-slate-600' : 'text-slate-400'} ${isSkipped ? 'line-through' : ''}` },
+                new Date(goal.deadline).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })
+            )
+        ) : React.createElement('p', { className: `font-mono text-lg ${isDone ? 'text-slate-500' : 'text-slate-400'} ${isSkipped ? 'line-through' : ''}` }, 'No Deadline');
 
-        return React.createElement('div', { key: goal.id, className: `p-4 rounded-lg flex flex-col sm:flex-row items-center gap-4 transition-colors ${isDone ? 'bg-slate-900/50 border border-slate-700' : 'bg-slate-800 border border-slate-600'} ${isSkipped ? 'opacity-70' : ''}` },
-            React.createElement('div', { className: 'flex-shrink-0 text-center sm:text-left w-36' },
-                goal.startTime && goal.endTime ?
-                    React.createElement('p', { className: `font-mono text-lg ${isDone ? 'text-slate-500' : 'text-cyan-300'} ${isSkipped ? 'line-through' : ''}` }, `${goal.startTime} - ${goal.endTime}`) :
-                    React.createElement('p', { className: `font-mono text-lg ${isDone ? 'text-slate-500' : 'text-slate-400'} ${isSkipped ? 'line-through' : ''}` }, 'Unscheduled'),
-                goal.timeLimitInMs && React.createElement('p', { className: `text-xs ${isDone ? 'text-slate-600' : 'text-slate-400'} ${isSkipped ? 'line-through' : ''}` }, `(${formatDuration(goal.timeLimitInMs)})`)
+        return React.createElement('div', { key: goal.id, className: `bg-slate-900/50 border border-slate-700 rounded-xl p-4 transition-all duration-300 ${isDone ? 'opacity-60' : 'hover:border-cyan-500/50 hover:bg-slate-800/50'}` },
+            React.createElement('div', { className: "flex flex-col sm:flex-row items-start sm:items-center gap-4" },
+                React.createElement('div', { className: 'flex-shrink-0 text-center sm:text-left w-full sm:w-32' }, deadlineDisplay),
+                React.createElement('div', {
+                    className: 'flex-1 text-left w-full cursor-pointer',
+                    onClick: () => handleToggleExpand(goal.id)
+                },
+                    React.createElement('p', { className: `font-bold text-lg ${isCompleted ? 'text-slate-500 line-through' : isSkipped ? 'text-red-400/90 line-through' : 'text-white'}` }, goal.subject),
+                    React.createElement('p', { className: `text-sm ${isDone ? 'text-slate-600' : 'text-slate-400'} ${isSkipped ? 'line-through' : ''}` }, `${(goal.goal || "No description...").substring(0, 100)}${goal.goal.length > 100 && !isExpanded ? '...' : ''}`)
+                ),
+                React.createElement('div', { className: 'flex-shrink-0 w-full sm:w-auto flex justify-end' }, statusBadge)
             ),
-            React.createElement('div', {
-                className: 'flex-1 text-center sm:text-left cursor-pointer',
-                onClick: () => handleToggleExpand(goal.id)
-            },
-                React.createElement('p', { className: `font-bold text-lg ${isCompleted ? 'text-slate-500 line-through' : isSkipped ? 'text-red-400/90 line-through' : 'text-white'}` }, goal.subject),
-                React.createElement('p', { className: `text-sm ${isDone ? 'text-slate-600' : 'text-slate-400'} ${isExpanded ? 'whitespace-pre-wrap' : ''} ${isSkipped ? 'line-through' : ''}` }, isExpanded ? (goal.goal || "No description provided.") : `${(goal.goal || "No description...").substring(0, 100)}${goal.goal.length > 100 ? '...' : ''}`),
-                (goal.goal.length > 100 || goal.goal) && React.createElement('span', { className: "text-xs text-cyan-400/80 mt-1 inline-block" }, isExpanded ? 'Show Less' : 'Show More')
-            ),
-            React.createElement('div', { className: 'flex-shrink-0' }, statusBadge)
+            isExpanded && React.createElement('div', { className: "mt-4 pt-4 border-t border-slate-700 text-left text-sm text-slate-300 whitespace-pre-wrap" }, goal.goal || "No description provided.")
         );
     };
 
@@ -160,7 +160,7 @@ const TodaysPlan = ({
     );
     
     return React.createElement('div', { className: 'w-full max-w-3xl' },
-        React.createElement('div', { className: 'bg-slate-800/50 border border-slate-700 p-8 rounded-lg shadow-2xl w-full text-center animate-fade-in relative' },
+        React.createElement('div', { className: 'glass-panel p-8 rounded-2xl shadow-2xl w-full text-center animate-fade-in relative' },
             historyButton,
             React.createElement('h2', { className: 'text-3xl font-bold tracking-tighter text-cyan-300' }, "Today's Plan"),
             React.createElement('p', { className: 'text-slate-400 mt-1 mb-6' }, today),
