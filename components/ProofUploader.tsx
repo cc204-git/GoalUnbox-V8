@@ -1,6 +1,7 @@
 
 
 
+
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import Spinner from './Spinner';
 import CameraCapture from './CameraCapture';
@@ -17,6 +18,7 @@ interface ProofUploaderProps {
   timeLimitInMs: number | null;
   onSkipGoal: () => void;
   onAbandonGoal: () => void;
+  onDeadlineMissed: () => void;
   skipsLeftThisWeek: number;
   lastCompletedCodeImage?: string | null;
   pdfAttachment?: { name: string; data: string; } | null;
@@ -29,7 +31,7 @@ interface ProofFile {
     preview: string;
 }
 
-const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, subject, onProofImageSubmit, isLoading, goalSetTime, timeLimitInMs, onSkipGoal, onAbandonGoal, skipsLeftThisWeek, lastCompletedCodeImage, pdfAttachment, apiKey }) => {
+const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, subject, onProofImageSubmit, isLoading, goalSetTime, timeLimitInMs, onSkipGoal, onAbandonGoal, onDeadlineMissed, skipsLeftThisWeek, lastCompletedCodeImage, pdfAttachment, apiKey }) => {
   const [proofFiles, setProofFiles] = useState<ProofFile[]>([]);
   const [showCamera, setShowCamera] = useState(false);
   const [displayGoal, setDisplayGoal] = useState(goal);
@@ -74,6 +76,7 @@ const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, subject, onProofIma
           setTimeLeft(formatCountdown(0));
           if (!isTimeUp) {
             setIsTimeUp(true);
+            onDeadlineMissed();
           }
           return true;
         } else {
@@ -96,7 +99,7 @@ const ProofUploader: React.FC<ProofUploaderProps> = ({ goal, subject, onProofIma
     return () => {
       if (consequenceInterval) clearInterval(consequenceInterval);
     };
-  }, [goal, goalSetTime, timeLimitInMs, isTimeUp, isLoading]);
+  }, [goal, goalSetTime, timeLimitInMs, isTimeUp, isLoading, onDeadlineMissed]);
 
 
   const handleCapture = (capturedFile: File) => {

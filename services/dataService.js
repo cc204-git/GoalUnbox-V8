@@ -104,9 +104,9 @@ export const loadWeeklyPlans = async (userId, weekStartDate) => {
                 goals: defaultDayPlanData.goals.map(goal => ({
                     ...goal,
                     goal: goal.subject.toLowerCase().includes('crm') ? goal.goal.replace(/DD\/MM\/YY/g, formattedDate) : goal.goal,
-                    // FIX: Changed goal.startTime to goal.subject as startTime does not exist on this object type.
                     id: `${dateString}-${goal.subject}-${Math.random()}`,
                     status: 'pending',
+                    deadline: null,
                 })),
                 todos: [],
             };

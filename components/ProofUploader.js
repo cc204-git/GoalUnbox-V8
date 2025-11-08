@@ -1,6 +1,7 @@
 
 
 
+
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import Spinner from './Spinner.js';
 import CameraCapture from './CameraCapture.js';
@@ -8,7 +9,7 @@ import { formatCountdown } from '../utils/timeUtils.js';
 import DistractionGatekeeper from './DistractionGatekeeper.js';
 import { base64ToBlob } from '../utils/fileUtils.js';
 
-const ProofUploader = ({ goal, subject, onProofImageSubmit, isLoading, goalSetTime, timeLimitInMs, onSkipGoal, onAbandonGoal, skipsLeftThisWeek, lastCompletedCodeImage, pdfAttachment, apiKey }) => {
+const ProofUploader = ({ goal, subject, onProofImageSubmit, isLoading, goalSetTime, timeLimitInMs, onSkipGoal, onAbandonGoal, onDeadlineMissed, skipsLeftThisWeek, lastCompletedCodeImage, pdfAttachment, apiKey }) => {
   const [proofFiles, setProofFiles] = useState([]);
   const [showCamera, setShowCamera] = useState(false);
   const [displayGoal, setDisplayGoal] = useState(goal);
@@ -53,6 +54,7 @@ const ProofUploader = ({ goal, subject, onProofImageSubmit, isLoading, goalSetTi
           setTimeLeft(formatCountdown(0));
           if (!isTimeUp) {
             setIsTimeUp(true);
+            onDeadlineMissed();
           }
           return true; // Time is up
         } else {
@@ -75,7 +77,7 @@ const ProofUploader = ({ goal, subject, onProofImageSubmit, isLoading, goalSetTi
     return () => {
       if (consequenceInterval) clearInterval(consequenceInterval);
     };
-  }, [goal, goalSetTime, timeLimitInMs, isTimeUp, isLoading]);
+  }, [goal, goalSetTime, timeLimitInMs, isTimeUp, isLoading, onDeadlineMissed]);
 
   const handleCapture = (capturedFile) => {
     const isNew = !proofFiles.some(existingProofFile => 

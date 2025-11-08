@@ -1,5 +1,4 @@
 
-
 import React, { useState, useCallback, useEffect } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { AppState } from './types.js';
@@ -122,8 +121,14 @@ const App = () => {
             setGoalSetTime(goalState.goalSetTime);
             setTimeLimitInMs(goalState.timeLimitInMs);
             setAppState(AppState.GOAL_SET);
-        } else if (appState !== AppState.GOAL_COMPLETED) { // Prevent reverting to plan after completion
-             setAppState(AppState.TODAYS_PLAN);
+        } else {
+             setAppState(currentAppState => {
+                // Prevent reverting to plan view if we are on the completion screen
+                if (currentAppState !== AppState.GOAL_COMPLETED) {
+                    return AppState.TODAYS_PLAN;
+                }
+                return currentAppState;
+             });
         }
     }));
     
@@ -232,27 +237,28 @@ const App = () => {
     }
   }, [activeGoal, todaysPlan]);
 
-  const handleSavePlan = (plan) => {
+  const handleSavePlan = useCallback((plan) => {
       if (!currentUser) return;
       if(plan.date === getISODateString(new Date())) {
         setTodaysPlan(plan);
       }
       dataService.savePlan(currentUser.uid, plan);
+  }, [currentUser]);
+
+  const handleSavePlanAndUpdateWeek = async (plan) => {
+    if (!currentUser) return;
+    await dataService.savePlan(currentUser.uid, plan);
+    setWeeklyPlans(prevPlans => {
+        if (!prevPlans) return [plan];
+        const existingPlanIndex = prevPlans.findIndex(p => p.date === plan.date);
+        if (existingPlanIndex > -1) {
+            const updatedPlans = [...prevPlans];
+            updatedPlans[existingPlanIndex] = plan;
+            return updatedPlans;
+        }
+        return [...prevPlans, plan].sort((a, b) => a.date.localeCompare(b.date));
+    });
   };
-    const handleSavePlanAndUpdateWeek = async (plan) => {
-        if (!currentUser) return;
-        await dataService.savePlan(currentUser.uid, plan);
-        setWeeklyPlans(prevPlans => {
-            if (!prevPlans) return [plan];
-            const existingPlanIndex = prevPlans.findIndex(p => p.date === plan.date);
-            if (existingPlanIndex > -1) {
-                const updatedPlans = [...prevPlans];
-                updatedPlans[existingPlanIndex] = plan;
-                return updatedPlans;
-            }
-            return [...prevPlans, plan].sort((a, b) => a.date.localeCompare(b.date));
-        });
-    };
   
   const handleApiError = useCallback((err) => {
       const error = err;
@@ -510,6 +516,26 @@ const handleAbandonGoal = useCallback(async () => {
     }
 }, [currentUser, activeGoal, todaysPlan, resetToStart, handleApiError]);
 
+const handleDeadlineMissed = useCallback(() => {
+    const goalToRemoveId = activeGoal?.plannedGoalId;
+
+    if (!currentUser) {
+        setInfoMessage("Deadline missed. The goal has been reset.");
+        resetToStart();
+        return;
+    }
+
+    // Also remove the goal from the plan for today
+    if (todaysPlan && goalToRemoveId) {
+        const updatedGoals = todaysPlan.goals.filter(g => g.id !== goalToRemoveId);
+        const updatedPlan = { ...todaysPlan, goals: updatedGoals };
+        handleSavePlan(updatedPlan);
+    }
+    
+    setInfoMessage("Deadline missed. Your goal has been removed from today's plan, and the code is lost.");
+    resetToStart();
+}, [currentUser, activeGoal, todaysPlan, resetToStart, handleSavePlan]);
+
 
   const handleShowHistory = () => setAppState(AppState.HISTORY_VIEW);
   const handleHistoryBack = () => setAppState(AppState.TODAYS_PLAN);
@@ -665,7 +691,7 @@ const handleAbandonGoal = useCallback(async () => {
       case AppState.AWAITING_CODE: return React.createElement(CodeUploader, { onCodeImageSubmit: handleCodeImageSubmit, isLoading: isLoading, onShowHistory: handleShowHistory, onLogout: handleLogout, currentUser: currentUser, streakData: streakData, onSetCommitment: handleSetDailyCommitment, onCompleteCommitment: handleCompleteDailyCommitment });
       case AppState.GOAL_SET: {
         const skipsLeft = 2 - (streakData?.skipsThisWeek ?? 0);
-        return React.createElement(ProofUploader, { goal: goal, subject: subject, onProofImageSubmit: handleProofImageSubmit, isLoading: isLoading, goalSetTime: goalSetTime, timeLimitInMs: timeLimitInMs, onSkipGoal: handleSkipGoal, onAbandonGoal: handleAbandonGoal, skipsLeftThisWeek: skipsLeft > 0 ? skipsLeft : 0, lastCompletedCodeImage: streakData?.lastCompletedCodeImage, pdfAttachment: activeGoal?.pdfAttachment, apiKey: apiKey });
+        return React.createElement(ProofUploader, { goal: goal, subject: subject, onProofImageSubmit: handleProofImageSubmit, isLoading: isLoading, goalSetTime: goalSetTime, timeLimitInMs: timeLimitInMs, onSkipGoal: handleSkipGoal, onAbandonGoal: handleAbandonGoal, onDeadlineMissed: handleDeadlineMissed, skipsLeftThisWeek: skipsLeft > 0 ? skipsLeft : 0, lastCompletedCodeImage: streakData?.lastCompletedCodeImage, pdfAttachment: activeGoal?.pdfAttachment, apiKey: apiKey });
       }
       case AppState.HISTORY_VIEW: return React.createElement(GoalHistory, { onBack: handleHistoryBack, history: history, onDeleteHistoryItem: handleDeleteHistoryItem, apiKey: apiKey });
       case AppState.GOAL_COMPLETED: return React.createElement(VerificationResult, { isSuccess: true, secretCodeImage: secretCodeImage || completedSecretCodeImage, feedback: verificationFeedback, onRetry: handleRetry, onReset: () => resetToStart(false), completionDuration: completionDuration, completionReason: completionReason });

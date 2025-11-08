@@ -1,5 +1,4 @@
 
-
 import React, { useState, useCallback, useEffect } from 'react';
 import { User, onAuthStateChanged } from 'firebase/auth';
 import { Unsubscribe } from 'firebase/firestore';
@@ -70,7 +69,7 @@ const App: React.FC = () => {
   const [weekStartDate, setWeekStartDate] = useState<Date>(() => new Date(getStartOfWeekISOString(new Date())));
   const [weeklyPlans, setWeeklyPlans] = useState<TodaysPlan[] | null>(null);
   const [editingGoalInfo, setEditingGoalInfo] = useState<{ plan: TodaysPlan; goal: PlannedGoal } | null>(null);
-  const [showUnlockedCodeModal, setShowUnlockedCodeModal] = useState<boolean>(false);
+  const [showUnlockedCodeModal, setShowUnlockedCodeModal] = useState(false);
 
   
   useEffect(() => {
@@ -126,8 +125,14 @@ const App: React.FC = () => {
             setGoalSetTime(goalState.goalSetTime);
             setTimeLimitInMs(goalState.timeLimitInMs);
             setAppState(AppState.GOAL_SET);
-        } else if (appState !== AppState.GOAL_COMPLETED) { // Prevent reverting to plan after completion
-             setAppState(AppState.TODAYS_PLAN);
+        } else {
+             setAppState(currentAppState => {
+                // Prevent reverting to plan view if we are on the completion screen
+                if (currentAppState !== AppState.GOAL_COMPLETED) {
+                    return AppState.TODAYS_PLAN;
+                }
+                return currentAppState;
+            });
         }
     }));
     
@@ -185,6 +190,7 @@ const App: React.FC = () => {
         if (!todaysDocument) {
             const dayIndex = (today.getDay() + 6) % 7;
             const defaultDayPlanData = defaultWeeklyPlan[dayIndex];
+            // FIX: Explicitly type `newPlan` to match the `TodaysPlan` interface.
             const newPlan: TodaysPlan = {
                 date: getISODateString(today),
                 goals: defaultDayPlanData.goals.map(goal => ({
@@ -236,41 +242,41 @@ const App: React.FC = () => {
     }
   }, [activeGoal, todaysPlan]);
 
-  const handleSavePlan = (plan: TodaysPlan) => {
+  const handleSavePlan = useCallback((plan: TodaysPlan) => {
       if (!currentUser) return;
       if(plan.date === getISODateString(new Date())) {
         setTodaysPlan(plan);
       }
       dataService.savePlan(currentUser.uid, plan);
+  }, [currentUser]);
+
+  const handleSavePlanAndUpdateWeek = async (plan: TodaysPlan) => {
+    if (!currentUser) return;
+    await dataService.savePlan(currentUser.uid, plan);
+    setWeeklyPlans(prevPlans => {
+        if (!prevPlans) return [plan];
+        const existingPlanIndex = prevPlans.findIndex(p => p.date === plan.date);
+        if (existingPlanIndex > -1) {
+            const updatedPlans = [...prevPlans];
+            updatedPlans[existingPlanIndex] = plan;
+            return updatedPlans;
+        }
+        return [...prevPlans, plan].sort((a, b) => a.date.localeCompare(b.date));
+    });
   };
-    const handleSavePlanAndUpdateWeek = async (plan: TodaysPlan) => {
-        if (!currentUser) return;
-        await dataService.savePlan(currentUser.uid, plan);
-        setWeeklyPlans(prevPlans => {
-            if (!prevPlans) return [plan];
-            const existingPlanIndex = prevPlans.findIndex(p => p.date === plan.date);
-            if (existingPlanIndex > -1) {
-                const updatedPlans = [...prevPlans];
-                updatedPlans[existingPlanIndex] = plan;
-                return updatedPlans;
-            }
-            return [...prevPlans, plan].sort((a, b) => a.date.localeCompare(b.date));
-        });
-    };
   
-  const handleApiError = useCallback((err: any) => {
-      const error = err as Error;
-      if (error.message.includes('API key not valid')) {
+  const handleApiError = useCallback((err: Error) => {
+      if (err.message.includes('API key not valid')) {
         setError('Your API key is not valid. Please enter a correct key.');
         setApiKey(null);
         setIsApiKeyValid(false);
         localStorage.removeItem('geminiApiKey');
       } else {
-        setError(error.message);
+        setError(err.message);
       }
   }, []);
 
-  const resetToStart = useCallback((isLogout: boolean = false) => {
+  const resetToStart = useCallback((isLogout = false) => {
     if (currentUser) dataService.clearActiveGoal(currentUser.uid);
     if (isLogout) {
       authService.signOut();
@@ -300,7 +306,9 @@ const App: React.FC = () => {
     reader.readAsDataURL(file);
     const imagePromise = new Promise<void>(resolve => {
         reader.onload = () => {
-            tempSecretCodeImage = reader.result as string;
+            if (typeof reader.result === 'string') {
+              tempSecretCodeImage = reader.result;
+            }
             setSecretCodeImage(tempSecretCodeImage);
             resolve();
         };
@@ -318,7 +326,7 @@ const App: React.FC = () => {
         
         const activeState: ActiveGoalState = { 
             secretCode: code, 
-            secretCodeImage: tempSecretCodeImage as string, 
+            secretCodeImage: tempSecretCodeImage!, 
             goal, 
             subject, 
             goalSetTime: goalStartTime, 
@@ -332,14 +340,14 @@ const App: React.FC = () => {
 
         await dataService.saveActiveGoal(currentUser.uid, activeState);
     } catch (err) {
-        handleApiError(err);
+        handleApiError(err as Error);
         setSecretCodeImage(null);
     } finally {
         setIsLoading(false);
     }
   }, [handleApiError, goal, subject, timeLimitInMs, currentUser, activePlannedGoal, apiKey]);
 
-  const getEffectiveGoal = useCallback(() => {
+  const getEffectiveGoal = useCallback((): string => {
     return goal;
   }, [goal]);
 
@@ -353,13 +361,13 @@ const App: React.FC = () => {
 
     try {
         const goalSummary = await summarizeGoal(finalGoal, apiKey);
-        const newEntry: Omit<CompletedGoal, 'firestoreId'> = { id: endTime, goalSummary, fullGoal: finalGoal, subject: subject, startTime: goalSetTime, endTime, duration, completionReason: reason };
+        const newEntry: Omit<CompletedGoal, 'firestoreId'> = { id: endTime, goalSummary, fullGoal: finalGoal, subject: subject, startTime: goalSetTime!, endTime, duration, completionReason: reason };
         await dataService.addHistoryItem(currentUser.uid, newEntry);
     } catch (e) { console.error("Failed to save goal:", e); }
 
     if (reason === 'verified' && secretCodeImage && streakData) {
         setCompletedSecretCodeImage(secretCodeImage);
-        const newData: StreakData = { ...streakData, lastCompletedCodeImage: secretCodeImage };
+        const newData = { ...streakData, lastCompletedCodeImage: secretCodeImage };
         setStreakData(newData); 
     }
 
@@ -377,7 +385,7 @@ const App: React.FC = () => {
     setVerificationFeedback(feedback);
     setAppState(AppState.GOAL_COMPLETED);
     setIsLoading(false);
-}, [currentUser, goal, goalSetTime, getEffectiveGoal, secretCode, secretCodeImage, subject, activePlannedGoal, todaysPlan, streakData, apiKey]);
+}, [currentUser, goalSetTime, getEffectiveGoal, secretCodeImage, subject, activePlannedGoal, todaysPlan, streakData, apiKey]);
 
   const handleProofImageSubmit = useCallback(async (files: File[]) => {
     if (!apiKey) return;
@@ -406,7 +414,7 @@ const App: React.FC = () => {
         }
     } catch (err) {
         resumeTimers();
-        handleApiError(err);
+        handleApiError(err as Error);
         setIsLoading(false);
     }
   }, [getEffectiveGoal, handleApiError, handleGoalSuccess, apiKey]);
@@ -461,7 +469,7 @@ const App: React.FC = () => {
 
     setIsLoading(true); setError(null);
     try {
-        const updatedStreakData: StreakData = { ...streakData, skipsThisWeek: (streakData.skipsThisWeek ?? 0) + 1 };
+        const updatedStreakData = { ...streakData, skipsThisWeek: (streakData.skipsThisWeek ?? 0) + 1 };
         await dataService.saveStreakData(currentUser.uid, updatedStreakData);
         setStreakData(updatedStreakData);
 
@@ -476,14 +484,14 @@ const App: React.FC = () => {
             goal: "Write a few sentences on why the previous goal was skipped and what can be done differently next time. Submit a screenshot of your notes as proof.",
             subject: "Accountability Reflection",
             goalSetTime: reflectionGoalSetTime,
-            timeLimitInMs: 5 * 60 * 1000,
+            timeLimitInMs: 5 * 60 * 1000, // 5 minutes
         };
         
         setSkippedGoalForReflection(goalToSkip);
         await dataService.saveActiveGoal(currentUser.uid, reflectionActiveState);
 
     } catch (err) {
-        handleApiError(err);
+        handleApiError(err as Error);
     } finally {
         setIsLoading(false);
     }
@@ -509,10 +517,30 @@ const handleAbandonGoal = useCallback(async () => {
         resetToStart(); 
 
     } catch (err) {
-        handleApiError(err);
+        handleApiError(err as Error);
         setIsLoading(false);
     }
 }, [currentUser, activeGoal, todaysPlan, resetToStart, handleApiError]);
+
+const handleDeadlineMissed = useCallback(() => {
+    const goalToRemoveId = activeGoal?.plannedGoalId;
+
+    if (!currentUser) {
+        setInfoMessage("Deadline missed. The goal has been reset.");
+        resetToStart();
+        return;
+    }
+
+    // Also remove the goal from the plan for today
+    if (todaysPlan && goalToRemoveId) {
+        const updatedGoals = todaysPlan.goals.filter(g => g.id !== goalToRemoveId);
+        const updatedPlan = { ...todaysPlan, goals: updatedGoals };
+        handleSavePlan(updatedPlan);
+    }
+    
+    setInfoMessage("Deadline missed. Your goal has been removed from today's plan, and the code is lost.");
+    resetToStart();
+}, [currentUser, activeGoal, todaysPlan, resetToStart, handleSavePlan]);
 
 
   const handleShowHistory = () => setAppState(AppState.HISTORY_VIEW);
@@ -522,7 +550,7 @@ const handleAbandonGoal = useCallback(async () => {
       if (!currentUser || !streakData) return;
       const todayStr = getISODateString(new Date());
       const newCommitment = { date: todayStr, text, completed: false };
-      const newData: StreakData = { ...streakData, commitment: newCommitment };
+      const newData = { ...streakData, commitment: newCommitment };
       setStreakData(newData);
       dataService.saveStreakData(currentUser.uid, newData);
   };
@@ -575,7 +603,7 @@ const handleAbandonGoal = useCallback(async () => {
     if (payload.pdfAttachment === null) {
       delete (updatedGoal as any).pdfAttachment;
     } else if (payload.pdfAttachment !== undefined) {
-      updatedGoal.pdfAttachment = payload.pdfAttachment;
+      (updatedGoal as any).pdfAttachment = payload.pdfAttachment;
     }
 
     const updatedGoals = plan.goals.map(g => g.id === updatedGoal.id ? updatedGoal : g);
@@ -597,7 +625,7 @@ const handleAbandonGoal = useCallback(async () => {
             setWeeklyPlans(plans);
             setAppState(AppState.WEEKLY_PLAN_VIEW);
         } catch (err) {
-            handleApiError(err);
+            handleApiError(err as Error);
         } finally {
             setIsLoading(false);
         }
@@ -613,7 +641,7 @@ const handleAbandonGoal = useCallback(async () => {
             const plans = await dataService.loadWeeklyPlans(currentUser.uid, newWeekStartDate);
             setWeeklyPlans(plans);
         } catch (err) {
-            handleApiError(err);
+            handleApiError(err as Error);
         } finally {
             setIsLoading(false);
         }
@@ -643,37 +671,40 @@ const handleAbandonGoal = useCallback(async () => {
             </button>
         );
 
-        const todaysPlanContent = todaysPlan ? (
-            <TodaysPlanComponent
-                initialPlan={todaysPlan}
-                onSavePlan={handleSavePlan}
+        return (
+            <>
+                {todaysPlan ? (
+                    <TodaysPlanComponent 
+                        initialPlan={todaysPlan} 
+                        onSavePlan={handleSavePlan} 
+                        onStartGoal={handleStartPlannedGoal} 
+                        onShowHistory={handleShowHistory}
+                        onShowWeeklyView={handleShowWeeklyView}
+                        onEditGoal={handleEditGoal}
+                    />
+                ) : (
+                    <div className="flex justify-center items-center p-8"><Spinner /></div>
+                )}
+                {viewCodeButton}
+            </>
+        );
+      case AppState.WEEKLY_PLAN_VIEW:
+          return weeklyPlans ? (
+            <WeeklyPlanView
+                initialPlans={weeklyPlans}
+                weekStartDate={weekStartDate}
+                onBack={() => setAppState(AppState.TODAYS_PLAN)}
+                onSavePlan={handleSavePlanAndUpdateWeek}
                 onStartGoal={handleStartPlannedGoal}
-                onShowHistory={handleShowHistory}
-                onShowWeeklyView={handleShowWeeklyView}
+                onNavigateWeek={handleNavigateWeek}
+                isLoading={isLoading}
                 onEditGoal={handleEditGoal}
             />
-        ) : <div className="flex justify-center items-center p-8"><Spinner /></div>;
-        
-        return <>
-            {todaysPlanContent}
-            {viewCodeButton}
-        </>;
-
-      case AppState.WEEKLY_PLAN_VIEW:
-          return weeklyPlans ? <WeeklyPlanView
-            initialPlans={weeklyPlans}
-            weekStartDate={weekStartDate}
-            onBack={() => setAppState(AppState.TODAYS_PLAN)}
-            onSavePlan={handleSavePlanAndUpdateWeek}
-            onStartGoal={handleStartPlannedGoal}
-            onNavigateWeek={handleNavigateWeek}
-            isLoading={isLoading}
-            onEditGoal={handleEditGoal}
-          /> : <div className="flex justify-center items-center p-8"><Spinner /></div>;
+          ) : <div className="flex justify-center items-center p-8"><Spinner /></div>;
       case AppState.AWAITING_CODE: return <CodeUploader onCodeImageSubmit={handleCodeImageSubmit} isLoading={isLoading} onShowHistory={handleShowHistory} onLogout={handleLogout} currentUser={currentUser} streakData={streakData} onSetCommitment={handleSetDailyCommitment} onCompleteCommitment={handleCompleteDailyCommitment} />;
       case AppState.GOAL_SET: {
         const skipsLeft = 2 - (streakData?.skipsThisWeek ?? 0);
-        return <ProofUploader goal={goal} subject={subject} onProofImageSubmit={handleProofImageSubmit} isLoading={isLoading} goalSetTime={goalSetTime} timeLimitInMs={timeLimitInMs} onSkipGoal={handleSkipGoal} onAbandonGoal={handleAbandonGoal} skipsLeftThisWeek={skipsLeft > 0 ? skipsLeft : 0} lastCompletedCodeImage={streakData?.lastCompletedCodeImage} pdfAttachment={activeGoal?.pdfAttachment} apiKey={apiKey!} />;
+        return <ProofUploader goal={goal} subject={subject} onProofImageSubmit={handleProofImageSubmit} isLoading={isLoading} goalSetTime={goalSetTime} timeLimitInMs={timeLimitInMs} onSkipGoal={handleSkipGoal} onAbandonGoal={handleAbandonGoal} onDeadlineMissed={handleDeadlineMissed} skipsLeftThisWeek={skipsLeft > 0 ? skipsLeft : 0} lastCompletedCodeImage={streakData?.lastCompletedCodeImage} pdfAttachment={activeGoal?.pdfAttachment} apiKey={apiKey!} />;
       }
       case AppState.HISTORY_VIEW: return <GoalHistory onBack={handleHistoryBack} history={history} onDeleteHistoryItem={handleDeleteHistoryItem} apiKey={apiKey!} />;
       case AppState.GOAL_COMPLETED: return <VerificationResult isSuccess={true} secretCodeImage={secretCodeImage || completedSecretCodeImage} feedback={verificationFeedback} onRetry={handleRetry} onReset={() => resetToStart(false)} completionDuration={completionDuration} completionReason={completionReason} />;
@@ -682,68 +713,73 @@ const handleAbandonGoal = useCallback(async () => {
     }
   };
 
-  const editingModal = editingGoalInfo && (
-    <div 
-        className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 animate-fade-in overflow-y-auto"
-        onClick={() => setEditingGoalInfo(null)}
-    >
-        <div className="flex items-center justify-center min-h-full p-4">
-            <div onClick={e => e.stopPropagation()}>
-                <GoalSetter 
-                    initialData={editingGoalInfo.goal}
-                    planDate={editingGoalInfo.plan.date}
-                    onGoalSubmit={handleSaveEditedGoal}
-                    isLoading={false} 
-                    submitButtonText="Save Changes"
-                    onCancel={() => setEditingGoalInfo(null)}
-                />
-            </div>
-        </div>
-    </div>
-  );
-  
-  const unlockedCodeModal = showUnlockedCodeModal && completedSecretCodeImage && (
-    <div
-        className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in p-4"
-        onClick={() => setShowUnlockedCodeModal(false)}
-    >
-        <div className="relative" onClick={e => e.stopPropagation()}>
-            <p className="text-white text-center mb-2 font-semibold">Your Unlocked Code</p>
-            <img
-                src={completedSecretCodeImage}
-                alt="Unlocked secret code"
-                className="rounded-lg max-h-[80vh] max-w-[90vw] object-contain"
-            />
-            <button
-                    onClick={() => setShowUnlockedCodeModal(false)}
-                    className="absolute -top-3 -right-3 bg-slate-800 text-white rounded-full p-1.5 leading-none hover:bg-slate-700 transition-colors"
-                    aria-label="Close image view"
-                >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-            </button>
-        </div>
-    </div>
-  );
-
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-4">
       <Header />
       <main className="w-full flex flex-col items-center justify-center">
-          {error && !isApiKeyValid && <div />}
-          {error && isApiKeyValid && <Alert message={error} type="error" />}
-          {infoMessage && <Alert message={infoMessage} type="info" />}
-          {appState === AppState.GOAL_SET && verificationFeedback ? (
-              <div className="w-full max-w-lg mb-4 flex justify-center">
-                  <VerificationResult isSuccess={false} secretCodeImage={null} feedback={verificationFeedback} onRetry={handleRetry} onReset={() => resetToStart(false)} chatMessages={chatMessages} onSendChatMessage={handleSendChatMessage} isChatLoading={isChatLoading} />
-              </div>
-          ) : (
-            renderContent()
-          )}
+        {error && !isApiKeyValid ? null : error && <Alert message={error} type="error" />}
+        {infoMessage && <Alert message={infoMessage} type="info" />}
+        
+        {appState === AppState.GOAL_SET && verificationFeedback ? (
+            <div className="w-full max-w-lg mb-4 flex justify-center">
+                <VerificationResult
+                    isSuccess={false}
+                    secretCodeImage={null}
+                    feedback={verificationFeedback}
+                    onRetry={handleRetry}
+                    onReset={() => resetToStart(false)}
+                    chatMessages={chatMessages}
+                    onSendChatMessage={handleSendChatMessage}
+                    isChatLoading={isChatLoading}
+                />
+            </div>
+        ) : (
+          renderContent()
+        )}
       </main>
-      {editingModal}
-      {unlockedCodeModal}
+       {editingGoalInfo && (
+            <div 
+                className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 animate-fade-in overflow-y-auto"
+                onClick={() => setEditingGoalInfo(null)}
+            >
+                <div className="flex items-center justify-center min-h-full p-4">
+                    <div onClick={e => e.stopPropagation()}>
+                        <GoalSetter 
+                            initialData={editingGoalInfo.goal}
+                            planDate={editingGoalInfo.plan.date}
+                            onGoalSubmit={handleSaveEditedGoal}
+                            isLoading={false} 
+                            submitButtonText="Save Changes"
+                            onCancel={() => setEditingGoalInfo(null)}
+                        />
+                    </div>
+                </div>
+            </div>
+       )}
+        {showUnlockedCodeModal && completedSecretCodeImage && (
+            <div 
+                className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in p-4"
+                onClick={() => setShowUnlockedCodeModal(false)}
+            >
+                <div className="relative" onClick={e => e.stopPropagation()}>
+                    <p className="text-white text-center mb-2 font-semibold">Your Unlocked Code</p>
+                    <img
+                        src={completedSecretCodeImage}
+                        alt="Unlocked secret code"
+                        className="rounded-lg max-h-[80vh] max-w-[90vw] object-contain"
+                    />
+                    <button
+                        onClick={() => setShowUnlockedCodeModal(false)}
+                        className="absolute -top-3 -right-3 bg-slate-800 text-white rounded-full p-1.5 leading-none hover:bg-slate-700 transition-colors"
+                        aria-label="Close image view"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+       )}
     </div>
   );
 };
